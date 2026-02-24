@@ -174,6 +174,7 @@ class CellDataset(Dataset):
         if hasattr(X, "toarray"):
             X = X.toarray()
         X = np.asarray(X, dtype=np.float32)
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         cell_types = (
             adata.obs["cell_type"].values
             if "cell_type" in adata.obs.columns
