@@ -1,0 +1,25 @@
+data:
+  manifest_path: /cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/manifest.json
+  n_hvgs: 4000                  # treat as hyperparameter, check sensitivity
+  n_per_cell_type: 30
+  min_cells_threshold: 10
+  n_pseudo_tubes: 10
+
+model:
+  embedding_dim: 128
+  attention_hidden_dim: 64
+  n_classes: 91                 # 90 cytokines + PBS
+
+training:
+  stage1_epochs: 50             # encoder pre-training
+  stage2_epochs: 100            # MIL frozen encoder
+  stage3_epochs: 50             # MIL fine-tune (optional)
+  optimizer: sgd
+  momentum: 0.9
+  lr: 0.01
+  lr_scheduler: null            # set to e.g. "cosine" if loss curves are erratic
+  lr_warmup_epochs: 5
+
+dynamics:
+  log_every_n_epochs: 1         # frequency of dynamics snapshot logging
+  random_seeds: [42, 123, 7]    # run all three, check ordering stability
