@@ -87,6 +87,7 @@ def _run_epoch(
 
         optimizer.zero_grad()
         loss.backward()
+        nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item() * len(X)
