@@ -96,6 +96,12 @@ class InstanceEncoder(nn.Module):
             elif isinstance(m, nn.LayerNorm):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
+        # Zero-init the last linear in each residual block so every block
+        # starts as an identity mapping — prevents variance from compounding
+        # across skip connections and keeps the initial loss near ln(n_classes).
+        for m in [self.res1, self.res2, self.down1, self.down2]:
+            nn.init.zeros_(m.fc2.weight)
+            nn.init.zeros_(m.fc2.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
