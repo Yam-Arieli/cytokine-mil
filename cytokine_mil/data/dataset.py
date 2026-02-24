@@ -69,12 +69,16 @@ class CellDataset(Dataset):
     """
     Flat cell-level dataset for Stage 1 encoder pre-training.
 
-    Reads all pseudo-tube .h5ad files and exposes individual cells with
-    their cell_type labels. Caches loaded tubes in memory to avoid re-loading
-    the same file for adjacent cells.
+    Reads pseudo-tube .h5ad files and exposes individual cells with
+    their cell_type labels.
 
-    For very large datasets (cluster scale) consider passing a subsampled
-    manifest to limit memory usage.
+    preload=True (recommended for Stage 1): loads all tubes at init into a
+    contiguous numpy array — enables fast shuffle without disk I/O per batch.
+    Use with a subsampled manifest (one tube per cytokine ≈ 91 tubes ≈ 40k
+    cells ≈ 640 MB) to keep memory usage reasonable.
+
+    preload=False: lazy loading with an LRU tube cache. Shuffle should be
+    disabled (num_workers=0, shuffle=False) or the cache will be ineffective.
     """
 
     def __init__(
@@ -82,29 +86,59 @@ class CellDataset(Dataset):
         manifest_path: str,
         gene_names: Optional[List[str]] = None,
         tube_cache_size: int = 64,
+        preload: bool = False,
     ) -> None:
         """
         Args:
             manifest_path: Path to manifest.json.
             gene_names: Optional list of gene names to subset columns.
-            tube_cache_size: Number of tubes held in the LRU-style cache.
+            tube_cache_size: Number of tubes held in the LRU cache (preload=False only).
+            preload: If True, load all data into memory at init.
         """
         self.gene_names = gene_names
-        self._cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
-        self._cache_order: List[str] = []
-        self._cache_size = tube_cache_size
 
         with open(manifest_path) as f:
             manifest = json.load(f)
 
         self.cell_type_to_idx = self._build_cell_type_map(manifest)
-        self._index = self._build_index(manifest)
+
+        if preload:
+            self._X, self._labels = self._preload(manifest)
+            self._preloaded = True
+        else:
+            self._cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+            self._cache_order: List[str] = []
+            self._cache_size = tube_cache_size
+            self._index = self._build_index(manifest)
+            self._preloaded = False
 
     def _build_cell_type_map(self, manifest: List[dict]) -> Dict[str, int]:
         all_types: set = set()
         for entry in manifest:
             all_types.update(entry.get("cell_types_included", []))
         return {ct: i for i, ct in enumerate(sorted(all_types))}
+
+    # ------------------------------------------------------------------
+    # preload path
+    # ------------------------------------------------------------------
+
+    def _preload(self, manifest: List[dict]) -> Tuple[np.ndarray, np.ndarray]:
+        """Load all tubes sequentially and concatenate into contiguous arrays."""
+        all_X: List[np.ndarray] = []
+        all_labels: List[np.ndarray] = []
+        for entry in manifest:
+            X, cell_types = self._read_tube(entry["path"])
+            labels = np.array(
+                [self.cell_type_to_idx.get(str(ct), 0) for ct in cell_types],
+                dtype=np.int64,
+            )
+            all_X.append(X)
+            all_labels.append(labels)
+        return np.concatenate(all_X, axis=0), np.concatenate(all_labels, axis=0)
+
+    # ------------------------------------------------------------------
+    # lazy-load path
+    # ------------------------------------------------------------------
 
     def _build_index(self, manifest: List[dict]) -> List[Tuple[str, int]]:
         """Build a flat list of (tube_path, within_tube_cell_idx) pairs."""
@@ -118,18 +152,7 @@ class CellDataset(Dataset):
     def _load_tube(self, path: str) -> Tuple[np.ndarray, np.ndarray]:
         if path not in self._cache:
             self._evict_if_full()
-            adata = sc.read_h5ad(path)
-            if self.gene_names is not None:
-                adata = adata[:, self.gene_names]
-            X = adata.X
-            if hasattr(X, "toarray"):
-                X = X.toarray()
-            X = np.asarray(X, dtype=np.float32)
-            cell_types = (
-                adata.obs["cell_type"].values
-                if "cell_type" in adata.obs.columns
-                else np.full(len(X), "unknown")
-            )
+            X, cell_types = self._read_tube(path)
             self._cache[path] = (X, cell_types)
             self._cache_order.append(path)
         return self._cache[path]
@@ -139,13 +162,38 @@ class CellDataset(Dataset):
             oldest = self._cache_order.pop(0)
             del self._cache[oldest]
 
+    # ------------------------------------------------------------------
+    # shared I/O helper
+    # ------------------------------------------------------------------
+
+    def _read_tube(self, path: str) -> Tuple[np.ndarray, np.ndarray]:
+        adata = sc.read_h5ad(path)
+        if self.gene_names is not None:
+            adata = adata[:, self.gene_names]
+        X = adata.X
+        if hasattr(X, "toarray"):
+            X = X.toarray()
+        X = np.asarray(X, dtype=np.float32)
+        cell_types = (
+            adata.obs["cell_type"].values
+            if "cell_type" in adata.obs.columns
+            else np.full(len(X), "unknown")
+        )
+        return X, cell_types
+
+    # ------------------------------------------------------------------
+    # Dataset interface
+    # ------------------------------------------------------------------
+
     def n_cell_types(self) -> int:
         return len(self.cell_type_to_idx)
 
     def __len__(self) -> int:
-        return len(self._index)
+        return len(self._X) if self._preloaded else len(self._index)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+        if self._preloaded:
+            return torch.FloatTensor(self._X[idx]), int(self._labels[idx])
         path, cell_idx = self._index[idx]
         X, cell_types = self._load_tube(path)
         x = torch.FloatTensor(X[cell_idx])
