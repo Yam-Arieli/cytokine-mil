@@ -3,12 +3,14 @@ Dataset classes for pseudo-tube bags and cell-level encoder pre-training.
 """
 
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import scanpy as sc
+import scipy.sparse
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from cytokine_mil.data.label_encoder import CytokineLabel
 
@@ -17,7 +19,11 @@ class PseudoTubeDataset(Dataset):
     """
     Dataset for pseudo-tube bags used in Stage 2/3 MIL training.
 
-    Reads manifest.json at init. Loads one .h5ad file per __getitem__ call.
+    preload=False (default): reads one .h5ad file per __getitem__ call.
+    preload=True: loads all tubes at init as sparse matrices (~8-10 GB for
+    10k tubes), eliminating all disk I/O during training and dynamics logging.
+    Recommended when running Stage 2/3 on the full manifest.
+
     Returns (X, label, donor, cytokine_name) where X is a float tensor of
     shape (N_cells, N_genes).
     """
@@ -27,25 +33,53 @@ class PseudoTubeDataset(Dataset):
         manifest_path: str,
         label_encoder: CytokineLabel,
         gene_names: Optional[List[str]] = None,
+        preload: bool = False,
     ) -> None:
         """
         Args:
             manifest_path: Path to manifest.json.
             label_encoder: Fitted CytokineLabel instance.
             gene_names: If provided, only these genes are returned (in order).
+            preload: If True, load all tubes into memory at init.
         """
         self.label_encoder = label_encoder
         self.gene_names = gene_names
         self.entries = self._read_manifest(manifest_path)
 
+        if preload:
+            self._cache = self._preload_all()
+        else:
+            self._cache = None
+
     def _read_manifest(self, path: str) -> List[dict]:
         with open(path) as f:
             return json.load(f)
+
+    def _preload_all(self) -> List[Tuple[Any, int, str, str]]:
+        """Load all tubes into memory at init. Stores sparse matrices when
+        the h5ad X is sparse (typical for scRNA-seq) to keep memory low."""
+        cache: List[Tuple[Any, int, str, str]] = []
+        for entry in tqdm(self.entries, desc="Preloading tubes"):
+            adata = sc.read_h5ad(entry["path"])
+            if self.gene_names is not None:
+                adata = adata[:, self.gene_names]
+            X = adata.X  # keep as sparse if possible
+            if not scipy.sparse.issparse(X):
+                X = np.asarray(X, dtype=np.float32)
+            label = self.label_encoder.encode(entry["cytokine"])
+            cache.append((X, label, entry["donor"], entry["cytokine"]))
+        return cache
 
     def __len__(self) -> int:
         return len(self.entries)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int, str, str]:
+        if self._cache is not None:
+            X, label, donor, cytokine = self._cache[idx]
+            if scipy.sparse.issparse(X):
+                X = X.toarray()
+            return torch.FloatTensor(np.asarray(X, dtype=np.float32)), label, donor, cytokine
+
         entry = self.entries[idx]
         adata = sc.read_h5ad(entry["path"])
         X = self._extract_matrix(adata)
