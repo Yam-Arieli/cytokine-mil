@@ -344,8 +344,8 @@ class TestDynamicsAnalysis:
 
     def test_instance_confidence_grouping(self, dynamics):
         from cytokine_mil.analysis.dynamics import group_confidence_by_cell_type
-        rec = next(r for r in dynamics["records"] if r["instance_confidence_final"] is not None)
-        conf = rec["instance_confidence_final"]
+        rec = next(r for r in dynamics["records"] if r["instance_confidence_mean"] is not None)
+        conf = rec["instance_confidence_mean"]
         n_cells = len(CELL_TYPES) * N_CELLS_PER_TYPE
         fake_labels = np.array(CELL_TYPES * N_CELLS_PER_TYPE)
         grouped = group_confidence_by_cell_type(conf, fake_labels)

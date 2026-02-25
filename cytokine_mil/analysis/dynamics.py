@@ -162,7 +162,7 @@ def build_cell_type_confidence_matrix(
     cell_type_obs: Optional[Dict[str, np.ndarray]] = None,
 ) -> Dict[str, Dict[str, np.ndarray]]:
     """
-    Build a matrix of mean final instance confidence per (cytokine, cell_type).
+    Build a matrix of mean instance confidence per (cytokine, cell_type).
 
     Requires cell_type_obs: a dict mapping tube_path -> (N,) cell_type array.
     Cell type information is re-introduced here for post-hoc analysis only —
@@ -181,7 +181,7 @@ def build_cell_type_confidence_matrix(
         lambda: defaultdict(list)
     )
     for rec in records:
-        conf = rec.get("instance_confidence_final")
+        conf = rec.get("instance_confidence_mean")
         if conf is None:
             continue
         ct_labels = cell_type_obs.get(rec["tube_path"])

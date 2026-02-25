@@ -162,7 +162,7 @@ def _init_tube_trajectories(entries: List[dict]) -> Dict[int, Dict]:
         i: {
             "p_correct": [],
             "entropy": [],
-            "instance_confidence_final": None,
+            "instance_confidence_epochs": [],
         }
         for i in range(len(entries))
     }
@@ -197,7 +197,7 @@ def _log_dynamics(
         traj = tube_trajectories[idx]
         traj["p_correct"].append(p_correct)
         traj["entropy"].append(entropy)
-        traj["instance_confidence_final"] = instance_conf  # overwrite each epoch
+        traj["instance_confidence_epochs"].append(instance_conf)
 
 
 def _compute_entropy(a: torch.Tensor) -> float:
@@ -222,7 +222,10 @@ def _build_records(
                 "n_cells": entry["n_cells"],
                 "p_correct_trajectory": traj["p_correct"],
                 "entropy_trajectory": traj["entropy"],
-                "instance_confidence_final": traj["instance_confidence_final"],
+                "instance_confidence_mean": (
+                    np.mean(np.stack(traj["instance_confidence_epochs"]), axis=0)
+                    if traj["instance_confidence_epochs"] else None
+                ),
             }
         )
     return records
