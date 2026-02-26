@@ -301,7 +301,13 @@ class TestTrainMIL:
         )
         rec = dynamics["records"][0]
         assert "p_correct_trajectory" in rec
+        assert "entropy_trajectory" in rec
+        assert "instance_confidence_trajectory" in rec
         assert len(rec["p_correct_trajectory"]) == 1  # logged once at epoch 2
+        assert len(rec["entropy_trajectory"]) == 1
+        assert rec["instance_confidence_trajectory"] is not None
+        assert rec["instance_confidence_trajectory"].shape[1] == 1  # n_logged_epochs=1
+        assert "confusion_entropy_trajectory" in dynamics
 
     def test_p_correct_in_valid_range(self, dataset):
         from cytokine_mil.training.train_mil import train_mil
@@ -329,7 +335,10 @@ class TestDynamicsAnalysis:
             rank_cytokines_by_learnability,
         )
         donor_traj = aggregate_to_donor_level(dynamics["records"])
-        ranking = rank_cytokines_by_learnability(donor_traj, exclude=["PBS"])
+        result = rank_cytokines_by_learnability(donor_traj, exclude=["PBS"])
+        assert "ranking" in result
+        assert "metric_description" in result
+        ranking = result["ranking"]
         assert len(ranking) == len(CYTOKINES)
         names = [r[0] for r in ranking]
         assert set(names) == set(CYTOKINES)
@@ -344,14 +353,47 @@ class TestDynamicsAnalysis:
 
     def test_instance_confidence_grouping(self, dynamics):
         from cytokine_mil.analysis.dynamics import group_confidence_by_cell_type
-        rec = next(r for r in dynamics["records"] if r["instance_confidence_mean"] is not None)
-        conf = rec["instance_confidence_mean"]
+        rec = next(
+            r for r in dynamics["records"]
+            if r["instance_confidence_trajectory"] is not None
+        )
+        # instance_confidence_trajectory is (n_cells, n_logged_epochs);
+        # mean across epochs to get a (n_cells,) summary for grouping.
+        conf = rec["instance_confidence_trajectory"].mean(axis=1)
         n_cells = len(CELL_TYPES) * N_CELLS_PER_TYPE
         fake_labels = np.array(CELL_TYPES * N_CELLS_PER_TYPE)
         grouped = group_confidence_by_cell_type(conf, fake_labels)
         assert set(grouped.keys()) == set(CELL_TYPES)
         for ct, vals in grouped.items():
             assert len(vals) == N_CELLS_PER_TYPE
+
+    def test_instance_confidence_trajectory_shape(self, dynamics):
+        rec = next(
+            r for r in dynamics["records"]
+            if r["instance_confidence_trajectory"] is not None
+        )
+        traj = rec["instance_confidence_trajectory"]
+        n_cells = len(CELL_TYPES) * N_CELLS_PER_TYPE
+        n_logged = len(dynamics["logged_epochs"])
+        assert traj.ndim == 2, f"Expected 2-D (n_cells, n_logged_epochs), got shape {traj.shape}"
+        assert traj.shape == (n_cells, n_logged), (
+            f"Expected ({n_cells}, {n_logged}), got {traj.shape}"
+        )
+
+    def test_confusion_entropy_trajectory_present(self, dynamics):
+        assert "confusion_entropy_trajectory" in dynamics
+        cet = dynamics["confusion_entropy_trajectory"]
+        # Should have one entry per cytokine (including PBS)
+        assert len(cet) > 0
+        for cyt, traj in cet.items():
+            assert isinstance(cyt, str)
+            assert isinstance(traj, np.ndarray)
+            assert traj.ndim == 1
+            assert len(traj) == len(dynamics["logged_epochs"])
+
+    def test_confusion_entropy_values_non_negative(self, dynamics):
+        for cyt, traj in dynamics["confusion_entropy_trajectory"].items():
+            assert (traj >= 0).all(), f"Negative confusion entropy for {cyt}"
 
     def test_entropy_non_negative(self):
         from cytokine_mil.analysis.dynamics import compute_entropy

@@ -43,8 +43,8 @@ def check_seed_stability(
     rankings = []
     for dynamics in dynamics_list:
         donor_traj = aggregate_to_donor_level(dynamics["records"])
-        ranked = rank_cytokines_by_learnability(donor_traj, exclude=exclude)
-        rankings.append([cyt for cyt, _ in ranked])
+        result = rank_cytokines_by_learnability(donor_traj, exclude=exclude)
+        rankings.append([cyt for cyt, _ in result["ranking"]])
 
     n = len(rankings)
     spearman_matrix = np.ones((n, n))

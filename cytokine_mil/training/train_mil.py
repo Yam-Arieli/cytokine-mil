@@ -5,6 +5,7 @@ Returns a dynamics dict containing per-tube learning trajectories that are
 consumed by cytokine_mil.analysis.dynamics for cascade inference.
 """
 
+from collections import defaultdict
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -58,7 +59,15 @@ def train_mil(
     Returns:
         dynamics: dict with keys:
             'logged_epochs': list of epoch indices where dynamics were recorded.
-            'records': list of per-tube dicts with trajectory data.
+            'records': list of per-tube dicts, each containing:
+                'p_correct_trajectory':          list[float], shape (n_logged_epochs,)
+                'entropy_trajectory':            list[float], shape (n_logged_epochs,)
+                'instance_confidence_trajectory': ndarray, shape (n_cells, n_logged_epochs)
+            'confusion_entropy_trajectory': dict mapping cytokine_name ->
+                ndarray of shape (n_logged_epochs,).
+                H_confusion(C,t) = -sum_{k!=C} q_k(t) log q_k(t),
+                where q_k is the renormalized off-diagonal mean softmax score
+                across all pseudo-tubes of cytokine C at epoch t.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,6 +83,7 @@ def train_mil(
 
     logged_epochs: List[int] = []
     tube_trajectories: Dict[int, Dict] = _init_tube_trajectories(entries)
+    cytokine_confusion_epochs: Dict[str, List[float]] = defaultdict(list)
 
     for epoch in range(1, n_epochs + 1):
         epoch_loss = _train_epoch(model, dataset, queues, optimizer, criterion, device, rng)
@@ -84,14 +94,24 @@ def train_mil(
             scheduler.step()
 
         if epoch % log_every_n_epochs == 0 or epoch == n_epochs:
-            _log_dynamics(model, dataset, entries, tube_trajectories, device)
+            _log_dynamics(
+                model, dataset, entries, tube_trajectories,
+                cytokine_confusion_epochs, dataset.label_encoder, device,
+            )
             logged_epochs.append(epoch)
 
         if verbose:
             print(f"[Stage 2/3] Epoch {epoch:3d}/{n_epochs} | loss={epoch_loss:.4f}")
 
     records = _build_records(entries, tube_trajectories)
-    return {"logged_epochs": logged_epochs, "records": records}
+    confusion_traj = {
+        cyt: np.array(epochs) for cyt, epochs in cytokine_confusion_epochs.items()
+    }
+    return {
+        "logged_epochs": logged_epochs,
+        "records": records,
+        "confusion_entropy_trajectory": confusion_traj,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +183,7 @@ def _init_tube_trajectories(entries: List[dict]) -> Dict[int, Dict]:
             "p_correct": [],
             "entropy": [],
             "instance_confidence_epochs": [],
+            "softmax_epochs": [],
         }
         for i in range(len(entries))
     }
@@ -174,10 +195,22 @@ def _log_dynamics(
     dataset: PseudoTubeDataset,
     entries: List[dict],
     tube_trajectories: Dict[int, Dict],
+    cytokine_confusion_epochs: Dict[str, List[float]],
+    label_encoder,
     device: torch.device,
 ) -> None:
     """
     Evaluate all tubes and append one snapshot to each tube's trajectory.
+
+    Per tube (inside loop):
+      - p_correct_trajectory: softmax probability of the correct class
+      - entropy_trajectory: H = -sum(a_i * log(a_i)) over attention weights
+      - instance_confidence_trajectory: C_i = a_i * p_correct per cell
+      - softmax_epochs (internal): full K-dim softmax, used for confusion entropy
+
+    Per cytokine (after loop):
+      - confusion_entropy_trajectory: H_confusion computed from mean off-diagonal
+        softmax across all tubes of that cytokine.
 
     Runs in eval mode with no_grad to avoid memory accumulation.
     """
@@ -185,7 +218,6 @@ def _log_dynamics(
     for idx, entry in enumerate(entries):
         X, label, _donor, _cyt_name = dataset[idx]
         X = X.to(device)
-        label_t = torch.tensor([label], dtype=torch.long, device=device)
 
         y_hat, a, _H = model(X)
         probs = F.softmax(y_hat, dim=0)
@@ -198,6 +230,53 @@ def _log_dynamics(
         traj["p_correct"].append(p_correct)
         traj["entropy"].append(entropy)
         traj["instance_confidence_epochs"].append(instance_conf)
+        traj["softmax_epochs"].append(probs.cpu().numpy())
+
+    _compute_confusion_entropy_snapshot(
+        entries, tube_trajectories, label_encoder, cytokine_confusion_epochs
+    )
+
+
+def _compute_confusion_entropy_snapshot(
+    entries: List[dict],
+    tube_trajectories: Dict[int, Dict],
+    label_encoder,
+    cytokine_confusion_epochs: Dict[str, List[float]],
+) -> None:
+    """
+    Compute one confusion-entropy snapshot per cytokine from the latest softmax snapshot.
+
+    Steps per cytokine C:
+      1. Collect latest softmax ŷ_b ∈ R^K for each tube b of C.
+      2. Average across tubes: ȳ_C ∈ R^K.
+      3. Remove the true class k=C and renormalize: q_k = ȳ_{C,k} / sum_{j≠C} ȳ_{C,j}.
+      4. H_confusion(C) = -sum_{k≠C} q_k log(q_k).
+
+    Appended in-place to cytokine_confusion_epochs[cytokine_name].
+    """
+    cytokine_to_indices: Dict[str, List[int]] = defaultdict(list)
+    for idx, entry in enumerate(entries):
+        cytokine_to_indices[entry["cytokine"]].append(idx)
+
+    for cytokine, indices in cytokine_to_indices.items():
+        true_label = label_encoder.encode(cytokine)
+        softmaxes = np.stack(
+            [tube_trajectories[idx]["softmax_epochs"][-1] for idx in indices]
+        )  # (n_tubes, K)
+        mean_softmax = softmaxes.mean(axis=0)  # (K,)
+
+        K = len(mean_softmax)
+        off_diag = np.concatenate(
+            [mean_softmax[:true_label], mean_softmax[true_label + 1:]]
+        )
+        off_sum = float(off_diag.sum())
+        if off_sum < 1e-10:
+            cytokine_confusion_epochs[cytokine].append(0.0)
+            continue
+        q = off_diag / off_sum
+        q_safe = np.clip(q, 1e-10, None)
+        entropy = -float((q_safe * np.log(q_safe)).sum())
+        cytokine_confusion_epochs[cytokine].append(entropy)
 
 
 def _compute_entropy(a: torch.Tensor) -> float:
@@ -213,6 +292,13 @@ def _build_records(
     records = []
     for idx, entry in enumerate(entries):
         traj = tube_trajectories[idx]
+        ic_epochs = traj["instance_confidence_epochs"]
+        if ic_epochs:
+            # Stack to (n_logged_epochs, n_cells), transpose to (n_cells, n_logged_epochs)
+            ic_trajectory = np.stack(ic_epochs, axis=0).T
+        else:
+            ic_trajectory = None
+
         records.append(
             {
                 "cytokine": entry["cytokine"],
@@ -222,10 +308,10 @@ def _build_records(
                 "n_cells": entry["n_cells"],
                 "p_correct_trajectory": traj["p_correct"],
                 "entropy_trajectory": traj["entropy"],
-                "instance_confidence_mean": (
-                    np.mean(np.stack(traj["instance_confidence_epochs"]), axis=0)
-                    if traj["instance_confidence_epochs"] else None
-                ),
+                # Full trajectory: shape (n_cells, n_logged_epochs).
+                # C_i(t) = a_i(t) * P(t)(Y_correct).
+                # Do not collapse — aggregation happens in analysis layer.
+                "instance_confidence_trajectory": ic_trajectory,
             }
         )
     return records
