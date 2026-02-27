@@ -408,6 +408,94 @@ class TestDynamicsAnalysis:
         assert torch.allclose(C, expected, atol=1e-5)
 
 
+class TestExperimentSetup:
+    """Minimal tests for cytokine_mil.experiment_setup."""
+
+    def test_build_stage1_manifest_one_per_cytokine(self, manifest_path):
+        from cytokine_mil.experiment_setup import build_stage1_manifest
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        stage1 = build_stage1_manifest(manifest)
+        # One entry per cytokine (including PBS)
+        cytokines_in = {e["cytokine"] for e in stage1}
+        all_cytokines = {e["cytokine"] for e in manifest}
+        assert cytokines_in == all_cytokines
+        assert len(stage1) == len(all_cytokines)
+
+    def test_build_stage1_manifest_saves_json(self, manifest_path, tmp_path):
+        from cytokine_mil.experiment_setup import build_stage1_manifest
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        out = str(tmp_path / "stage1.json")
+        build_stage1_manifest(manifest, save_path=out)
+        with open(out) as f:
+            saved = json.load(f)
+        assert isinstance(saved, list)
+        assert len(saved) == len({e["cytokine"] for e in manifest})
+
+    def test_filter_manifest_keeps_subset_and_pbs(self, manifest_path):
+        from cytokine_mil.experiment_setup import filter_manifest
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        subset = ["IL-2", "IL-4"]
+        filtered = filter_manifest(manifest, subset)
+        cytokines_in = {e["cytokine"] for e in filtered}
+        assert cytokines_in == {"IL-2", "IL-4", "PBS"}
+
+    def test_filter_manifest_exclude_pbs(self, manifest_path):
+        from cytokine_mil.experiment_setup import filter_manifest
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        filtered = filter_manifest(manifest, ["IL-2"], include_pbs=False)
+        assert all(e["cytokine"] == "IL-2" for e in filtered)
+
+    def test_make_binary_manifest_two_classes(self, manifest_path):
+        from cytokine_mil.experiment_setup import make_binary_manifest
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        filtered, label_enc = make_binary_manifest(manifest, "IL-2")
+        assert {e["cytokine"] for e in filtered} == {"IL-2", "PBS"}
+        assert label_enc.encode("IL-2") == 0
+        assert label_enc.encode("PBS") == 1
+        assert label_enc.n_classes() == 2
+
+    def test_build_encoder_and_mil_model(self):
+        from cytokine_mil.experiment_setup import build_encoder, build_mil_model
+        enc = build_encoder(n_input_genes=N_GENES, n_cell_types=len(CELL_TYPES))
+        model = build_mil_model(enc, n_classes=N_CLASSES)
+        X = torch.randn(50, N_GENES)
+        y_hat, a, H = model(X)
+        assert y_hat.shape == (N_CLASSES,)
+        assert a.shape == (50,)
+
+    def test_build_mil_model_binary(self):
+        from cytokine_mil.experiment_setup import build_encoder, build_mil_model
+        enc = build_encoder(n_input_genes=N_GENES, n_cell_types=len(CELL_TYPES))
+        model = build_mil_model(enc, n_classes=2)
+        y_hat, _, _ = model(torch.randn(50, N_GENES))
+        assert y_hat.shape == (2,)
+
+
+class TestBinaryLabel:
+    def test_encode_decode(self):
+        from cytokine_mil.data.label_encoder import BinaryLabel
+        enc = BinaryLabel(positive="IL-2", negative="PBS")
+        assert enc.encode("IL-2") == 0
+        assert enc.encode("PBS") == 1
+        assert enc.decode(0) == "IL-2"
+        assert enc.decode(1) == "PBS"
+
+    def test_n_classes(self):
+        from cytokine_mil.data.label_encoder import BinaryLabel
+        enc = BinaryLabel("IL-4")
+        assert enc.n_classes() == 2
+
+    def test_cytokines_property(self):
+        from cytokine_mil.data.label_encoder import BinaryLabel
+        enc = BinaryLabel("TNF", "PBS")
+        assert enc.cytokines == ["TNF", "PBS"]
+
+
 class TestValidation:
     def test_fdr_correction_shape(self):
         from cytokine_mil.analysis.validation import apply_fdr_correction

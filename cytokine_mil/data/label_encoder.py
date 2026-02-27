@@ -1,5 +1,8 @@
 """
-CytokineLabel: consistent cytokine -> integer mapping with PBS fixed at index 90.
+Label encoders for cytokine classification experiments.
+
+CytokineLabel — consistent multi-class mapping, PBS fixed at index 90.
+BinaryLabel   — two-class mapping for one-vs-control experiments.
 """
 
 import json
@@ -63,3 +66,33 @@ class CytokineLabel:
             encoder._label_to_idx = json.load(f)
         encoder._idx_to_label = {v: k for k, v in encoder._label_to_idx.items()}
         return encoder
+
+
+class BinaryLabel:
+    """
+    Two-class label encoder for one-vs-control experiments.
+
+    positive → 0, negative → 1 (typically: target_cytokine → 0, PBS → 1).
+    Shares the same interface as CytokineLabel so it can be passed to
+    PseudoTubeDataset and train_mil without modification.
+    n_classes() returns 2.
+    """
+
+    def __init__(self, positive: str, negative: str = "PBS") -> None:
+        self.positive = positive
+        self.negative = negative
+        self._label_to_idx: Dict[str, int] = {positive: 0, negative: 1}
+        self._idx_to_label: Dict[int, str] = {0: positive, 1: negative}
+
+    def encode(self, cytokine: str) -> int:
+        return self._label_to_idx[cytokine]
+
+    def decode(self, idx: int) -> str:
+        return self._idx_to_label[idx]
+
+    def n_classes(self) -> int:
+        return 2
+
+    @property
+    def cytokines(self) -> List[str]:
+        return [self.positive, self.negative]
