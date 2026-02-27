@@ -13,7 +13,7 @@ Creates a directory structure that mirrors the cluster data exactly:
 
 Spec:
   - 10 cytokines + PBS = 11 classes
-  - 2 donors
+  - 3 donors (Donor3 held out in val split tests)
   - 1 pseudo-tube per (donor, cytokine)
   - 5 cell types, 20 cells per cell type -> 100 cells per pseudo-tube
   - 200 simulated genes (log-normalised counts)
@@ -33,7 +33,7 @@ CYTOKINES = [
     "IL-2", "IL-4", "IL-6", "IL-10", "IL-12",
     "IL-15", "IFN-alpha", "IFN-gamma", "TNF", "TGF-beta",
 ]
-DONORS = ["Donor1", "Donor2"]
+DONORS = ["Donor1", "Donor2", "Donor3"]
 CELL_TYPES = ["CD4_T", "CD8_T", "NK", "CD14_Mono", "B_cell"]
 N_GENES = 200
 N_CELLS_PER_TYPE = 20

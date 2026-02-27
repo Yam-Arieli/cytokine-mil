@@ -35,6 +35,7 @@ def train_mil(
     device: Optional[torch.device] = None,
     seed: int = 42,
     verbose: bool = True,
+    val_dataset: Optional[PseudoTubeDataset] = None,
 ) -> Dict:
     """
     Train the CytokineABMIL model and record dynamics trajectories.
@@ -68,6 +69,12 @@ def train_mil(
                 H_confusion(C,t) = -sum_{k!=C} q_k(t) log q_k(t),
                 where q_k is the renormalized off-diagonal mean softmax score
                 across all pseudo-tubes of cytokine C at epoch t.
+            'val_records': list of per-tube dicts for held-out val donors, same
+                structure as 'records'. Empty list if val_dataset is None.
+            'val_confusion_entropy_trajectory': dict mapping cytokine_name ->
+                ndarray of shape (n_logged_epochs,), same computation as
+                confusion_entropy_trajectory but on val donors.
+                Empty dict if val_dataset is None.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -85,6 +92,10 @@ def train_mil(
     tube_trajectories: Dict[int, Dict] = _init_tube_trajectories(entries)
     cytokine_confusion_epochs: Dict[str, List[float]] = defaultdict(list)
 
+    val_entries = val_dataset.get_entries() if val_dataset is not None else []
+    val_tube_trajectories: Dict[int, Dict] = _init_tube_trajectories(val_entries)
+    val_cytokine_confusion_epochs: Dict[str, List[float]] = defaultdict(list)
+
     for epoch in range(1, n_epochs + 1):
         epoch_loss = _train_epoch(model, dataset, queues, optimizer, criterion, device, rng)
 
@@ -98,6 +109,11 @@ def train_mil(
                 model, dataset, entries, tube_trajectories,
                 cytokine_confusion_epochs, dataset.label_encoder, device,
             )
+            if val_dataset is not None:
+                _log_dynamics(
+                    model, val_dataset, val_entries, val_tube_trajectories,
+                    val_cytokine_confusion_epochs, val_dataset.label_encoder, device,
+                )
             logged_epochs.append(epoch)
 
         if verbose:
@@ -107,10 +123,16 @@ def train_mil(
     confusion_traj = {
         cyt: np.array(epochs) for cyt, epochs in cytokine_confusion_epochs.items()
     }
+    val_records = _build_records(val_entries, val_tube_trajectories)
+    val_confusion_traj = {
+        cyt: np.array(epochs) for cyt, epochs in val_cytokine_confusion_epochs.items()
+    }
     return {
         "logged_epochs": logged_epochs,
         "records": records,
         "confusion_entropy_trajectory": confusion_traj,
+        "val_records": val_records,
+        "val_confusion_entropy_trajectory": val_confusion_traj,
     }
 
 

@@ -7,11 +7,12 @@ reuse it without copy-pasting.
 
 Exported functions
 ------------------
-build_stage1_manifest  — select one tube per cytokine (rotating donors)
-filter_manifest        — keep only a subset of cytokines
-make_binary_manifest   — one-vs-control 2-class manifest + BinaryLabel
-build_encoder          — construct InstanceEncoder from dimension params
-build_mil_model        — wrap an encoder in a full CytokineABMIL pipeline
+build_stage1_manifest    — select one tube per cytokine (rotating donors)
+filter_manifest          — keep only a subset of cytokines
+make_binary_manifest     — one-vs-control 2-class manifest + BinaryLabel
+split_manifest_by_donor  — donor-level train/val split
+build_encoder            — construct InstanceEncoder from dimension params
+build_mil_model          — wrap an encoder in a full CytokineABMIL pipeline
 """
 
 import json
@@ -109,6 +110,31 @@ def make_binary_manifest(
     ]
     label_encoder = BinaryLabel(positive=target_cytokine, negative=control)
     return filtered, label_encoder
+
+
+def split_manifest_by_donor(
+    manifest: List[dict],
+    val_donors: List[str],
+) -> Tuple[List[dict], List[dict]]:
+    """
+    Split a manifest into train and val sets at the donor level.
+
+    Pseudo-tubes from the same donor are highly correlated (effective N = 12).
+    Holding out at the donor level is the only valid generalization test.
+    See CLAUDE.md Section 16 for scientific rationale and donor selection.
+
+    Args:
+        manifest: Full manifest list.
+        val_donors: Donor names to hold out (e.g., ["Donor2", "Donor3"]).
+    Returns:
+        (train_manifest, val_manifest) where val_manifest contains all
+        entries whose donor is in val_donors, and train_manifest contains
+        the rest. Both retain the full set of cytokines.
+    """
+    val_set = set(val_donors)
+    train_manifest = [e for e in manifest if e["donor"] not in val_set]
+    val_manifest = [e for e in manifest if e["donor"] in val_set]
+    return train_manifest, val_manifest
 
 
 def build_encoder(

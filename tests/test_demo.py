@@ -476,6 +476,74 @@ class TestExperimentSetup:
         assert y_hat.shape == (2,)
 
 
+class TestDonorValidationSplit:
+    """Tests for split_manifest_by_donor and train_mil val_dataset integration."""
+
+    def test_split_counts(self, manifest_path):
+        from cytokine_mil.experiment_setup import split_manifest_by_donor
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        train_m, val_m = split_manifest_by_donor(manifest, val_donors=["Donor3"])
+        assert all(e["donor"] != "Donor3" for e in train_m)
+        assert all(e["donor"] == "Donor3" for e in val_m)
+        assert len(train_m) + len(val_m) == len(manifest)
+
+    def test_split_preserves_cytokines(self, manifest_path):
+        from cytokine_mil.experiment_setup import split_manifest_by_donor
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        train_m, val_m = split_manifest_by_donor(manifest, val_donors=["Donor3"])
+        assert {e["cytokine"] for e in train_m} == {e["cytokine"] for e in manifest}
+        assert {e["cytokine"] for e in val_m} == {e["cytokine"] for e in manifest}
+
+    def test_train_mil_with_val_dataset_returns_val_records(
+        self, demo_dir, manifest_path, label_encoder
+    ):
+        from cytokine_mil.data.dataset import PseudoTubeDataset
+        from cytokine_mil.experiment_setup import split_manifest_by_donor
+        from cytokine_mil.training.train_mil import train_mil
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        train_m, val_m = split_manifest_by_donor(manifest, val_donors=["Donor3"])
+
+        import tempfile, json as _json
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as tf:
+            _json.dump(train_m, tf)
+            train_path = tf.name
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as tf:
+            _json.dump(val_m, tf)
+            val_path = tf.name
+
+        train_dataset = PseudoTubeDataset(train_path, label_encoder)
+        val_dataset = PseudoTubeDataset(val_path, label_encoder)
+        model = _make_fresh_mil_model()
+        dynamics = train_mil(
+            model, train_dataset, n_epochs=2, log_every_n_epochs=1,
+            verbose=False, seed=42, val_dataset=val_dataset,
+        )
+        assert "val_records" in dynamics
+        assert "val_confusion_entropy_trajectory" in dynamics
+        assert len(dynamics["val_records"]) == len(val_m)
+        for rec in dynamics["val_records"]:
+            assert "p_correct_trajectory" in rec
+            assert "entropy_trajectory" in rec
+            assert len(rec["p_correct_trajectory"]) == len(dynamics["logged_epochs"])
+
+    def test_train_mil_without_val_dataset_returns_empty(self, dataset):
+        from cytokine_mil.training.train_mil import train_mil
+        model = _make_fresh_mil_model()
+        dynamics = train_mil(
+            model, dataset, n_epochs=1, log_every_n_epochs=1,
+            verbose=False, seed=42,
+        )
+        assert dynamics["val_records"] == []
+        assert dynamics["val_confusion_entropy_trajectory"] == {}
+
+
 class TestBinaryLabel:
     def test_encode_decode(self):
         from cytokine_mil.data.label_encoder import BinaryLabel
