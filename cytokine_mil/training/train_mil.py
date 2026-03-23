@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from cytokine_mil.data.dataset import PseudoTubeDataset
 from cytokine_mil.models.cytokine_abmil import CytokineABMIL
+from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
 from cytokine_mil.training.trainer import (
     build_cytokine_queues,
     generate_epoch_megabatches,
@@ -24,7 +25,7 @@ from cytokine_mil.training.trainer import (
 
 
 def train_mil(
-    model: CytokineABMIL,
+    model,
     dataset: PseudoTubeDataset,
     n_epochs: int,
     lr: float = 0.01,
@@ -141,7 +142,7 @@ def train_mil(
 # ---------------------------------------------------------------------------
 
 def _build_optimizer(
-    model: CytokineABMIL, lr: float, momentum: float
+    model, lr: float, momentum: float
 ) -> torch.optim.SGD:
     return torch.optim.SGD(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -164,7 +165,7 @@ def _apply_warmup(optimizer, base_lr: float, epoch: int, warmup_epochs: int) -> 
 
 
 def _train_epoch(
-    model: CytokineABMIL,
+    model,
     dataset: PseudoTubeDataset,
     queues: Dict[int, List[int]],
     optimizer: torch.optim.Optimizer,
@@ -176,6 +177,7 @@ def _train_epoch(
     model.train()
     megabatches = generate_epoch_megabatches(queues, rng)
     total_loss = 0.0
+    is_v2 = isinstance(model, CytokineABMIL_V2)
 
     for mb_indices in tqdm(megabatches, leave=False):
         optimizer.zero_grad()
@@ -187,7 +189,10 @@ def _train_epoch(
             X = X.to(device)
             label_t = torch.tensor([label], dtype=torch.long, device=device)
 
-            y_hat, _a, _H = model(X)
+            if is_v2:
+                y_hat, _a_SA, _a_CA, _H = model(X)
+            else:
+                y_hat, _a, _H = model(X)
             loss = criterion(y_hat.unsqueeze(0), label_t) / n
             loss.backward()
             mb_loss += loss.item()
@@ -205,6 +210,9 @@ def _init_tube_trajectories(entries: List[dict]) -> Dict[int, Dict]:
             "p_correct": [],
             "entropy": [],
             "instance_confidence_epochs": [],
+            # v2-only: per-epoch SA and CA confidence vectors; empty unless v2 model.
+            "instance_confidence_sa_epochs": [],
+            "instance_confidence_ca_epochs": [],
             "softmax_epochs": [],
         }
         for i in range(len(entries))
@@ -213,7 +221,7 @@ def _init_tube_trajectories(entries: List[dict]) -> Dict[int, Dict]:
 
 @torch.no_grad()
 def _log_dynamics(
-    model: CytokineABMIL,
+    model,
     dataset: PseudoTubeDataset,
     entries: List[dict],
     tube_trajectories: Dict[int, Dict],
@@ -226,9 +234,13 @@ def _log_dynamics(
 
     Per tube (inside loop):
       - p_correct_trajectory: softmax probability of the correct class
-      - entropy_trajectory: H = -sum(a_i * log(a_i)) over attention weights
+      - entropy_trajectory: H = -sum(a_i * log(a_i)) over SA attention weights
       - instance_confidence_trajectory: C_i = a_i * p_correct per cell
       - softmax_epochs (internal): full K-dim softmax, used for confusion entropy
+
+    For CytokineABMIL_V2 additionally:
+      - instance_confidence_sa_epochs: C_SA_i = a_SA_i * p_correct per cell
+      - instance_confidence_ca_epochs: C_CA_i = a_CA_i * p_correct per cell
 
     Per cytokine (after loop):
       - confusion_entropy_trajectory: H_confusion computed from mean off-diagonal
@@ -237,22 +249,37 @@ def _log_dynamics(
     Runs in eval mode with no_grad to avoid memory accumulation.
     """
     model.eval()
+    is_v2 = isinstance(model, CytokineABMIL_V2)
+
     for idx, entry in enumerate(entries):
         X, label, _donor, _cyt_name = dataset[idx]
         X = X.to(device)
 
-        y_hat, a, _H = model(X)
-        probs = F.softmax(y_hat, dim=0)
-        p_correct = probs[label].item()
-
-        entropy = _compute_entropy(a)
-        instance_conf = (a * p_correct).cpu().numpy()
+        if is_v2:
+            y_hat, a_SA, a_CA, _H = model(X)
+            # Entropy and primary instance confidence computed from SA layer.
+            entropy = _compute_entropy(a_SA)
+            p_correct = F.softmax(y_hat, dim=0)[label].item()
+            probs = F.softmax(y_hat, dim=0)
+            instance_conf = (a_SA * p_correct).cpu().numpy()
+            instance_conf_sa = instance_conf  # same as above; explicit for clarity
+            instance_conf_ca = (a_CA * p_correct).cpu().numpy()
+        else:
+            y_hat, a, _H = model(X)
+            probs = F.softmax(y_hat, dim=0)
+            p_correct = probs[label].item()
+            entropy = _compute_entropy(a)
+            instance_conf = (a * p_correct).cpu().numpy()
 
         traj = tube_trajectories[idx]
         traj["p_correct"].append(p_correct)
         traj["entropy"].append(entropy)
         traj["instance_confidence_epochs"].append(instance_conf)
         traj["softmax_epochs"].append(probs.cpu().numpy())
+
+        if is_v2:
+            traj["instance_confidence_sa_epochs"].append(instance_conf_sa)
+            traj["instance_confidence_ca_epochs"].append(instance_conf_ca)
 
     _compute_confusion_entropy_snapshot(
         entries, tube_trajectories, label_encoder, cytokine_confusion_epochs
@@ -321,6 +348,12 @@ def _build_records(
         else:
             ic_trajectory = None
 
+        # v2-only SA/CA trajectories — present only when the model is CytokineABMIL_V2.
+        ic_sa_epochs = traj.get("instance_confidence_sa_epochs", [])
+        ic_ca_epochs = traj.get("instance_confidence_ca_epochs", [])
+        ic_sa_trajectory = np.stack(ic_sa_epochs, axis=0).T if ic_sa_epochs else None
+        ic_ca_trajectory = np.stack(ic_ca_epochs, axis=0).T if ic_ca_epochs else None
+
         records.append(
             {
                 "cytokine": entry["cytokine"],
@@ -334,6 +367,9 @@ def _build_records(
                 # C_i(t) = a_i(t) * P(t)(Y_correct).
                 # Do not collapse — aggregation happens in analysis layer.
                 "instance_confidence_trajectory": ic_trajectory,
+                # v2 model: SA and CA layer trajectories. None for v1 model.
+                "confidence_trajectory_sa": ic_sa_trajectory,
+                "confidence_trajectory_ca": ic_ca_trajectory,
             }
         )
     return records

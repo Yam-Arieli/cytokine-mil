@@ -12,7 +12,7 @@ includes a 'metric_description' key stating exactly what was computed.
 """
 
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -40,18 +40,32 @@ def compute_entropy(attention_weights: torch.Tensor) -> float:
 
 
 def compute_instance_confidence(
-    attention: torch.Tensor, p_correct: float
-) -> torch.Tensor:
+    attention: torch.Tensor,
+    p_correct: float,
+    attention_ca: Optional[torch.Tensor] = None,
+) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """
     Instance-level confidence: C_i(t) = a_i(t) * P(t)(Y_correct).
 
+    When attention_ca is None (default, v1 model):
+        Returns (N,) per-cell confidence values: attention * p_correct.
+
+    When attention_ca is provided (v2 model):
+        Returns a tuple (C_SA, C_CA) where:
+            C_SA: (N,) attention * p_correct  (SA layer confidence)
+            C_CA: (N,) attention_ca * p_correct  (CA layer confidence)
+
     Args:
-        attention: (N,) attention weights.
-        p_correct: bag-level correct class probability.
+        attention:    (N,) SA attention weights (or only attention weights for v1).
+        p_correct:    bag-level correct class probability.
+        attention_ca: (N,) CA attention weights, or None for v1 model.
     Returns:
-        (N,) per-cell confidence values.
+        (N,) tensor when attention_ca is None.
+        Tuple of two (N,) tensors when attention_ca is provided.
     """
-    return attention * p_correct
+    if attention_ca is None:
+        return attention * p_correct
+    return (attention * p_correct, attention_ca * p_correct)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +267,92 @@ def compute_confusion_entropy_summary(
 # ---------------------------------------------------------------------------
 # Instance confidence: cell-type cascade profiles
 # ---------------------------------------------------------------------------
+
+def compute_celltype_confidence_trajectories(
+    records: List[Dict],
+    cell_type_obs: Dict[str, np.ndarray],
+    cytokine_name: str,
+) -> Dict[str, np.ndarray]:
+    """
+    Compute mean C_i(t) per cell type over training epochs for one cytokine.
+
+    Cell type labels are re-introduced post-hoc for cascade analysis only —
+    they were never seen by the model during training.
+
+    Aggregation:
+      1. Per tube: mean C_i(t) across cells of each type -> (n_logged_epochs,).
+      2. Per donor: median across pseudo-tubes of that donor -> (n_logged_epochs,).
+      3. Across donors: mean -> (n_logged_epochs,).
+
+    Metric: mean C_i(t) = a_i(t) * P(t)(Y_correct), grouped by cell type,
+    aggregated to donor level (median per donor, then mean across donors).
+
+    Args:
+        records: List of per-tube dicts from train_mil() output. Each record must
+            contain 'instance_confidence_trajectory': (n_cells, n_logged_epochs),
+            'cytokine', 'donor', and 'tube_path'.
+        cell_type_obs: dict mapping tube_path -> (N,) array of cell type strings.
+            Loaded post-hoc from the original .h5ad files.
+        cytokine_name: cytokine to compute trajectories for.
+    Returns:
+        dict: {cell_type -> np.array(n_logged_epochs)} — donor-aggregated mean
+            confidence trajectory per cell type. Empty dict if cytokine not found
+            or no cell type labels available.
+    """
+    cyt_records = [r for r in records if r["cytokine"] == cytokine_name]
+    if not cyt_records:
+        return {}
+
+    # {cell_type -> {donor -> [per-tube mean trajectory, ...]}}
+    raw: Dict[str, Dict[str, List[np.ndarray]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for rec in cyt_records:
+        conf = rec.get("instance_confidence_trajectory")
+        if conf is None:
+            continue
+        ct_labels = cell_type_obs.get(rec["tube_path"])
+        if ct_labels is None:
+            continue
+        for ct in np.unique(ct_labels):
+            mask = ct_labels == ct
+            mean_traj = conf[mask].mean(axis=0)  # (n_logged_epochs,)
+            raw[str(ct)][rec["donor"]].append(mean_traj)
+
+    result: Dict[str, np.ndarray] = {}
+    for ct, donors in raw.items():
+        donor_trajs = []
+        for _donor, trajs in donors.items():
+            donor_traj = np.median(np.stack(trajs), axis=0)  # (n_logged_epochs,)
+            donor_trajs.append(donor_traj)
+        result[ct] = np.mean(np.stack(donor_trajs), axis=0)  # (n_logged_epochs,)
+    return result
+
+
+def compute_celltype_activation_epoch(
+    celltype_confidence_curves: Dict[str, np.ndarray],
+    threshold: float = 0.1,
+) -> Dict[str, Optional[int]]:
+    """
+    Find the first epoch index where each cell type's mean confidence crosses a threshold.
+
+    This is the cascade ordering signal: earlier activation epoch -> primary responder;
+    later activation -> secondary relay; None -> no detectable activation within training.
+
+    Args:
+        celltype_confidence_curves: {cell_type -> np.array(n_epochs)} — output of
+            compute_celltype_confidence_trajectories().
+        threshold: confidence threshold. Default 0.1 (10% of max possible C_i(t)=1).
+    Returns:
+        dict: {cell_type -> int epoch_index} where epoch_index is the first index in
+            the trajectory array where the value >= threshold, or None if never crossed.
+    """
+    result: Dict[str, Optional[int]] = {}
+    for ct, traj in celltype_confidence_curves.items():
+        indices = np.where(np.asarray(traj) >= threshold)[0]
+        result[ct] = int(indices[0]) if len(indices) > 0 else None
+    return result
+
 
 def build_cell_type_confidence_matrix(
     records: List[Dict],

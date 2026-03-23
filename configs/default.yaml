@@ -9,6 +9,7 @@ model:
   embedding_dim: 128
   attention_hidden_dim: 64
   n_classes: 91                 # 90 cytokines + PBS
+  use_two_layer_attention: false
 
 training:
   stage1_epochs: 50             # encoder pre-training

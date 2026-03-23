@@ -544,6 +544,44 @@ class TestDonorValidationSplit:
         assert dynamics["val_confusion_entropy_trajectory"] == {}
 
 
+class TestCytokineABMIL_V2:
+    def test_cytokine_abmil_v2_forward_shapes(self):
+        from cytokine_mil.models.instance_encoder import InstanceEncoder
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
+        enc = InstanceEncoder(input_dim=N_GENES, embed_dim=128, n_cell_types=len(CELL_TYPES))
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        model = CytokineABMIL_V2(enc, attn, n_classes=N_CLASSES, embed_dim=128, encoder_frozen=True)
+        N = len(CELL_TYPES) * N_CELLS_PER_TYPE
+        X = torch.randn(N, N_GENES)
+        y_hat, a_SA, a_CA, H = model(X)
+        assert y_hat.shape == (N_CLASSES,), f"Expected ({N_CLASSES},), got {y_hat.shape}"
+        assert a_SA.shape == (N,), f"Expected ({N},), got {a_SA.shape}"
+        assert a_CA.shape == (N,), f"Expected ({N},), got {a_CA.shape}"
+        assert H.shape == (N, 128), f"Expected ({N}, 128), got {H.shape}"
+
+    def test_cytokine_abmil_v2_attention_sum_to_one(self):
+        from cytokine_mil.models.instance_encoder import InstanceEncoder
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
+        enc = InstanceEncoder(input_dim=N_GENES, embed_dim=128, n_cell_types=len(CELL_TYPES))
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        model = CytokineABMIL_V2(enc, attn, n_classes=N_CLASSES, embed_dim=128, encoder_frozen=True)
+        X = torch.randn(100, N_GENES)
+        _y_hat, a_SA, a_CA, _H = model(X)
+        assert abs(a_SA.sum().item() - 1.0) < 1e-5, f"a_SA sums to {a_SA.sum().item()}"
+        assert abs(a_CA.sum().item() - 1.0) < 1e-5, f"a_CA sums to {a_CA.sum().item()}"
+
+    def test_two_layer_attention_no_shared_weights(self):
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        # SA and CA parameter sets must be distinct objects (no shared weights).
+        assert attn.V_sa is not attn.V_ca
+        assert attn.w_sa is not attn.w_ca
+        assert attn.V_sa.weight.data_ptr() != attn.V_ca.weight.data_ptr()
+        assert attn.w_sa.weight.data_ptr() != attn.w_ca.weight.data_ptr()
+
+
 class TestBinaryLabel:
     def test_encode_decode(self):
         from cytokine_mil.data.label_encoder import BinaryLabel
@@ -562,6 +600,157 @@ class TestBinaryLabel:
         from cytokine_mil.data.label_encoder import BinaryLabel
         enc = BinaryLabel("TNF", "PBS")
         assert enc.cytokines == ["TNF", "PBS"]
+
+
+class TestCellTypeConfidenceAnalysis:
+    """
+    Tests for compute_celltype_confidence_trajectories and compute_celltype_activation_epoch.
+
+    Cell type labels are re-introduced post-hoc from the .h5ad files; they are never
+    part of the records from train_mil().
+    """
+
+    @pytest.fixture(scope="class")
+    def dynamics_with_cell_type_obs(self, dataset, demo_dir):
+        import anndata as ad
+        from cytokine_mil.training.train_mil import train_mil
+
+        model = _make_fresh_mil_model()
+        dynamics = train_mil(
+            model, dataset, n_epochs=2, log_every_n_epochs=1, verbose=False, seed=42
+        )
+
+        # Build cell_type_obs post-hoc from the .h5ad files
+        cell_type_obs = {}
+        for rec in dynamics["records"]:
+            path = rec["tube_path"]
+            if path not in cell_type_obs:
+                adata = ad.read_h5ad(path)
+                cell_type_obs[path] = adata.obs["cell_type"].values
+
+        return dynamics, cell_type_obs
+
+    # --- compute_celltype_confidence_trajectories ---
+
+    def test_returns_dict_of_cell_types(self, dynamics_with_cell_type_obs):
+        from cytokine_mil.analysis.dynamics import compute_celltype_confidence_trajectories
+        dynamics, cell_type_obs = dynamics_with_cell_type_obs
+        ct_curves = compute_celltype_confidence_trajectories(
+            dynamics["records"], cell_type_obs, CYTOKINES[0]
+        )
+        assert isinstance(ct_curves, dict)
+        assert set(ct_curves.keys()) == set(CELL_TYPES)
+
+    def test_trajectory_shape_matches_logged_epochs(self, dynamics_with_cell_type_obs):
+        from cytokine_mil.analysis.dynamics import compute_celltype_confidence_trajectories
+        dynamics, cell_type_obs = dynamics_with_cell_type_obs
+        n_logged = len(dynamics["logged_epochs"])
+        ct_curves = compute_celltype_confidence_trajectories(
+            dynamics["records"], cell_type_obs, CYTOKINES[0]
+        )
+        for ct, traj in ct_curves.items():
+            assert isinstance(traj, np.ndarray)
+            assert traj.shape == (n_logged,), (
+                f"Expected ({n_logged},), got {traj.shape} for {ct}"
+            )
+
+    def test_trajectories_are_non_negative(self, dynamics_with_cell_type_obs):
+        from cytokine_mil.analysis.dynamics import compute_celltype_confidence_trajectories
+        dynamics, cell_type_obs = dynamics_with_cell_type_obs
+        ct_curves = compute_celltype_confidence_trajectories(
+            dynamics["records"], cell_type_obs, CYTOKINES[0]
+        )
+        for ct, traj in ct_curves.items():
+            assert (traj >= 0).all(), f"Negative confidence values for {ct}"
+
+    def test_covers_all_cytokines(self, dynamics_with_cell_type_obs):
+        from cytokine_mil.analysis.dynamics import compute_celltype_confidence_trajectories
+        dynamics, cell_type_obs = dynamics_with_cell_type_obs
+        for cyt in CYTOKINES:
+            ct_curves = compute_celltype_confidence_trajectories(
+                dynamics["records"], cell_type_obs, cyt
+            )
+            assert len(ct_curves) > 0, f"No cell type data for {cyt}"
+
+    def test_empty_for_unknown_cytokine(self, dynamics_with_cell_type_obs):
+        from cytokine_mil.analysis.dynamics import compute_celltype_confidence_trajectories
+        dynamics, cell_type_obs = dynamics_with_cell_type_obs
+        ct_curves = compute_celltype_confidence_trajectories(
+            dynamics["records"], cell_type_obs, "NONEXISTENT_CYTOKINE"
+        )
+        assert ct_curves == {}
+
+    def test_empty_when_no_cell_type_obs(self, dynamics_with_cell_type_obs):
+        from cytokine_mil.analysis.dynamics import compute_celltype_confidence_trajectories
+        dynamics, _ = dynamics_with_cell_type_obs
+        ct_curves = compute_celltype_confidence_trajectories(
+            dynamics["records"], {}, CYTOKINES[0]
+        )
+        assert ct_curves == {}
+
+    # --- compute_celltype_activation_epoch ---
+
+    def test_activation_epoch_returns_dict(self):
+        from cytokine_mil.analysis.dynamics import compute_celltype_activation_epoch
+        curves = {
+            "CD4_T": np.array([0.05, 0.08, 0.12, 0.15]),
+            "NK":    np.array([0.02, 0.03, 0.04, 0.05]),
+        }
+        result = compute_celltype_activation_epoch(curves, threshold=0.1)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {"CD4_T", "NK"}
+
+    def test_activation_epoch_correct_index(self):
+        from cytokine_mil.analysis.dynamics import compute_celltype_activation_epoch
+        curves = {
+            "CD4_T": np.array([0.05, 0.08, 0.12, 0.15]),
+            "NK":    np.array([0.02, 0.03, 0.04, 0.05]),
+        }
+        result = compute_celltype_activation_epoch(curves, threshold=0.1)
+        assert result["CD4_T"] == 2    # first index >= 0.1
+        assert result["NK"] is None    # never crosses 0.1
+
+    def test_activation_epoch_first_epoch(self):
+        from cytokine_mil.analysis.dynamics import compute_celltype_activation_epoch
+        curves = {"A": np.array([0.5, 0.6, 0.7])}
+        result = compute_celltype_activation_epoch(curves, threshold=0.1)
+        assert result["A"] == 0        # crosses from the very first epoch
+
+    def test_activation_epoch_boundary_inclusive(self):
+        from cytokine_mil.analysis.dynamics import compute_celltype_activation_epoch
+        curves = {"A": np.array([0.09, 0.10, 0.11])}
+        result = compute_celltype_activation_epoch(curves, threshold=0.1)
+        assert result["A"] == 1        # exactly at threshold counts
+
+    def test_activation_epoch_all_none(self):
+        from cytokine_mil.analysis.dynamics import compute_celltype_activation_epoch
+        curves = {"A": np.array([0.01, 0.02, 0.03]), "B": np.array([0.0, 0.0, 0.0])}
+        result = compute_celltype_activation_epoch(curves, threshold=0.5)
+        assert result["A"] is None
+        assert result["B"] is None
+
+    def test_activation_epoch_empty_input(self):
+        from cytokine_mil.analysis.dynamics import compute_celltype_activation_epoch
+        result = compute_celltype_activation_epoch({}, threshold=0.1)
+        assert result == {}
+
+    def test_activation_ordering_integrates_with_trajectories(
+        self, dynamics_with_cell_type_obs
+    ):
+        """End-to-end: trajectory -> activation ordering produces plausible results."""
+        from cytokine_mil.analysis.dynamics import (
+            compute_celltype_confidence_trajectories,
+            compute_celltype_activation_epoch,
+        )
+        dynamics, cell_type_obs = dynamics_with_cell_type_obs
+        ct_curves = compute_celltype_confidence_trajectories(
+            dynamics["records"], cell_type_obs, CYTOKINES[0]
+        )
+        activation = compute_celltype_activation_epoch(ct_curves, threshold=0.0)
+        # With threshold=0.0 all cell types that have any confidence should activate
+        for ct in ct_curves:
+            # Every cell type activates at epoch 0 since all values >= 0 and init > 0
+            assert activation[ct] is not None or ct_curves[ct].max() == 0.0
 
 
 class TestValidation:
