@@ -209,6 +209,7 @@ def _init_tube_trajectories(entries: List[dict]) -> Dict[int, Dict]:
         i: {
             "p_correct": [],
             "entropy": [],
+            "entropy_ca": [],  # v2-only: CA attention entropy
             "instance_confidence_epochs": [],
             # v2-only: per-epoch SA and CA confidence vectors; empty unless v2 model.
             "instance_confidence_sa_epochs": [],
@@ -257,10 +258,11 @@ def _log_dynamics(
 
         if is_v2:
             y_hat, a_SA, a_CA, _H = model(X)
-            # Entropy and primary instance confidence computed from SA layer.
-            entropy = _compute_entropy(a_SA)
-            p_correct = F.softmax(y_hat, dim=0)[label].item()
             probs = F.softmax(y_hat, dim=0)
+            p_correct = probs[label].item()
+            # SA entropy and CA entropy tracked independently.
+            entropy = _compute_entropy(a_SA)
+            entropy_ca = _compute_entropy(a_CA)
             instance_conf = (a_SA * p_correct).cpu().numpy()
             instance_conf_sa = instance_conf  # same as above; explicit for clarity
             instance_conf_ca = (a_CA * p_correct).cpu().numpy()
@@ -278,6 +280,7 @@ def _log_dynamics(
         traj["softmax_epochs"].append(probs.cpu().numpy())
 
         if is_v2:
+            traj["entropy_ca"].append(entropy_ca)
             traj["instance_confidence_sa_epochs"].append(instance_conf_sa)
             traj["instance_confidence_ca_epochs"].append(instance_conf_ca)
 
@@ -363,6 +366,8 @@ def _build_records(
                 "n_cells": entry["n_cells"],
                 "p_correct_trajectory": traj["p_correct"],
                 "entropy_trajectory": traj["entropy"],
+                # v2 model: CA attention entropy trajectory. None for v1 model.
+                "entropy_trajectory_ca": traj["entropy_ca"] if traj["entropy_ca"] else None,
                 # Full trajectory: shape (n_cells, n_logged_epochs).
                 # C_i(t) = a_i(t) * P(t)(Y_correct).
                 # Do not collapse — aggregation happens in analysis layer.
