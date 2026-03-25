@@ -581,6 +581,112 @@ class TestCytokineABMIL_V2:
         assert attn.V_sa.weight.data_ptr() != attn.V_ca.weight.data_ptr()
         assert attn.w_sa.weight.data_ptr() != attn.w_ca.weight.data_ptr()
 
+    def test_forward_with_aux_shapes(self):
+        from cytokine_mil.models.instance_encoder import InstanceEncoder
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
+        enc = InstanceEncoder(input_dim=N_GENES, embed_dim=128, n_cell_types=len(CELL_TYPES))
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        model = CytokineABMIL_V2(enc, attn, n_classes=N_CLASSES, embed_dim=128, encoder_frozen=True)
+        N = len(CELL_TYPES) * N_CELLS_PER_TYPE
+        X = torch.randn(N, N_GENES)
+        out = model.forward_with_aux(X)
+        assert len(out) == 6, f"forward_with_aux should return 6-tuple, got {len(out)}"
+        y_hat, a_SA, a_CA, H, y_hat_sa, y_hat_ca = out
+        assert y_hat.shape == (N_CLASSES,), f"y_hat: {y_hat.shape}"
+        assert a_SA.shape == (N,), f"a_SA: {a_SA.shape}"
+        assert a_CA.shape == (N,), f"a_CA: {a_CA.shape}"
+        assert H.shape == (N, 128), f"H: {H.shape}"
+        assert y_hat_sa.shape == (N_CLASSES,), f"y_hat_sa: {y_hat_sa.shape}"
+        assert y_hat_ca.shape == (N_CLASSES,), f"y_hat_ca: {y_hat_ca.shape}"
+
+    def test_forward_unchanged_4tuple(self):
+        from cytokine_mil.models.instance_encoder import InstanceEncoder
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
+        enc = InstanceEncoder(input_dim=N_GENES, embed_dim=128, n_cell_types=len(CELL_TYPES))
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        model = CytokineABMIL_V2(enc, attn, n_classes=N_CLASSES, embed_dim=128, encoder_frozen=True)
+        X = torch.randn(50, N_GENES)
+        out = model(X)
+        assert len(out) == 4, f"forward() should return 4-tuple, got {len(out)}"
+
+    def test_aux_heads_independent(self):
+        from cytokine_mil.models.instance_encoder import InstanceEncoder
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
+        enc = InstanceEncoder(input_dim=N_GENES, embed_dim=128, n_cell_types=len(CELL_TYPES))
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        model = CytokineABMIL_V2(enc, attn, n_classes=N_CLASSES, embed_dim=128, encoder_frozen=True)
+        assert model.sa_head is not model.ca_head
+        assert model.sa_head.weight.data_ptr() != model.ca_head.weight.data_ptr()
+
+
+class TestKLRegularization:
+    """Tests for KL divergence regularization in v2 training."""
+
+    def _make_v2_model(self):
+        from cytokine_mil.models.instance_encoder import InstanceEncoder
+        from cytokine_mil.models.two_layer_attention import TwoLayerAttentionModule
+        from cytokine_mil.models.cytokine_abmil_v2 import CytokineABMIL_V2
+        enc = InstanceEncoder(input_dim=N_GENES, embed_dim=128, n_cell_types=len(CELL_TYPES))
+        attn = TwoLayerAttentionModule(embed_dim=128, attention_hidden_dim=64)
+        return CytokineABMIL_V2(enc, attn, n_classes=N_CLASSES, embed_dim=128, encoder_frozen=True)
+
+    def test_kl_nonnegative(self):
+        import torch.nn.functional as F
+        # KL divergence is always >= 0.
+        a_SA = torch.softmax(torch.randn(100), dim=0)
+        a_CA = torch.softmax(torch.randn(100), dim=0)
+        kl = F.kl_div((a_SA + 1e-8).log(), a_CA, reduction="batchmean")
+        assert kl.item() >= -1e-6, f"KL should be non-negative, got {kl.item()}"
+
+    def test_kl_zero_when_identical(self):
+        import torch.nn.functional as F
+        # When a_CA == a_SA, KL(a_CA || a_SA) should be ~ 0.
+        a = torch.softmax(torch.randn(100), dim=0)
+        kl = F.kl_div((a + 1e-8).log(), a, reduction="batchmean")
+        assert abs(kl.item()) < 1e-4, f"KL(a || a) should be ~0, got {kl.item()}"
+
+    def test_train_mil_v2_with_kl_runs(self, demo_dir, label_encoder):
+        from cytokine_mil.data.dataset import PseudoTubeDataset
+        from cytokine_mil.training.train_mil import train_mil
+        manifest_path = str(Path(demo_dir) / "manifest.json")
+        dataset = PseudoTubeDataset(manifest_path, label_encoder)
+        model = self._make_v2_model()
+        dynamics = train_mil(
+            model, dataset, n_epochs=2,
+            kl_lambda=0.1, aux_loss_weight=0.5,
+            log_every_n_epochs=1,
+            verbose=False,
+        )
+        assert "loss_components" in dynamics
+        lc = dynamics["loss_components"]
+        assert len(lc["total"]) == 2
+
+    def test_loss_components_logged(self, demo_dir, label_encoder):
+        from cytokine_mil.data.dataset import PseudoTubeDataset
+        from cytokine_mil.training.train_mil import train_mil
+        manifest_path = str(Path(demo_dir) / "manifest.json")
+        dataset = PseudoTubeDataset(manifest_path, label_encoder)
+        model = self._make_v2_model()
+        n_epochs = 3
+        dynamics = train_mil(
+            model, dataset, n_epochs=n_epochs,
+            kl_lambda=0.1, aux_loss_weight=0.5,
+            log_every_n_epochs=1,
+            verbose=False,
+        )
+        lc = dynamics["loss_components"]
+        for key in ("total", "main", "sa_aux", "ca_aux", "kl"):
+            assert key in lc, f"Missing loss component: {key}"
+            assert len(lc[key]) == n_epochs, (
+                f"Expected {n_epochs} entries for '{key}', got {len(lc[key])}"
+            )
+        # KL should be non-negative at every epoch.
+        for val in lc["kl"]:
+            assert val >= -1e-6, f"KL component negative: {val}"
+
 
 class TestBinaryLabel:
     def test_encode_decode(self):

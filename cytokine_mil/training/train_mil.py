@@ -37,6 +37,8 @@ def train_mil(
     seed: int = 42,
     verbose: bool = True,
     val_dataset: Optional[PseudoTubeDataset] = None,
+    kl_lambda: float = 0.0,
+    aux_loss_weight: float = 0.0,
 ) -> Dict:
     """
     Train the CytokineABMIL model and record dynamics trajectories.
@@ -58,6 +60,9 @@ def train_mil(
         device: Target device.
         seed: RNG seed for reproducible mega-batch sampling.
         verbose: Print per-epoch loss.
+        val_dataset: Optional held-out donor dataset for validation logging.
+        kl_lambda: Weight for KL(a_CA || a_SA) regularization term (v2 only).
+        aux_loss_weight: Weight for auxiliary SA and CA classification losses (v2 only).
     Returns:
         dynamics: dict with keys:
             'logged_epochs': list of epoch indices where dynamics were recorded.
@@ -76,6 +81,12 @@ def train_mil(
                 ndarray of shape (n_logged_epochs,), same computation as
                 confusion_entropy_trajectory but on val donors.
                 Empty dict if val_dataset is None.
+            'loss_components': dict with per-epoch loss component lists:
+                'total': total loss per epoch (all models).
+                'main': combined-head classification loss (v2 only, else []).
+                'sa_aux': SA auxiliary classification loss (v2 only, else []).
+                'ca_aux': CA auxiliary classification loss (v2 only, else []).
+                'kl': KL(a_CA || a_SA) loss (v2 only, else []).
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,8 +108,20 @@ def train_mil(
     val_tube_trajectories: Dict[int, Dict] = _init_tube_trajectories(val_entries)
     val_cytokine_confusion_epochs: Dict[str, List[float]] = defaultdict(list)
 
+    loss_components: Dict[str, List[float]] = {
+        "total": [], "main": [], "sa_aux": [], "ca_aux": [], "kl": []
+    }
+
     for epoch in range(1, n_epochs + 1):
-        epoch_loss = _train_epoch(model, dataset, queues, optimizer, criterion, device, rng)
+        epoch_loss_dict = _train_epoch(
+            model, dataset, queues, optimizer, criterion, device, rng,
+            kl_lambda=kl_lambda, aux_loss_weight=aux_loss_weight,
+        )
+        epoch_loss = epoch_loss_dict["total"]
+        loss_components["total"].append(epoch_loss)
+        for key in ("main", "sa_aux", "ca_aux", "kl"):
+            if key in epoch_loss_dict:
+                loss_components[key].append(epoch_loss_dict[key])
 
         if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
             _apply_warmup(optimizer, lr, epoch, lr_warmup_epochs)
@@ -118,7 +141,12 @@ def train_mil(
             logged_epochs.append(epoch)
 
         if verbose:
-            print(f"[Stage 2/3] Epoch {epoch:3d}/{n_epochs} | loss={epoch_loss:.4f}")
+            print(f"[Stage 2/3] Epoch {epoch:3d}/{n_epochs} | loss={epoch_loss:.4f}"
+                  + (f" | main={epoch_loss_dict['main']:.4f}"
+                     f" sa={epoch_loss_dict['sa_aux']:.4f}"
+                     f" ca={epoch_loss_dict['ca_aux']:.4f}"
+                     f" kl={epoch_loss_dict['kl']:.4f}"
+                     if "main" in epoch_loss_dict else ""))
 
     records = _build_records(entries, tube_trajectories)
     confusion_traj = {
@@ -134,6 +162,7 @@ def train_mil(
         "confusion_entropy_trajectory": confusion_traj,
         "val_records": val_records,
         "val_confusion_entropy_trajectory": val_confusion_traj,
+        "loss_components": loss_components,
     }
 
 
@@ -172,16 +201,37 @@ def _train_epoch(
     criterion: nn.Module,
     device: torch.device,
     rng: np.random.Generator,
-) -> float:
-    """Run one epoch of mega-batch training. Returns mean loss."""
+    kl_lambda: float = 0.0,
+    aux_loss_weight: float = 0.0,
+) -> Dict[str, float]:
+    """
+    Run one epoch of mega-batch training.
+
+    Returns a dict with loss components:
+        'total': mean total loss over megabatches.
+    For v2 models additionally:
+        'main': classification loss on combined representation.
+        'sa_aux': auxiliary SA classification loss.
+        'ca_aux': auxiliary CA classification loss.
+        'kl': KL(a_CA || a_SA) regularization loss.
+    """
     model.train()
     megabatches = generate_epoch_megabatches(queues, rng)
     total_loss = 0.0
+    total_main = 0.0
+    total_sa = 0.0
+    total_ca = 0.0
+    total_kl = 0.0
     is_v2 = isinstance(model, CytokineABMIL_V2)
+    n_mb = max(len(megabatches), 1)
 
     for mb_indices in tqdm(megabatches, leave=False):
         optimizer.zero_grad()
         mb_loss = 0.0
+        mb_main = 0.0
+        mb_sa = 0.0
+        mb_ca = 0.0
+        mb_kl = 0.0
         n = len(mb_indices)
 
         for _cyt_idx, ds_idx in mb_indices.items():
@@ -190,17 +240,46 @@ def _train_epoch(
             label_t = torch.tensor([label], dtype=torch.long, device=device)
 
             if is_v2:
-                y_hat, _a_SA, _a_CA, _H = model(X)
+                y_hat, a_SA, a_CA, _H, y_hat_sa, y_hat_ca = model.forward_with_aux(X)
+                loss_main = criterion(y_hat.unsqueeze(0), label_t) / n
+                loss_sa = criterion(y_hat_sa.unsqueeze(0), label_t) / n
+                loss_ca = criterion(y_hat_ca.unsqueeze(0), label_t) / n
+                # KL(a_CA || a_SA): penalize CA for deviating from SA.
+                # F.kl_div(log(Q), P) = sum(P * log(P/Q)) = KL(P||Q)
+                # Here P=a_CA, Q=a_SA -> input=log(a_SA), target=a_CA
+                loss_kl = F.kl_div(
+                    (a_SA + 1e-8).log(), a_CA, reduction="batchmean"
+                ) / n
+                loss = (
+                    loss_main
+                    + aux_loss_weight * loss_sa
+                    + aux_loss_weight * loss_ca
+                    + kl_lambda * loss_kl
+                )
+                mb_main += loss_main.item()
+                mb_sa += loss_sa.item()
+                mb_ca += loss_ca.item()
+                mb_kl += loss_kl.item()
             else:
                 y_hat, _a, _H = model(X)
-            loss = criterion(y_hat.unsqueeze(0), label_t) / n
+                loss = criterion(y_hat.unsqueeze(0), label_t) / n
             loss.backward()
             mb_loss += loss.item()
 
         optimizer.step()
         total_loss += mb_loss
+        total_main += mb_main
+        total_sa += mb_sa
+        total_ca += mb_ca
+        total_kl += mb_kl
 
-    return total_loss / max(len(megabatches), 1)
+    result: Dict[str, float] = {"total": total_loss / n_mb}
+    if is_v2:
+        result["main"] = total_main / n_mb
+        result["sa_aux"] = total_sa / n_mb
+        result["ca_aux"] = total_ca / n_mb
+        result["kl"] = total_kl / n_mb
+    return result
 
 
 def _init_tube_trajectories(entries: List[dict]) -> Dict[int, Dict]:

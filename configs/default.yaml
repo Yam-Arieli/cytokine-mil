@@ -20,6 +20,8 @@ training:
   lr: 0.01
   lr_scheduler: null            # set to e.g. "cosine" if loss curves are erratic
   lr_warmup_epochs: 5
+  kl_lambda: 0.1               # v2 only: weight for KL(a_CA || a_SA) divergence penalty
+  aux_loss_weight: 0.5         # v2 only: weight for SA and CA auxiliary classification losses
 
 dynamics:
   log_every_n_epochs: 1         # frequency of dynamics snapshot logging
