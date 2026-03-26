@@ -446,8 +446,7 @@ def main():
     log(f"Complex cytokines ({len(COMPLEX_CYTOKINES)}): {COMPLEX_CYTOKINES}")
     log()
 
-    label_encoder = CytokineLabel()
-    label_encoder.load(str(stage2_dir / "label_encoder.json"))
+    label_encoder = CytokineLabel.load(str(stage2_dir / "label_encoder.json"))
     log(f"Classes: {label_encoder.n_classes()}  "
         f"(PBS at index {label_encoder.encode('PBS')})")
 
