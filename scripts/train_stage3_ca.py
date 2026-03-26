@@ -344,13 +344,22 @@ def _plot_ca_weight_norm(ca_weight_norm_trajectory, bootstrap_seed, out_dir):
 # Main
 # ---------------------------------------------------------------------------
 
-def _find_latest_stage2_checkpoint(cwd: Path):
-    """Auto-discover the most recently modified Stage 2 v1 checkpoint under results/."""
-    candidates = sorted(
-        cwd.glob("results/*/mil_stage2_bootstrap_*.pt"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
+def _find_latest_stage2_checkpoint(script_dir: Path):
+    """
+    Auto-discover the most recently modified Stage 2 v1 checkpoint.
+
+    Searches results/ relative to the script file (same convention as
+    run_2al_bootstrap.py), then one and two levels up as fallback.
+    """
+    search_roots = [
+        script_dir,
+        script_dir.parent,
+        script_dir.parent.parent,
+    ]
+    candidates = []
+    for root in search_roots:
+        candidates.extend(root.glob("results/*/mil_stage2_bootstrap_*.pt"))
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return candidates[0] if candidates else None
 
 
@@ -359,8 +368,8 @@ def main():
         description="Stage 3 CA-only training experiment"
     )
     parser.add_argument("--config", type=str,
-                        default="configs/default.yaml",
-                        help="Path to YAML config (default: configs/default.yaml)")
+                        default="../../configs/default.yaml",
+                        help="Path to YAML config (default: ../../configs/default.yaml)")
     parser.add_argument("--stage2_checkpoint", type=str, default=None,
                         help="Path to Stage 2 v1 model checkpoint (.pt). "
                              "If omitted, auto-discovers the most recent one under results/.")
@@ -372,7 +381,7 @@ def main():
 
     # Auto-discover checkpoint if not provided
     if args.stage2_checkpoint is None:
-        checkpoint_path = _find_latest_stage2_checkpoint(Path.cwd())
+        checkpoint_path = _find_latest_stage2_checkpoint(Path(__file__).parent)
         if checkpoint_path is None:
             print("ERROR: No Stage 2 checkpoint found under results/. "
                   "Pass --stage2_checkpoint explicitly.")
@@ -397,7 +406,7 @@ def main():
     if args.output_dir is not None:
         out_dir = Path(args.output_dir)
     else:
-        out_dir = Path.cwd() / "results" / f"stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}"
+        out_dir = Path(__file__).parent / "results" / f"stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "run_log.txt"
 
@@ -407,7 +416,7 @@ def main():
             fh.write(msg + "\n")
 
     log(f"Stage 3 CA-only training experiment — seed={BOOTSTRAP_SEED}")
-    log(f"Stage 2 checkpoint: {args.stage2_checkpoint}")
+    log(f"Stage 2 checkpoint: {checkpoint_path}")
     log(f"Output directory:   {out_dir}")
     log(f"Started: {timestamp}")
     log()
@@ -425,7 +434,7 @@ def main():
     # ------------------------------------------------------------------
     # Derive paths from Stage 2 checkpoint directory
     # ------------------------------------------------------------------
-    stage2_dir = Path(args.stage2_checkpoint).parent
+    stage2_dir = checkpoint_path.parent
 
     with open(stage2_dir / "cytokine_groups.json") as f:
         groups = json.load(f)
@@ -490,7 +499,7 @@ def main():
         n_classes=n_classes,
         encoder_frozen=True,
     )
-    state = torch.load(args.stage2_checkpoint, map_location=DEVICE)
+    state = torch.load(str(checkpoint_path), map_location=DEVICE)
     missing, unexpected = mil_model.load_state_dict(state, strict=False)
     log(f"Checkpoint loaded. Missing: {missing}. Unexpected: {unexpected}.")
     log()
