@@ -344,22 +344,51 @@ def _plot_ca_weight_norm(ca_weight_norm_trajectory, bootstrap_seed, out_dir):
 # Main
 # ---------------------------------------------------------------------------
 
+def _find_latest_stage2_checkpoint(cwd: Path):
+    """Auto-discover the most recently modified Stage 2 v1 checkpoint under results/."""
+    candidates = sorted(
+        cwd.glob("results/*/mil_stage2_bootstrap_*.pt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Stage 3 CA-only training experiment"
     )
     parser.add_argument("--config", type=str,
-                        default="../../configs/default.yaml",
-                        help="Path to YAML config (default: ../../configs/default.yaml)")
-    parser.add_argument("--stage2_checkpoint", type=str, required=True,
-                        help="Path to Stage 2 v1 model checkpoint (.pt)")
+                        default="configs/default.yaml",
+                        help="Path to YAML config (default: configs/default.yaml)")
+    parser.add_argument("--stage2_checkpoint", type=str, default=None,
+                        help="Path to Stage 2 v1 model checkpoint (.pt). "
+                             "If omitted, auto-discovers the most recent one under results/.")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="Output directory (default: results/stage3_ca_seed{seed}_{timestamp})")
-    parser.add_argument("--bootstrap_seed", type=int, default=42,
-                        help="Bootstrap seed (controls training RNG; default: 42)")
+    parser.add_argument("--bootstrap_seed", type=int, default=None,
+                        help="Bootstrap seed (default: inferred from checkpoint filename, else 42)")
     args = parser.parse_args()
 
-    BOOTSTRAP_SEED = args.bootstrap_seed
+    # Auto-discover checkpoint if not provided
+    if args.stage2_checkpoint is None:
+        checkpoint_path = _find_latest_stage2_checkpoint(Path.cwd())
+        if checkpoint_path is None:
+            print("ERROR: No Stage 2 checkpoint found under results/. "
+                  "Pass --stage2_checkpoint explicitly.")
+            sys.exit(1)
+        print(f"Auto-discovered Stage 2 checkpoint: {checkpoint_path}", flush=True)
+    else:
+        checkpoint_path = Path(args.stage2_checkpoint)
+
+    # Infer bootstrap seed from checkpoint filename if not provided
+    if args.bootstrap_seed is not None:
+        BOOTSTRAP_SEED = args.bootstrap_seed
+    else:
+        import re
+        m = re.search(r"mil_stage2_bootstrap_(\d+)\.pt", checkpoint_path.name)
+        BOOTSTRAP_SEED = int(m.group(1)) if m else 42
+        print(f"Bootstrap seed inferred from checkpoint: {BOOTSTRAP_SEED}", flush=True)
 
     # ------------------------------------------------------------------
     # Output directory
@@ -368,10 +397,7 @@ def main():
     if args.output_dir is not None:
         out_dir = Path(args.output_dir)
     else:
-        out_dir = (
-            Path(__file__).parent.parent / "results"
-            / f"stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}"
-        )
+        out_dir = Path.cwd() / "results" / f"stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "run_log.txt"
 
