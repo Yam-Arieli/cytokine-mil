@@ -65,10 +65,12 @@ class InstanceEncoder(nn.Module):
         input_dim: int,
         embed_dim: int = 128,
         n_cell_types: Optional[int] = None,
+        hidden_dims: tuple = (512, 256),
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.embed_dim = embed_dim
+        self.hidden_dims = hidden_dims  # assigned before _build_layers reads it
         self._build_layers(input_dim, embed_dim)
         if n_cell_types is not None:
             self.cell_type_head = nn.Linear(embed_dim, n_cell_types)
@@ -77,15 +79,16 @@ class InstanceEncoder(nn.Module):
         self._init_weights()
 
     def _build_layers(self, input_dim: int, embed_dim: int) -> None:
+        h0, h1 = self.hidden_dims
         self.input_proj = nn.Sequential(
-            nn.Linear(input_dim, 512),
-            nn.LayerNorm(512),
+            nn.Linear(input_dim, h0),
+            nn.LayerNorm(h0),
             nn.GELU(),
         )
-        self.res1 = _ResBlock(512)
-        self.down1 = _DownBlock(512, 256)
-        self.res2 = _ResBlock(256)
-        self.down2 = _DownBlock(256, embed_dim)
+        self.res1 = _ResBlock(h0)
+        self.down1 = _DownBlock(h0, h1)
+        self.res2 = _ResBlock(h1)
+        self.down2 = _DownBlock(h1, embed_dim)
 
     def _init_weights(self) -> None:
         for m in self.modules():
