@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:a5000
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
-#SBATCH --time=06:00:00
+#SBATCH --time=08:00:00
 #SBATCH --partition=short
 
 cd /cs/labs/mornitzan/yam.arieli/cytokine-mil

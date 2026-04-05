@@ -95,17 +95,17 @@ COLOR_MAP = {
 # Hyperparameters — identical for all 3 models
 # ---------------------------------------------------------------------------
 
-EMBED_DIM            = 64       # was 128 in 4-class experiment
-HIDDEN_DIMS          = (256, 128)  # was (512, 256) hardcoded — halved at every layer
-ATTENTION_HIDDEN_DIM = 32       # was 64
+EMBED_DIM            = 32       # v2: halved again from 64 (4-class was 128)
+HIDDEN_DIMS          = (128, 64)   # v2: halved again from (256,128)
+ATTENTION_HIDDEN_DIM = 16       # v2: halved again from 32
 
-STAGE1_EPOCHS   = 20            # was 50 — weaker encoder = more MIL headroom
-STAGE1_LR       = 0.005         # was 0.01
-STAGE1_MOMENTUM = 0.9
+STAGE1_EPOCHS   = 20            # unchanged
+STAGE1_LR       = 0.005         # unchanged
+STAGE1_MOMENTUM = 0.9           # unchanged
 
-STAGE2_EPOCHS   = 150           # was 100 — longer window for dynamics to unfold
-STAGE2_LR       = 0.0001        # was 0.0002 — halved nominal LR
-STAGE2_MOMENTUM = 0.90          # was 0.95 — halved effective-LR multiplier 1/(1-m)
+STAGE2_EPOCHS   = 250           # v2: increased from 150 — slower learning needs more room
+STAGE2_LR       = 0.00003       # v2: 3x reduction from 0.0001 (effective LR 0.001→0.0003)
+STAGE2_MOMENTUM = 0.90          # unchanged
 
 LOG_EVERY = 1
 SEED      = 42
@@ -547,11 +547,11 @@ def main():
     log(f"Val donors:       {VAL_DONORS}")
     log()
     log("Hyperparameters (identical for all 3 models):")
-    log(f"  embed_dim:            {EMBED_DIM}  (was 128)")
-    log(f"  hidden_dims:          {HIDDEN_DIMS}  (was (512, 256))")
-    log(f"  attention_hidden_dim: {ATTENTION_HIDDEN_DIM}  (was 64)")
-    log(f"  Stage 1 epochs:       {STAGE1_EPOCHS}  (was 50)  lr={STAGE1_LR}")
-    log(f"  Stage 2 epochs:       {STAGE2_EPOCHS}  (was 100)  lr={STAGE2_LR}  "
+    log(f"  embed_dim:            {EMBED_DIM}  (4-class was 128, v1 binary was 64)")
+    log(f"  hidden_dims:          {HIDDEN_DIMS}  (4-class was (512,256), v1 was (256,128))")
+    log(f"  attention_hidden_dim: {ATTENTION_HIDDEN_DIM}  (4-class was 64, v1 was 32)")
+    log(f"  Stage 1 epochs:       {STAGE1_EPOCHS}  lr={STAGE1_LR}")
+    log(f"  Stage 2 epochs:       {STAGE2_EPOCHS}  lr={STAGE2_LR}  "
         f"momentum={STAGE2_MOMENTUM}")
     log()
 
