@@ -298,8 +298,8 @@ def main():
     parser.add_argument("--n_sample", type=int, default=5,
                         help="Number of cytokines per group (default: 5)")
     parser.add_argument("--config", type=str,
-                        default="../../configs/default.yaml",
-                        help="Path to YAML config (default: configs/default.yaml)")
+                        default=str(Path(__file__).parent.parent / "configs" / "default.yaml"),
+                        help="Path to YAML config")
     args = parser.parse_args()
 
     BOOTSTRAP_SEED     = args.bootstrap_seed

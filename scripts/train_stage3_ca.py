@@ -1,28 +1,28 @@
 """
-Stage 3 CA-only training experiment — cluster job script.
+Full CA-only experiment — cluster job script.
 
-Loads a fully trained Stage 2 CytokineABMIL (v1) checkpoint, freezes encoder,
-SA attention, and classifier, then trains only the new CA layer. Tests whether
-CA adds genuine signal beyond what SA + classifier already solved.
+Runs the complete pipeline from scratch for a bootstrap cytokine sample:
+  Stage 1 — Encoder pre-training (cell-type classification)
+  Stage 2 — AB-MIL with single attention layer (this becomes the frozen SA)
+  Stage 3 — CA-only: adds a cross-attention layer, trains only that
 
-Derives all paths from the Stage 2 checkpoint directory:
-  - cytokine_groups.json
-  - label_encoder.json
-  - manifest_train.json
-  - manifest_val.json
+This design tests whether cross-attention adds genuine signal beyond what
+the single-layer SA + classifier already solved, without sharing any
+pre-trained weights across experiments (each bootstrap seed is self-contained).
 
 Results are saved to:
     results/stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}/
 
 Usage:
-    python scripts/train_stage3_ca.py --stage2_checkpoint <path_to_v1_checkpoint.pt>
-    python scripts/train_stage3_ca.py --stage2_checkpoint <path> --bootstrap_seed 42
+    python scripts/train_stage3_ca.py --bootstrap_seed 42
+    python scripts/train_stage3_ca.py --bootstrap_seed 123 --n_sample 5
 """
 
 import argparse
 import json
 import os
 import pickle
+import random
 import sys
 import yaml
 import torch
@@ -36,11 +36,17 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from scipy.stats import mannwhitneyu, spearmanr
+from torch.utils.data import DataLoader
 
 from cytokine_mil.data.label_encoder import CytokineLabel
-from cytokine_mil.data.dataset import PseudoTubeDataset
+from cytokine_mil.data.dataset import PseudoTubeDataset, CellDataset
 from cytokine_mil.models.stage3_ca_model import Stage3CAModel
+from cytokine_mil.training.train_encoder import train_encoder
+from cytokine_mil.training.train_mil import train_mil
 from cytokine_mil.experiment_setup import (
+    build_stage1_manifest,
+    filter_manifest,
+    split_manifest_by_donor,
     build_encoder,
     build_mil_model,
 )
@@ -53,6 +59,35 @@ from cytokine_mil.analysis.dynamics import (
     rank_cytokines_by_learnability,
     compute_confusion_entropy_summary,
 )
+
+
+# ---------------------------------------------------------------------------
+# Cytokine pools
+# ---------------------------------------------------------------------------
+SIMPLE_POOL = [
+    "IL-4",
+    "IL-10",
+    "IL-2",
+    "M-CSF",
+    "TNF-alpha",
+    "IL-1-beta",
+    "IFN-beta",
+    "IL-7",
+    "G-CSF",
+]
+
+COMPLEX_POOL = [
+    "IL-12",
+    "IL-32-beta",
+    "OSM",
+    "IL-22",
+    "VEGF",
+    "HGF",
+    "TGF-beta1",
+    "IL-6",
+]
+
+VAL_DONORS = ["Donor2", "Donor3"]
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +269,8 @@ def _extract_layer_entropy(records, cytokine):
 
 
 def _plot_learning_curves(records, val_records, logged_epochs,
-                          simple_cyts, complex_cyts, bootstrap_seed, out_dir):
+                          simple_cyts, complex_cyts, stage_label,
+                          bootstrap_seed, out_dir, filename_suffix):
     """Learning curves: train solid, val dotted, tab10 colors."""
     donor_traj = aggregate_to_donor_level(records)
     val_donor_traj = aggregate_to_donor_level(val_records)
@@ -267,13 +303,13 @@ def _plot_learning_curves(records, val_records, logged_epochs,
         xy=(0.02, 0.05), xycoords="axes fraction", fontsize=7, color="gray",
     )
     plt.suptitle(
-        f"Stage 3 CA-only learning curves  |  Bootstrap seed: {bootstrap_seed}\n"
+        f"{stage_label} learning curves  |  Bootstrap seed: {bootstrap_seed}\n"
         "Metric: mean p_correct_trajectory(t), aggregated to donor level "
         "(median per donor, mean across donors)",
         fontsize=9,
     )
     plt.tight_layout()
-    fig.savefig(out_dir / f"learning_curves_stage3_ca_{bootstrap_seed}.png",
+    fig.savefig(out_dir / f"learning_curves_{filename_suffix}_{bootstrap_seed}.png",
                 dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -344,60 +380,23 @@ def _plot_ca_weight_norm(ca_weight_norm_trajectory, bootstrap_seed, out_dir):
 # Main
 # ---------------------------------------------------------------------------
 
-def _find_latest_stage2_checkpoint(script_dir: Path):
-    """
-    Auto-discover the most recently modified Stage 2 v1 checkpoint.
-
-    Searches results/ relative to the script file (same convention as
-    run_2al_bootstrap.py), then one and two levels up as fallback.
-    """
-    search_roots = [
-        script_dir,
-        script_dir.parent,
-        script_dir.parent.parent,
-    ]
-    candidates = []
-    for root in search_roots:
-        candidates.extend(root.glob("results/*/mil_stage2_bootstrap_*.pt"))
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return candidates[0] if candidates else None
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Stage 3 CA-only training experiment"
+        description="Full CA-only experiment: Stage 1 encoder + Stage 2 SA + Stage 3 CA-only"
     )
+    parser.add_argument("--bootstrap_seed", type=int, default=42,
+                        help="Seed for cytokine pool sampling (default: 42)")
+    parser.add_argument("--n_sample", type=int, default=5,
+                        help="Number of cytokines per group (default: 5)")
     parser.add_argument("--config", type=str,
-                        default="../../configs/default.yaml",
-                        help="Path to YAML config (default: ../../configs/default.yaml)")
-    parser.add_argument("--stage2_checkpoint", type=str, default=None,
-                        help="Path to Stage 2 v1 model checkpoint (.pt). "
-                             "If omitted, auto-discovers the most recent one under results/.")
+                        default=str(Path(__file__).parent.parent / "configs" / "default.yaml"),
+                        help="Path to YAML config")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="Output directory (default: results/stage3_ca_seed{seed}_{timestamp})")
-    parser.add_argument("--bootstrap_seed", type=int, default=None,
-                        help="Bootstrap seed (default: inferred from checkpoint filename, else 42)")
     args = parser.parse_args()
 
-    # Auto-discover checkpoint if not provided
-    if args.stage2_checkpoint is None:
-        checkpoint_path = _find_latest_stage2_checkpoint(Path(__file__).parent)
-        if checkpoint_path is None:
-            print("ERROR: No Stage 2 checkpoint found under results/. "
-                  "Pass --stage2_checkpoint explicitly.")
-            sys.exit(1)
-        print(f"Auto-discovered Stage 2 checkpoint: {checkpoint_path}", flush=True)
-    else:
-        checkpoint_path = Path(args.stage2_checkpoint)
-
-    # Infer bootstrap seed from checkpoint filename if not provided
-    if args.bootstrap_seed is not None:
-        BOOTSTRAP_SEED = args.bootstrap_seed
-    else:
-        import re
-        m = re.search(r"mil_stage2_bootstrap_(\d+)\.pt", checkpoint_path.name)
-        BOOTSTRAP_SEED = int(m.group(1)) if m else 42
-        print(f"Bootstrap seed inferred from checkpoint: {BOOTSTRAP_SEED}", flush=True)
+    BOOTSTRAP_SEED     = args.bootstrap_seed
+    N_SAMPLE_PER_GROUP = args.n_sample
 
     # ------------------------------------------------------------------
     # Output directory
@@ -406,7 +405,8 @@ def main():
     if args.output_dir is not None:
         out_dir = Path(args.output_dir)
     else:
-        out_dir = Path(__file__).parent / "results" / f"stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}"
+        out_dir = Path(__file__).parent.parent / "results" / \
+                  f"stage3_ca_seed{BOOTSTRAP_SEED}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "run_log.txt"
 
@@ -415,9 +415,8 @@ def main():
         with open(log_path, "a") as fh:
             fh.write(msg + "\n")
 
-    log(f"Stage 3 CA-only training experiment — seed={BOOTSTRAP_SEED}")
-    log(f"Stage 2 checkpoint: {checkpoint_path}")
-    log(f"Output directory:   {out_dir}")
+    log(f"Full CA-only experiment — seed={BOOTSTRAP_SEED}  n_sample={N_SAMPLE_PER_GROUP}")
+    log(f"Output directory: {out_dir}")
     log(f"Started: {timestamp}")
     log()
 
@@ -427,37 +426,78 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log(f"Device: {DEVICE}")
+    DEVICE        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    TRAINING_SEED = cfg["dynamics"]["random_seeds"][0]
+
+    log(f"Device:         {DEVICE}")
+    log(f"Bootstrap seed: {BOOTSTRAP_SEED}  (controls cytokine sampling)")
+    log(f"Training seed:  {TRAINING_SEED}   (controls model initialization)")
     log()
 
     # ------------------------------------------------------------------
-    # Derive paths from Stage 2 checkpoint directory
+    # 1. Data
     # ------------------------------------------------------------------
-    stage2_dir = checkpoint_path.parent
+    MANIFEST_PATH = cfg["data"]["manifest_path"]
+    with open(MANIFEST_PATH) as f:
+        manifest = json.load(f)
 
-    with open(stage2_dir / "cytokine_groups.json") as f:
-        groups = json.load(f)
-    SIMPLE_CYTOKINES = groups["simple_cytokines"]
-    COMPLEX_CYTOKINES = groups["complex_cytokines"]
-    SUBSET_CYTOKINES = SIMPLE_CYTOKINES + COMPLEX_CYTOKINES
-
-    log(f"Simple cytokines  ({len(SIMPLE_CYTOKINES)}): {SIMPLE_CYTOKINES}")
-    log(f"Complex cytokines ({len(COMPLEX_CYTOKINES)}): {COMPLEX_CYTOKINES}")
-    log()
-
-    label_encoder = CytokineLabel.load(str(stage2_dir / "label_encoder.json"))
-    log(f"Classes: {label_encoder.n_classes()}  "
-        f"(PBS at index {label_encoder.encode('PBS')})")
-
-    manifest_path = cfg["data"]["manifest_path"]
-    HVG_PATH = str(Path(manifest_path).parent / "hvg_list.json")
+    HVG_PATH = str(Path(MANIFEST_PATH).parent / "hvg_list.json")
     with open(HVG_PATH) as f:
         gene_names = json.load(f)
+
+    log(f"Full manifest entries: {len(manifest)}")
     log(f"HVGs: {len(gene_names)}")
 
-    TRAIN_MANIFEST_PATH = str(stage2_dir / "manifest_train.json")
-    VAL_MANIFEST_PATH   = str(stage2_dir / "manifest_val.json")
+    # Verify pool names exist in manifest
+    manifest_cytokines = {e["cytokine"] for e in manifest}
+    missing_simple  = [c for c in SIMPLE_POOL  if c not in manifest_cytokines]
+    missing_complex = [c for c in COMPLEX_POOL if c not in manifest_cytokines]
+    if missing_simple or missing_complex:
+        log("ERROR — some pool cytokines not found in manifest:")
+        if missing_simple:  log(f"  Simple pool:  {missing_simple}")
+        if missing_complex: log(f"  Complex pool: {missing_complex}")
+        sys.exit(1)
+
+    # Bootstrap sampling
+    _rng = random.Random(BOOTSTRAP_SEED)
+    SIMPLE_CYTOKINES  = sorted(_rng.sample(SIMPLE_POOL,  N_SAMPLE_PER_GROUP))
+    COMPLEX_CYTOKINES = sorted(_rng.sample(COMPLEX_POOL, N_SAMPLE_PER_GROUP))
+    SUBSET_CYTOKINES  = SIMPLE_CYTOKINES + COMPLEX_CYTOKINES
+
+    log(f"Sampled simple  ({len(SIMPLE_CYTOKINES)}): {SIMPLE_CYTOKINES}")
+    log(f"Sampled complex ({len(COMPLEX_CYTOKINES)}): {COMPLEX_CYTOKINES}")
+    log(f"Full subset     ({len(SUBSET_CYTOKINES)}): {SUBSET_CYTOKINES}")
+    log()
+
+    with open(out_dir / "cytokine_groups.json", "w") as f:
+        json.dump({
+            "bootstrap_seed": BOOTSTRAP_SEED,
+            "n_sample_per_group": N_SAMPLE_PER_GROUP,
+            "simple_cytokines": SIMPLE_CYTOKINES,
+            "complex_cytokines": COMPLEX_CYTOKINES,
+            "simple_pool": SIMPLE_POOL,
+            "complex_pool": COMPLEX_POOL,
+        }, f, indent=2)
+
+    # Filter manifest and build label encoder
+    subset_manifest = filter_manifest(manifest, cytokines=SUBSET_CYTOKINES, include_pbs=True)
+    log(f"Subset manifest entries: {len(subset_manifest)}")
+
+    label_encoder = CytokineLabel().fit(subset_manifest)
+    label_encoder.save(str(out_dir / "label_encoder.json"))
+    log(f"Classes: {label_encoder.n_classes()}  (PBS at index {label_encoder.encode('PBS')})")
+
+    # Donor-level train/val split
+    train_manifest, val_manifest = split_manifest_by_donor(subset_manifest, val_donors=VAL_DONORS)
+    log(f"Train donors: {sorted({e['donor'] for e in train_manifest})}  ({len(train_manifest)} tubes)")
+    log(f"Val donors:   {sorted({e['donor'] for e in val_manifest})}  ({len(val_manifest)} tubes)")
+
+    TRAIN_MANIFEST_PATH = str(out_dir / "manifest_train.json")
+    VAL_MANIFEST_PATH   = str(out_dir / "manifest_val.json")
+    with open(TRAIN_MANIFEST_PATH, "w") as f:
+        json.dump(train_manifest, f)
+    with open(VAL_MANIFEST_PATH, "w") as f:
+        json.dump(val_manifest, f)
 
     log("Preloading tube datasets...")
     train_tube_dataset = PseudoTubeDataset(
@@ -466,31 +506,55 @@ def main():
         VAL_MANIFEST_PATH, label_encoder, gene_names=gene_names, preload=True)
     log(f"Train tubes: {len(train_tube_dataset)}")
     log(f"Val tubes:   {len(val_tube_dataset)}")
-    log()
 
-    # Save provenance and artifacts
-    with open(out_dir / "stage2_dir.txt", "w") as f:
-        f.write(str(stage2_dir) + "\n")
-    with open(out_dir / "cytokine_groups.json", "w") as f:
-        json.dump(groups, f, indent=2)
-    label_encoder.save(str(out_dir / "label_encoder.json"))
+    # Stage 1 manifest (one tube per cytokine, rotating train donors)
+    STAGE1_MANIFEST_PATH = str(out_dir / "manifest_stage1.json")
+    build_stage1_manifest(train_manifest, save_path=STAGE1_MANIFEST_PATH)
+    cell_dataset = CellDataset(STAGE1_MANIFEST_PATH, gene_names=gene_names, preload=True)
+    log(f"Cells: {len(cell_dataset)}  |  Cell types: {cell_dataset.n_cell_types()}")
+    cell_loader = DataLoader(cell_dataset, batch_size=256, shuffle=True, num_workers=0)
 
-    # ------------------------------------------------------------------
-    # Reconstruct Stage 2 v1 model
-    # ------------------------------------------------------------------
-    log("=" * 60)
-    log("Reconstructing Stage 2 v1 model from checkpoint")
-    log("=" * 60)
-
-    embed_dim = cfg["model"]["embedding_dim"]
+    embed_dim        = cfg["model"]["embedding_dim"]
     attention_hidden = cfg["model"]["attention_hidden_dim"]
-    n_classes = label_encoder.n_classes()
+    n_classes        = label_encoder.n_classes()
+
+    # ------------------------------------------------------------------
+    # 2. Stage 1 — Encoder pre-training
+    # ------------------------------------------------------------------
+    log()
+    log("=" * 60)
+    log("Stage 1 — Encoder pre-training")
+    log("=" * 60)
 
     encoder = build_encoder(
         n_input_genes=len(gene_names),
-        n_cell_types=None,
+        n_cell_types=cell_dataset.n_cell_types(),
         embed_dim=embed_dim,
     )
+    encoder = train_encoder(
+        encoder,
+        cell_loader,
+        n_epochs=cfg["training"]["stage1_epochs"],
+        lr=cfg["training"]["lr"],
+        momentum=cfg["training"]["momentum"],
+        device=DEVICE,
+        verbose=True,
+    )
+    torch.save(encoder.state_dict(),
+               str(out_dir / f"encoder_stage1_bootstrap_{BOOTSTRAP_SEED}.pt"))
+    log("Encoder saved.")
+
+    # ------------------------------------------------------------------
+    # 3. Stage 2 — Single-layer MIL (this becomes the frozen SA)
+    # ------------------------------------------------------------------
+    log()
+    log("=" * 60)
+    log("Stage 2 — Single-layer MIL training (encoder frozen)")
+    log("=" * 60)
+
+    stage2_lr       = 0.0002
+    stage2_momentum = 0.95
+
     mil_model = build_mil_model(
         encoder,
         embed_dim=embed_dim,
@@ -498,16 +562,40 @@ def main():
         n_classes=n_classes,
         encoder_frozen=True,
     )
-    state = torch.load(str(checkpoint_path), map_location=DEVICE)
-    missing, unexpected = mil_model.load_state_dict(state, strict=False)
-    log(f"Checkpoint loaded. Missing: {missing}. Unexpected: {unexpected}.")
-    log()
+    dynamics_stage2 = train_mil(
+        mil_model,
+        train_tube_dataset,
+        n_epochs=cfg["training"]["stage2_epochs"],
+        lr=stage2_lr,
+        momentum=stage2_momentum,
+        lr_scheduler=cfg["training"]["lr_scheduler"],
+        lr_warmup_epochs=cfg["training"]["lr_warmup_epochs"],
+        log_every_n_epochs=cfg["dynamics"]["log_every_n_epochs"],
+        device=DEVICE,
+        seed=TRAINING_SEED,
+        verbose=True,
+        val_dataset=val_tube_dataset,
+    )
+    torch.save(mil_model.state_dict(),
+               str(out_dir / f"mil_stage2_bootstrap_{BOOTSTRAP_SEED}.pt"))
+    log("Stage 2 model saved.")
+    log(f"Train records: {len(dynamics_stage2['records'])}")
+    log(f"Val records:   {len(dynamics_stage2['val_records'])}")
+
+    with open(out_dir / "dynamics_stage2.pkl", "wb") as fh:
+        pickle.dump({
+            "records":       dynamics_stage2["records"],
+            "val_records":   dynamics_stage2["val_records"],
+            "logged_epochs": dynamics_stage2["logged_epochs"],
+        }, fh)
+    log("Stage 2 dynamics saved (dynamics_stage2.pkl).")
 
     # ------------------------------------------------------------------
-    # Build Stage3CAModel
+    # 4. Stage 3 — CA-only training
     # ------------------------------------------------------------------
+    log()
     log("=" * 60)
-    log("Building Stage3CAModel (CA only trainable)")
+    log("Stage 3 — CA-only training")
     log("=" * 60)
 
     stage3_model = Stage3CAModel(
@@ -526,18 +614,10 @@ def main():
     log(f"Initial CA weight norm:         {stage3_model.ca_weight_norm():.6f}")
     log()
 
-    # ------------------------------------------------------------------
-    # Stage 3 training loop
-    # ------------------------------------------------------------------
-    log("=" * 60)
-    log("Stage 3 — CA-only training")
-    log("=" * 60)
-
-    n_epochs = cfg["training"]["stage3_epochs"]
-    log_every = cfg["dynamics"]["log_every_n_epochs"]
-    lr = cfg["training"]["lr"]
-    momentum = cfg["training"]["momentum"]
-    TRAINING_SEED = cfg["dynamics"]["random_seeds"][0]
+    n_epochs   = cfg["training"]["stage3_epochs"]
+    log_every  = cfg["dynamics"]["log_every_n_epochs"]
+    lr         = stage2_lr
+    momentum   = stage2_momentum
 
     optimizer = torch.optim.SGD(
         filter(lambda p: p.requires_grad, stage3_model.parameters()),
@@ -555,17 +635,17 @@ def main():
     log()
 
     train_entries = train_tube_dataset.get_entries()
-    val_entries = val_tube_dataset.get_entries()
-    train_tube_traj = _init_tube_trajectories(train_entries)
-    val_tube_traj = _init_tube_trajectories(val_entries)
+    val_entries   = val_tube_dataset.get_entries()
+    train_tube_traj      = _init_tube_trajectories(train_entries)
+    val_tube_traj        = _init_tube_trajectories(val_entries)
     train_confusion_epochs = defaultdict(list)
-    val_confusion_epochs = defaultdict(list)
+    val_confusion_epochs   = defaultdict(list)
 
     queues = build_cytokine_queues(train_entries, label_encoder)
 
-    logged_epochs = []
+    logged_epochs          = []
     ca_weight_norm_trajectory = []
-    loss_trajectory = []
+    loss_trajectory        = []
 
     for epoch in range(1, n_epochs + 1):
         epoch_loss = _train_epoch_stage3(
@@ -608,7 +688,7 @@ def main():
     # Build records
     # ------------------------------------------------------------------
     train_records = _build_records(train_entries, train_tube_traj)
-    val_records = _build_records(val_entries, val_tube_traj)
+    val_records   = _build_records(val_entries,   val_tube_traj)
     log(f"Train records: {len(train_records)}")
     log(f"Val records:   {len(val_records)}")
 
@@ -623,11 +703,11 @@ def main():
 
     with open(out_dir / "dynamics_stage3.pkl", "wb") as fh:
         pickle.dump({
-            "records": train_records,
-            "val_records": val_records,
+            "records":       train_records,
+            "val_records":   val_records,
             "logged_epochs": logged_epochs,
-            "ca_weight_norm_trajectory": ca_weight_norm_trajectory,
-            "loss_trajectory": loss_trajectory,
+            "ca_weight_norm_trajectory":  ca_weight_norm_trajectory,
+            "loss_trajectory":            loss_trajectory,
             "confusion_entropy_trajectory": {
                 k: np.array(v) for k, v in train_confusion_epochs.items()
             },
@@ -638,19 +718,47 @@ def main():
     log("Dynamics saved: dynamics_stage3.pkl")
 
     # ------------------------------------------------------------------
-    # Post-training analysis
+    # 5. Post-training analysis — Stage 2
+    # ------------------------------------------------------------------
+    log()
+    log("=" * 60)
+    log("Dynamics analysis — Stage 2 (single-layer SA)")
+    log("=" * 60)
+
+    s2_donor_traj     = aggregate_to_donor_level(dynamics_stage2["records"])
+    s2_val_donor_traj = aggregate_to_donor_level(dynamics_stage2["val_records"])
+
+    s2_learn     = rank_cytokines_by_learnability(s2_donor_traj,     exclude=["PBS"])
+    s2_learn_val = rank_cytokines_by_learnability(s2_val_donor_traj, exclude=["PBS"])
+    s2_ranking   = s2_learn["ranking"]
+    s2_val_map   = {cyt: auc for cyt, auc in s2_learn_val["ranking"]}
+
+    log()
+    log(f"Cytokine learnability ranking — Stage 2  |  Bootstrap seed: {BOOTSTRAP_SEED}")
+    log(f"Metric: {s2_learn['metric_description']}")
+    log()
+    hdr = f"{'Rank':>4}  {'Cytokine':<14}  {'Train AUC':>9}  {'Val AUC':>8}  Group"
+    log(hdr)
+    log("-" * 55)
+    for i, (cyt, auc) in enumerate(s2_ranking, 1):
+        group   = "SIMPLE" if cyt in SIMPLE_CYTOKINES else "COMPLEX"
+        val_auc = s2_val_map.get(cyt, float("nan"))
+        log(f"  {i:2d}.  {cyt:<14}  {auc:>9.3f}  {val_auc:>8.3f}  {group}")
+
+    # ------------------------------------------------------------------
+    # 6. Post-training analysis — Stage 3
     # ------------------------------------------------------------------
     log()
     log("=" * 60)
     log("Dynamics analysis — Stage 3 CA-only")
     log("=" * 60)
 
-    donor_traj = aggregate_to_donor_level(train_records)
+    donor_traj     = aggregate_to_donor_level(train_records)
     val_donor_traj = aggregate_to_donor_level(val_records)
 
-    learnability_result = rank_cytokines_by_learnability(donor_traj, exclude=["PBS"])
+    learnability_result     = rank_cytokines_by_learnability(donor_traj,     exclude=["PBS"])
     val_learnability_result = rank_cytokines_by_learnability(val_donor_traj, exclude=["PBS"])
-    ranking = learnability_result["ranking"]
+    ranking     = learnability_result["ranking"]
     val_ranking = val_learnability_result["ranking"]
     val_auc_map = {cyt: auc for cyt, auc in val_ranking}
 
@@ -658,15 +766,14 @@ def main():
     log(f"Cytokine learnability ranking — Stage 3 CA-only  |  Bootstrap seed: {BOOTSTRAP_SEED}")
     log(f"Metric: {learnability_result['metric_description']}")
     log()
-    hdr = (f"{'Rank':>4}  {'Cytokine':<14}  {'Train AUC':>9}  {'Val AUC':>8}  Group")
     log(hdr)
     log("-" * 55)
     for i, (cyt, auc) in enumerate(ranking, 1):
-        group = "SIMPLE" if cyt in SIMPLE_CYTOKINES else "COMPLEX"
+        group   = "SIMPLE" if cyt in SIMPLE_CYTOKINES else "COMPLEX"
         val_auc = val_auc_map.get(cyt, float("nan"))
         log(f"  {i:2d}.  {cyt:<14}  {auc:>9.3f}  {val_auc:>8.3f}  {group}")
 
-    simple_aucs = [auc for cyt, auc in ranking if cyt in SIMPLE_CYTOKINES]
+    simple_aucs  = [auc for cyt, auc in ranking if cyt in SIMPLE_CYTOKINES]
     complex_aucs = [auc for cyt, auc in ranking if cyt in COMPLEX_CYTOKINES]
     log()
     log("Group summary (train AUC):")
@@ -675,10 +782,22 @@ def main():
     log(f"  COMPLEX mean={np.mean(complex_aucs):.3f}  median={np.median(complex_aucs):.3f}"
         f"  values={[f'{x:.2f}' for x in sorted(complex_aucs, reverse=True)]}")
 
-    # Confusion entropy summary
+    # Stage 2 vs Stage 3 rank correlation
+    s2_order = [c for c, _ in s2_ranking]
+    s3_order = [c for c, _ in ranking]
+    if set(s2_order) == set(s3_order):
+        s3_rank_by_cyt = {c: i for i, c in enumerate(s3_order)}
+        s3_aligned = [s3_rank_by_cyt.get(c, len(s3_order)) for c in s2_order]
+        rho_stage, pval_stage = spearmanr(range(len(s2_order)), s3_aligned)
+        log()
+        log(f"Stage 2 vs Stage 3 rank correlation: Spearman rho = {rho_stage:.3f}  "
+            f"(p={pval_stage:.3f})")
+        log(f"Stable (rho > 0.7): {rho_stage > 0.7}")
+
+    # Confusion entropy
     log()
     log("-" * 60)
-    confusion_result = compute_confusion_entropy_summary(
+    confusion_result     = compute_confusion_entropy_summary(
         {k: np.array(v) for k, v in train_confusion_epochs.items()}, exclude=["PBS"]
     )
     val_confusion_result = compute_confusion_entropy_summary(
@@ -691,14 +810,14 @@ def main():
     log(f"{'Cytokine':<20}  {'Train AUC(H_c)':>14}  {'Val AUC(H_c)':>12}  Group")
     log("-" * 64)
     for cyt, auc in confusion_result["ranking"]:
-        group = "SIMPLE" if cyt in SIMPLE_CYTOKINES else (
+        group   = "SIMPLE" if cyt in SIMPLE_CYTOKINES else (
             "COMPLEX" if cyt in COMPLEX_CYTOKINES else "PBS"
         )
         val_auc = val_conf_map.get(cyt, float("nan"))
         log(f"  {cyt:<20}  {auc:>14.3f}  {val_auc:>12.3f}  {group}")
 
     # ------------------------------------------------------------------
-    # Hypothesis test
+    # 7. Hypothesis test
     # ------------------------------------------------------------------
     log()
     log("=" * 60)
@@ -706,7 +825,7 @@ def main():
     log("=" * 60)
 
     auc_map = {cyt: auc for cyt, auc in ranking}
-    simple_auc_vals = [auc_map[c] for c in SIMPLE_CYTOKINES if c in auc_map]
+    simple_auc_vals  = [auc_map[c] for c in SIMPLE_CYTOKINES  if c in auc_map]
     complex_auc_vals = [auc_map[c] for c in COMPLEX_CYTOKINES if c in auc_map]
 
     if simple_auc_vals and complex_auc_vals:
@@ -716,7 +835,7 @@ def main():
         n1, n2 = len(simple_auc_vals), len(complex_auc_vals)
         r_rb = 1 - (2 * u_stat) / (n1 * n2)
 
-        log(f"  SIMPLE  AUCs: {[f'{x:.3f}' for x in sorted(simple_auc_vals, reverse=True)]}")
+        log(f"  SIMPLE  AUCs: {[f'{x:.3f}' for x in sorted(simple_auc_vals,  reverse=True)]}")
         log(f"  COMPLEX AUCs: {[f'{x:.3f}' for x in sorted(complex_auc_vals, reverse=True)]}")
         log()
         log(f"  Mann-Whitney U statistic: {u_stat:.1f}")
@@ -732,10 +851,9 @@ def main():
 
         # Validation generalization
         train_order = [c for c, _ in ranking]
-        val_order = [c for c, _ in val_ranking]
+        val_order   = [c for c, _ in val_ranking]
         val_rank_by_cyt = {c: i for i, c in enumerate(val_order)}
-        val_ranks_aligned = [val_rank_by_cyt.get(c, len(val_order))
-                             for c in train_order]
+        val_ranks_aligned = [val_rank_by_cyt.get(c, len(val_order)) for c in train_order]
         if len(train_order) >= 2:
             rho_gen, pval_gen = spearmanr(range(len(train_order)), val_ranks_aligned)
             log()
@@ -744,7 +862,7 @@ def main():
             log(f"Stable (rho > 0.7): {rho_gen > 0.7}")
 
     # ------------------------------------------------------------------
-    # Figures
+    # 8. Figures
     # ------------------------------------------------------------------
     log()
     log("=" * 60)
@@ -752,8 +870,17 @@ def main():
     log("=" * 60)
 
     _plot_learning_curves(
+        dynamics_stage2["records"], dynamics_stage2["val_records"],
+        dynamics_stage2["logged_epochs"],
+        SIMPLE_CYTOKINES, COMPLEX_CYTOKINES,
+        "Stage 2 (SA)", BOOTSTRAP_SEED, out_dir, "stage2",
+    )
+    log(f"  Saved: learning_curves_stage2_{BOOTSTRAP_SEED}.png")
+
+    _plot_learning_curves(
         train_records, val_records, logged_epochs,
-        SIMPLE_CYTOKINES, COMPLEX_CYTOKINES, BOOTSTRAP_SEED, out_dir,
+        SIMPLE_CYTOKINES, COMPLEX_CYTOKINES,
+        "Stage 3 CA-only", BOOTSTRAP_SEED, out_dir, "stage3_ca",
     )
     log(f"  Saved: learning_curves_stage3_ca_{BOOTSTRAP_SEED}.png")
 

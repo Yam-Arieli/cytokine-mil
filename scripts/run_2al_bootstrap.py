@@ -517,8 +517,8 @@ def main():
     parser.add_argument("--n_sample", type=int, default=5,
                         help="Number of cytokines per group (default: 5)")
     parser.add_argument("--config", type=str,
-                        default="../../configs/default.yaml",
-                        help="Path to YAML config (default: ../../configs/default.yaml)")
+                        default=str(Path(__file__).parent.parent / "configs" / "default.yaml"),
+                        help="Path to YAML config")
     args = parser.parse_args()
 
     BOOTSTRAP_SEED     = args.bootstrap_seed
@@ -528,7 +528,7 @@ def main():
     # Output directory
     # ------------------------------------------------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") + f"_pid{os.getpid()}"
-    out_dir = Path(__file__).parent / "results" / \
+    out_dir = Path(__file__).parent.parent / "results" / \
               f"2al_bootstrap_seed{BOOTSTRAP_SEED}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "run_log.txt"
