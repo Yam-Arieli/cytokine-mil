@@ -83,15 +83,16 @@ VAL_DONORS = ["donor_6.0", "donor_95.0"]
 # Stage 3 epoch override (independent of config)
 STAGE3_EPOCHS = 100
 
-# Expected difficulty ordering (ground truth for biological validation)
+# Expected cascade depth ordering (SIMPLE = short cascade, COMPLEX = deep cascade)
+# Note: this is signal DEPTH, not classification difficulty — orthogonal axes.
 DIFFICULTY_MAP = {
-    "24hPA":  "EASY",      # direct TLR4/TLR5 activation, no cascade
-    "24hCA":  "MED",       # intermediate cascade
-    "24hMTB": "HARD",      # most cascade-dependent
+    "24hPA":  "SIMPLE",    # short cascade: direct TLR4/TLR5 activation, primary responders dominate
+    "24hCA":  "MED",       # intermediate cascade depth
+    "24hMTB": "COMPLEX",   # deep cascade: sustained multi-tier signaling across cell types
     "UT":     "CONTROL",   # unstimulated baseline
 }
 
-# Display order for plots (easiest → hardest)
+# Display order for plots (simplest → most complex cascade)
 ORDERED_CONDITIONS = ["24hPA", "24hCA", "24hMTB", "UT"]
 
 

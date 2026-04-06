@@ -79,8 +79,8 @@ BINARY_PAIRS = [
 
 # Expected difficulty ordering (ground truth for biological validation)
 DIFFICULTY_MAP = {
-    "24hPA":  "EASY",
-    "24hMTB": "HARD",
+    "24hPA":  "SIMPLE",   # short cascade, primary responders carry most signal
+    "24hMTB": "COMPLEX",  # long cascade, sustained signal depth across cell types
     "24hCA":  "MED",
     "UT":     "CONTROL",
 }
