@@ -123,6 +123,7 @@ def _train_one_binary_model(
     out_dir: Path,
     device: torch.device,
     seed: int,
+    stage2_lr: float,
     log,
 ) -> dict:
     """
@@ -222,7 +223,7 @@ def _train_one_binary_model(
     # ------------------------------------------------------------------
     log()
     log(f"  Stage 2 — Binary MIL ({STAGE2_EPOCHS} epochs, "
-        f"lr={STAGE2_LR}, momentum={STAGE2_MOMENTUM})")
+        f"lr={stage2_lr}, momentum={STAGE2_MOMENTUM})")
 
     mil_model = build_mil_model(
         encoder,
@@ -241,7 +242,7 @@ def _train_one_binary_model(
         mil_model,
         train_tube_dataset,
         n_epochs=STAGE2_EPOCHS,
-        lr=STAGE2_LR,
+        lr=stage2_lr,
         momentum=STAGE2_MOMENTUM,
         log_every_n_epochs=LOG_EVERY,
         device=device,
@@ -519,18 +520,22 @@ def main():
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None,
                         help=f"Training seed (default: {SEED})")
+    parser.add_argument("--stage2_lr", type=float, default=None,
+                        help=f"Override Stage 2 LR (default: {STAGE2_LR})")
     args = parser.parse_args()
 
-    seed = args.seed if args.seed is not None else SEED
+    seed     = args.seed      if args.seed      is not None else SEED
+    stage2_lr = args.stage2_lr if args.stage2_lr is not None else STAGE2_LR
 
     # ------------------------------------------------------------------
-    # Output directory
+    # Output directory — include LR in name for easy identification
     # ------------------------------------------------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") + f"_pid{os.getpid()}"
+    lr_tag = f"lr{stage2_lr:.2e}".replace("-0", "-").replace("+0", "")
     if args.output_dir is not None:
         out_dir = Path(args.output_dir)
     else:
-        out_dir = Path(OUTPUT_BASE) / f"run_{timestamp}"
+        out_dir = Path(OUTPUT_BASE) / f"run_{lr_tag}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "run_log.txt"
 
@@ -551,7 +556,7 @@ def main():
     log(f"  hidden_dims:          {HIDDEN_DIMS}  (4-class was (512,256), v1 was (256,128))")
     log(f"  attention_hidden_dim: {ATTENTION_HIDDEN_DIM}  (4-class was 64, v1 was 32)")
     log(f"  Stage 1 epochs:       {STAGE1_EPOCHS}  lr={STAGE1_LR}")
-    log(f"  Stage 2 epochs:       {STAGE2_EPOCHS}  lr={STAGE2_LR}  "
+    log(f"  Stage 2 epochs:       {STAGE2_EPOCHS}  lr={stage2_lr}  "
         f"momentum={STAGE2_MOMENTUM}")
     log()
 
@@ -591,6 +596,7 @@ def main():
             out_dir=out_dir,
             device=device,
             seed=seed,
+            stage2_lr=stage2_lr,
             log=log,
         )
         all_dynamics[target] = dyn
