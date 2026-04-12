@@ -88,10 +88,13 @@ def _parse_args():
                    help="Downstream cytokine label B (cascade target).")
     p.add_argument("--alpha",          type=float, nargs="+", default=[0.1, 0.2, 0.3],
                    help="Mixing fractions to test (fraction of A-tube cells replaced by B).")
-    p.add_argument("--seed",           type=int,   default=SEED)
-    p.add_argument("--stage2_epochs",  type=int,   default=STAGE2_EPOCHS)
-    p.add_argument("--lr",             type=float, default=STAGE2_LR)
-    p.add_argument("--output_dir",     type=str,   default=None)
+    p.add_argument("--seed",                type=int,   default=SEED)
+    p.add_argument("--stage2_epochs",       type=int,   default=STAGE2_EPOCHS)
+    p.add_argument("--lr",                  type=float, default=STAGE2_LR)
+    p.add_argument("--output_dir",          type=str,   default=None)
+    p.add_argument("--subset_n_cytokines",  type=int,   default=None,
+                   help="If set, randomly sample this many cytokines (always including "
+                        "pair_a, pair_b, PBS) to reduce training time for the GO/NO-GO test.")
     return p.parse_args()
 
 
@@ -242,6 +245,21 @@ def main():
         manifest = json.load(fh)
     with open(HVG_PATH) as fh:
         gene_names = json.load(fh)
+
+    # ------------------------------------------------------------------
+    # Optional: subset manifest to N cytokines (always keep pair_a, pair_b, PBS)
+    # ------------------------------------------------------------------
+    if args.subset_n_cytokines is not None:
+        all_cyts = sorted({e["cytokine"] for e in manifest if e["cytokine"] != "PBS"})
+        required = {args.pair_a, args.pair_b}
+        pool = [c for c in all_cyts if c not in required]
+        n_extra = max(0, args.subset_n_cytokines - len(required))
+        sampled = sorted(rng.choice(pool, size=min(n_extra, len(pool)), replace=False).tolist())
+        keep = required | set(sampled) | {"PBS"}
+        manifest = [e for e in manifest if e["cytokine"] in keep]
+        log(f"  Subset: {len(keep)-1} cytokines + PBS "
+            f"({args.pair_a}, {args.pair_b} + {len(sampled)} random)")
+        log(f"  Manifest after subset: {len(manifest)} tubes")
 
     # ------------------------------------------------------------------
     # Label encoder (full 91 classes + synthetic labels)
