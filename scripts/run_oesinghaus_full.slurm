@@ -6,7 +6,7 @@
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=24:00:00
-#SBATCH --partition=long
+#SBATCH --partition=short
 #SBATCH --array=0-2
 
 seeds=(42 123 7)
