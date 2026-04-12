@@ -247,7 +247,7 @@ def main():
     # Label encoder (full 91 classes + synthetic labels)
     # ------------------------------------------------------------------
     all_cytokines = sorted({e["cytokine"] for e in manifest if e["cytokine"] != "PBS"})
-    label_enc_base = CytokineLabel(all_cytokines)
+    label_enc_base = CytokineLabel().fit(manifest)
     log(f"  Base: {label_enc_base.n_classes()} classes")
 
     # ------------------------------------------------------------------
@@ -304,9 +304,7 @@ def main():
                 {e["cytokine"] for e in modified_manifest if e["cytokine"] != "PBS"}
             )
 
-        label_enc = CytokineLabel(
-            [c for c in cytokines_for_enc if c != "PBS"]
-        )
+        label_enc = CytokineLabel().fit(modified_manifest)
 
         train_m, val_m = split_manifest_by_donor(modified_manifest, VAL_DONORS)
         train_path = alpha_dir / "manifest_train.json"

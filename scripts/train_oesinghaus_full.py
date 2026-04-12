@@ -155,7 +155,7 @@ def main():
     # Label encoder (full 91 classes)
     # ------------------------------------------------------------------
     all_cytokines = sorted({e["cytokine"] for e in manifest if e["cytokine"] != "PBS"})
-    label_enc = CytokineLabel(all_cytokines)
+    label_enc = CytokineLabel().fit(manifest)
     log(f"  {label_enc.n_classes()} classes ({len(all_cytokines)} cytokines + PBS)")
 
     with open(out_dir / "label_encoder.json", "w") as fh:
