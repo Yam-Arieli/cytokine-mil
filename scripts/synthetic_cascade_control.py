@@ -260,10 +260,10 @@ def main():
         json.dump(stage1_manifest, fh)
 
     cell_dataset = CellDataset(
-        str(stage1_path), gene_names=gene_names, label_encoder=label_enc_base, preload=True,
+        str(stage1_path), gene_names=gene_names, preload=True,
     )
     cell_loader = DataLoader(cell_dataset, batch_size=256, shuffle=True, num_workers=0)
-    n_cell_types = len(cell_dataset.cell_type_encoder)
+    n_cell_types = len(cell_dataset.cell_type_to_idx)
 
     encoder = build_encoder(
         n_input_genes=len(gene_names), n_cell_types=n_cell_types, embed_dim=EMBED_DIM,
