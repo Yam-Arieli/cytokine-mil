@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=syn_cascade
-#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/synthetic_cascade_control/slurm_%j.out
-#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/synthetic_cascade_control/slurm_%j.err
+#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/slurm_%j.out
+#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/slurm_%j.err
 #SBATCH --gres=gpu:a5000
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=8
