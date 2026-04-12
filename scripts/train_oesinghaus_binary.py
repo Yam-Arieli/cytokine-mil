@@ -176,6 +176,8 @@ def _train_one_binary_model(
     device: torch.device,
     seed: int,
     log,
+    embed_dim: int = EMBED_DIM,
+    attention_hidden_dim: int = ATTENTION_HIDDEN_DIM,
 ) -> dict:
     """
     Train a single binary AB-MIL model (Stage 2 only, shared frozen encoder)
@@ -224,8 +226,8 @@ def _train_one_binary_model(
     # ------------------------------------------------------------------
     model = build_mil_model(
         encoder,
-        embed_dim=EMBED_DIM,
-        attention_hidden_dim=ATTENTION_HIDDEN_DIM,
+        embed_dim=embed_dim,
+        attention_hidden_dim=attention_hidden_dim,
         n_classes=label_enc.n_classes(),
         encoder_frozen=True,
     )
@@ -585,9 +587,18 @@ def main():
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None,
                         help=f"Training seed (default: {SEED})")
+    parser.add_argument("--embed_dim", type=int, default=EMBED_DIM,
+                        help=f"Encoder embedding dimension (default: {EMBED_DIM})")
+    parser.add_argument("--hidden_dims", type=int, nargs="+", default=list(HIDDEN_DIMS),
+                        help=f"Encoder hidden layer dims (default: {list(HIDDEN_DIMS)})")
+    parser.add_argument("--attention_hidden_dim", type=int, default=ATTENTION_HIDDEN_DIM,
+                        help=f"Attention hidden dimension (default: {ATTENTION_HIDDEN_DIM})")
     args = parser.parse_args()
 
-    seed = args.seed if args.seed is not None else SEED
+    seed              = args.seed if args.seed is not None else SEED
+    embed_dim         = args.embed_dim
+    hidden_dims       = tuple(args.hidden_dims)
+    attention_hidden_dim = args.attention_hidden_dim
 
     # ------------------------------------------------------------------
     # Output directory
@@ -620,9 +631,9 @@ def main():
     log(f"Control:          {CONTROL}")
     log()
     log("Hyperparameters:")
-    log(f"  embed_dim:            {EMBED_DIM}")
-    log(f"  hidden_dims:          {HIDDEN_DIMS}")
-    log(f"  attention_hidden_dim: {ATTENTION_HIDDEN_DIM}")
+    log(f"  embed_dim:            {embed_dim}")
+    log(f"  hidden_dims:          {hidden_dims}")
+    log(f"  attention_hidden_dim: {attention_hidden_dim}")
     log(f"  Stage 1 epochs:       {STAGE1_EPOCHS}  lr={STAGE1_LR}  momentum={STAGE1_MOMENTUM}")
     log(f"  Stage 2 epochs:       {STAGE2_EPOCHS}  lr={STAGE2_LR}  momentum={STAGE2_MOMENTUM}")
     log()
@@ -678,9 +689,9 @@ def main():
 
     encoder = InstanceEncoder(
         input_dim=len(gene_names),
-        embed_dim=EMBED_DIM,
+        embed_dim=embed_dim,
         n_cell_types=cell_dataset.n_cell_types(),
-        hidden_dims=HIDDEN_DIMS,
+        hidden_dims=hidden_dims,
     )
     log(f"Stage 1: training shared encoder, n_cell_types={cell_dataset.n_cell_types()}")
 
@@ -711,6 +722,8 @@ def main():
             device=device,
             seed=seed,
             log=log,
+            embed_dim=embed_dim,
+            attention_hidden_dim=attention_hidden_dim,
         )
 
     # ------------------------------------------------------------------
