@@ -436,6 +436,11 @@ def _build_records(
         ic_sa_trajectory = np.stack(ic_sa_epochs, axis=0).T if ic_sa_epochs else None
         ic_ca_trajectory = np.stack(ic_ca_epochs, axis=0).T if ic_ca_epochs else None
 
+        # Full softmax trajectory: shape (K, n_logged_epochs).
+        # Used by confusion_dynamics.py to build the K×K×T confusion trajectory tensor.
+        sm_epochs = traj["softmax_epochs"]
+        softmax_trajectory = np.stack(sm_epochs, axis=0).T if sm_epochs else None
+
         records.append(
             {
                 "cytokine": entry["cytokine"],
@@ -454,6 +459,11 @@ def _build_records(
                 # v2 model: SA and CA layer trajectories. None for v1 model.
                 "confidence_trajectory_sa": ic_sa_trajectory,
                 "confidence_trajectory_ca": ic_ca_trajectory,
+                # Full softmax output per tube per logged epoch.
+                # Shape: (K, n_logged_epochs). K = n_classes (e.g. 91).
+                # Consumed by analysis/confusion_dynamics.py to build the
+                # K×K×T confusion trajectory tensor C(A,B,t).
+                "softmax_trajectory": softmax_trajectory,
             }
         )
     return records

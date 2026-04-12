@@ -26,3 +26,7 @@ training:
 dynamics:
   log_every_n_epochs: 1         # frequency of dynamics snapshot logging
   random_seeds: [42, 123, 7]    # run all three, check ordering stability
+  # Confusion dynamics (analysis/confusion_dynamics.py)
+  confusion_late_epoch_fraction: 0.3   # fraction of final epochs used for asymmetry score
+  confusion_fdr_alpha: 0.05            # BH FDR threshold for cascade graph edges
+  cascade_graph_min_seed_rho: 0.7      # min Spearman rho across seeds for reportable pairs

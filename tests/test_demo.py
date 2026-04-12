@@ -886,3 +886,66 @@ class TestValidation:
         assert "spearman_matrix" in result
         assert result["spearman_matrix"].shape == (2, 2)
         assert "stable" in result
+
+
+# ---------------------------------------------------------------------------
+# Confusion dynamics tests (analysis/confusion_dynamics.py)
+# ---------------------------------------------------------------------------
+
+class TestConfusionDynamics:
+    """Tests for cascade inference via confusion dynamics (Section 19)."""
+
+    @pytest.fixture(scope="class")
+    def dynamics_with_softmax(self, dataset):
+        """Run a short training and return dynamics dict with softmax_trajectory."""
+        from cytokine_mil.training.train_mil import train_mil
+        model = _make_fresh_mil_model()
+        return train_mil(model, dataset, n_epochs=3, verbose=False, seed=0)
+
+    def test_softmax_trajectory_in_records(self, dynamics_with_softmax):
+        """softmax_trajectory must be present in every record with shape (K, T)."""
+        records = dynamics_with_softmax["records"]
+        assert records, "records is empty"
+        logged_epochs = dynamics_with_softmax["logged_epochs"]
+        T = len(logged_epochs)
+        for rec in records:
+            sm = rec.get("softmax_trajectory")
+            assert sm is not None, "softmax_trajectory missing from record"
+            assert sm.ndim == 2, f"Expected 2D softmax_trajectory, got {sm.ndim}D"
+            assert sm.shape[0] == N_CLASSES, (
+                f"Expected K={N_CLASSES} rows, got {sm.shape[0]}"
+            )
+            assert sm.shape[1] == T, (
+                f"Expected T={T} logged epochs, got {sm.shape[1]}"
+            )
+
+    def test_confusion_trajectory_shape(self, dataset, dynamics_with_softmax, label_encoder):
+        """compute_confusion_trajectory must return (K, K, T) where K = model output dim."""
+        from cytokine_mil.analysis.confusion_dynamics import compute_confusion_trajectory
+        records = dynamics_with_softmax["records"]
+        T = len(dynamics_with_softmax["logged_epochs"])
+        # K comes from softmax_trajectory (model output classes), not label_encoder.
+        K = records[0]["softmax_trajectory"].shape[0]
+        confusion, cyt_names = compute_confusion_trajectory(records, label_encoder)
+        assert confusion.shape == (K, K, T), (
+            f"Expected ({K}, {K}, {T}), got {confusion.shape}"
+        )
+
+    def test_asymmetry_score_antisymmetric(self, dataset, dynamics_with_softmax, label_encoder):
+        """Asymmetry matrix must be antisymmetric: Asym[A,B] == -Asym[B,A]."""
+        from cytokine_mil.analysis.confusion_dynamics import (
+            compute_confusion_trajectory,
+            compute_asymmetry_score,
+        )
+        records = dynamics_with_softmax["records"]
+        confusion, _ = compute_confusion_trajectory(records, label_encoder)
+        asym = compute_asymmetry_score(confusion, late_epoch_fraction=0.5)
+        assert asym.shape[0] == asym.shape[1], "Asymmetry matrix must be square"
+        np.testing.assert_allclose(
+            asym, -asym.T, atol=1e-6,
+            err_msg="Asymmetry matrix must satisfy Asym[A,B] == -Asym[B,A]"
+        )
+        np.testing.assert_allclose(
+            np.diag(asym), 0.0, atol=1e-6,
+            err_msg="Diagonal of asymmetry matrix must be zero"
+        )
