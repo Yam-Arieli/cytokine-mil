@@ -89,6 +89,7 @@ def _parse_args():
     p.add_argument("--alpha",          type=float, nargs="+", default=[0.1, 0.2, 0.3],
                    help="Mixing fractions to test (fraction of A-tube cells replaced by B).")
     p.add_argument("--seed",                type=int,   default=SEED)
+    p.add_argument("--stage1_epochs",       type=int,   default=STAGE1_EPOCHS)
     p.add_argument("--stage2_epochs",       type=int,   default=STAGE2_EPOCHS)
     p.add_argument("--lr",                  type=float, default=STAGE2_LR)
     p.add_argument("--output_dir",          type=str,   default=None)
@@ -287,7 +288,7 @@ def main():
         n_input_genes=len(gene_names), n_cell_types=n_cell_types, embed_dim=EMBED_DIM,
     )
     train_encoder(
-        encoder=encoder, dataloader=cell_loader, n_epochs=STAGE1_EPOCHS,
+        encoder=encoder, dataloader=cell_loader, n_epochs=args.stage1_epochs,
         lr=STAGE1_LR, momentum=0.9, device=device, verbose=True,
     )
     torch.save(encoder.state_dict(), out_dir / "encoder_stage1.pt")
