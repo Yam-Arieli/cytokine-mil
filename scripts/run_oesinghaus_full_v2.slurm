@@ -21,4 +21,4 @@ mkdir -p results/oesinghaus_full_v2
     --seed $SEED \
     --stage2_epochs 300 \
     --lr 0.003 \
-    --output_dir results/oesinghaus_full_v2
+    --output_dir results/oesinghaus_full_v2/seed_${SEED}

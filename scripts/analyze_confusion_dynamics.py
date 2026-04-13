@@ -43,14 +43,32 @@ def load_seed_dynamics(run_dir: Path):
 
 def find_seed_dirs(results_dir: Path):
     """Return the 3 most-recent completed run dirs (one per seed)."""
+    # Case 1: subdirs named run_*_seed* (v1 layout)
     dirs = sorted(results_dir.glob("run_*_seed*"), key=lambda p: p.name)
-    # Keep only dirs that have dynamics.pkl
     dirs = [d for d in dirs if (d / "dynamics.pkl").exists()]
-    # Group by seed, keep latest per seed
     by_seed = {}
     for d in dirs:
         seed = d.name.split("_seed")[-1]
-        by_seed[seed] = d  # later entry overwrites, keeping latest
+        by_seed[seed] = d
+
+    # Case 2: subdirs named seed_* (v2 layout)
+    for d in sorted(results_dir.glob("seed_*")):
+        if (d / "dynamics.pkl").exists():
+            seed = d.name.split("seed_")[-1]
+            by_seed[seed] = d
+
+    # Case 3: flat dir — dynamics.pkl directly in results_dir
+    if not by_seed and (results_dir / "dynamics.pkl").exists():
+        # Read seed from train.log if present
+        seed = "unknown"
+        log_path = results_dir / "train.log"
+        if log_path.exists():
+            for line in log_path.read_text().splitlines():
+                if line.startswith("Seed:"):
+                    seed = line.split(":")[-1].strip()
+                    break
+        by_seed[seed] = results_dir
+
     return by_seed
 
 
