@@ -334,10 +334,10 @@ def main():
             json.dump(val_m, fh)
 
         train_dataset = PseudoTubeDataset(
-            str(train_path), label_enc, gene_names=gene_names, preload=False,
+            str(train_path), label_enc, gene_names=gene_names, preload=True,
         )
         val_dataset = PseudoTubeDataset(
-            str(val_path), label_enc, gene_names=gene_names, preload=False,
+            str(val_path), label_enc, gene_names=gene_names, preload=True,
         )
 
         import copy
@@ -349,7 +349,7 @@ def main():
 
         dynamics = train_mil(
             model, train_dataset, n_epochs=args.stage2_epochs,
-            lr=args.lr, momentum=0.9, log_every_n_epochs=LOG_EVERY,
+            lr=args.lr, momentum=0.9, log_every_n_epochs=5,
             device=device, seed=args.seed, verbose=True, val_dataset=val_dataset,
         )
 
