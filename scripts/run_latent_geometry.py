@@ -82,16 +82,23 @@ def _load_label_encoder(run_dir: Path) -> CytokineLabel:
 
 
 def _infer_n_cell_types(state_dict: dict) -> int:
-    """Infer n_cell_types from the encoder classification head weight shape."""
-    key = "encoder.classification_head.weight"
+    """Infer n_cell_types from the encoder cell_type_head weight shape.
+
+    model_stage2.pt is a CytokineABMIL state dict — encoder weights are
+    prefixed with 'encoder.'. The cell-type head is 'encoder.cell_type_head'.
+    """
+    key = "encoder.cell_type_head.weight"
     if key in state_dict:
         return state_dict[key].shape[0]
-    # Fallback: scan for classification head
-    for k, v in state_dict.items():
-        if "classification_head" in k and "weight" in k:
-            return v.shape[0]
-    raise ValueError("Cannot infer n_cell_types from state dict — "
-                     "classification_head not found.")
+    # Also accept encoder-only checkpoints (encoder_stage1.pt format)
+    key2 = "cell_type_head.weight"
+    if key2 in state_dict:
+        return state_dict[key2].shape[0]
+    raise ValueError(
+        "Cannot infer n_cell_types from state dict — "
+        "neither 'encoder.cell_type_head.weight' nor 'cell_type_head.weight' found. "
+        f"Available keys: {list(state_dict.keys())[:10]}"
+    )
 
 
 def _load_model(run_dir: Path, label_enc: CytokineLabel,
