@@ -484,7 +484,8 @@ cytokine_mil/               <- repo root
 │   │   ├── bag_classifier.py
 │   │   ├── cytokine_abmil.py
 │   │   ├── two_layer_attention.py  <- TwoLayerAttentionModule (SA + CA)
-│   │   └── cytokine_abmil_v2.py   <- CytokineABMIL_V2
+│   │   ├── cytokine_abmil_v2.py   <- CytokineABMIL_V2
+│   │   └── aux_decoder.py         <- AuxDecoder (Exp 3 contingency, Section 20.5)
 │   ├── training/
 │   │   ├── trainer.py          <- shared helpers, mega-batch logic
 │   │   ├── train_encoder.py    <- Stage 1
@@ -498,7 +499,9 @@ cytokine_mil/               <- repo root
 ├── scripts/
 │   ├── build_pseudotubes.py
 │   ├── synthetic_cascade_control.py   <- Experiment 0 go/no-go gate (Section 19.5)
-│   └── train_oesinghaus_full.py       <- full 91-class confusion dynamics training
+│   ├── train_oesinghaus_full.py       <- full 91-class confusion dynamics training
+│   ├── train_aux_decoder.py           <- trains AuxDecoder on frozen MIL model (Section 20.5)
+│   └── check_attention_cell_types.py  <- attention proxy check (Section 20.8)
 ├── configs/
 │   └── default.yaml
 ├── notebooks/
@@ -583,6 +586,13 @@ dynamics:
   confusion_late_epoch_fraction: 0.3   # fraction of final epochs for asymmetry score
   confusion_fdr_alpha: 0.05            # FDR threshold for cascade graph edges
   cascade_graph_min_seed_rho: 0.7      # min Spearman rho across seeds for reportable pairs
+
+aux_decoder:
+  embed_dim: 64
+  tau_values: [0.3, 0.5, 1.0]         # temperature sweep for bag-level softmax sharpening
+  tau_default: 0.5
+  lr: 1e-3
+  epochs: 50
 ```
 
 ---
@@ -1049,11 +1059,54 @@ Metric: max_T [ bias(A,B,T) - bias(B,A,T) ]
 
 ### 20.5 Experiment 3 — Auxiliary Decoder (Contingency)
 
-**Not implemented.** Triggered only if Experiment 0 gate fails (alignment ≈ null, encoder embeds cell-type space only).
+**Triggered when:** Experiment 0 gate fails (alignment ≈ null, encoder embeds cell-type space only).
 
-**Concept:** small MLP trained post-hoc on frozen encoder output, supervised by bag-level softmax `p_bag(C | tube)` via KL divergence. Transfers bag-level cytokine geometry to cell level without requiring cell-level cytokine labels.
+**Scientific claim (honest framing):** The decoder injects cytokine geometry into cell-level representations post-hoc, supervised by bag-level softmax. This is explicitly "decoder-injected cytokine geometry," not emergent encoder geometry. The goal is to enable Experiments 1 and 2 in a space where cytokine geometry exists by construction, then check whether the resulting directional bias structure matches known biology.
 
-See `# TODO: Experiment 3` comment in `analysis/latent_geometry.py`.
+**Architecture:** Small MLP on frozen encoder output:
+```
+h_i ∈ R^128  →  [Linear(128→64), ReLU]  →  g_i ∈ R^64  →  [Linear(64→91)]  →  cytokine_logits_i
+```
+- Encoder frozen, MIL model frozen — decoder weights only
+- g_i (64-dim intermediate) is the cell-level cytokine-aware embedding used in Exp 1/2
+- Implemented as `AuxDecoder` in `models/aux_decoder.py`
+
+**Supervision signal:** Sharpened bag-level softmax with temperature τ:
+```
+p_bag_τ(C | tube) = softmax(y_hat / τ)
+```
+- `y_hat` = logits from the trained MIL model (frozen), per tube
+- τ ∈ {0.3, 0.5, 1.0} — treat as hyperparameter, run all three
+- τ < 1 sharpens supervision for ambiguous cytokines; for already-peaked predictions it has minimal effect
+- Default: τ = 0.5
+
+**Loss function (attention-weighted KL):**
+```
+L = sum_i  a_i * KL( p_bag_τ || softmax(decoder(h_i)) )
+```
+- a_i = attention weight of cell i from the frozen MIL model forward pass (sum to 1)
+- High-a_i cells: strong supervision → embed near the bag cytokine centroid
+- Low-a_i cells: weak supervision → less constrained; can retain secondary signal
+- Whether attention-weighting is justified depends on whether attention proxies primary responders (see Section 20.8)
+
+**Training details:**
+- Optimizer: Adam, lr=1e-3
+- Batch: one tube at a time (same as MIL training)
+- Epochs: 50 (tunable)
+- After training: re-run Experiments 0, 1, 2 replacing h_i with g_i (64-dim)
+
+**Config parameters** (add to `configs/default.yaml` under a new `aux_decoder` block):
+```yaml
+aux_decoder:
+  embed_dim: 64
+  tau_values: [0.3, 0.5, 1.0]
+  tau_default: 0.5
+  lr: 1e-3
+  epochs: 50
+```
+
+**Implementation file:** `models/aux_decoder.py` — class `AuxDecoder`.
+**Training script:** `scripts/train_aux_decoder.py` — loads trained MIL model, trains decoder, saves `aux_decoder_tau{τ}.pt` to the run directory.
 
 ### 20.6 Implementation Notes
 
@@ -1071,5 +1124,29 @@ cytokine_mil/analysis/
     dynamics.py
     validation.py
     confusion_dynamics.py
-    latent_geometry.py     <- Experiments 0–2; Experiment 3 is a TODO
+    latent_geometry.py     <- Experiments 0–2; Experiment 3 (AuxDecoder contingency)
 ```
+
+---
+
+### 20.8 Attention Proxy Check (Pre-Decoder Validation)
+
+**Purpose:** Before using attention-weighted KL loss in Experiment 3, empirically verify that high-attention cell types match known primary responders. If yes, the attention-weighting is justified. If no, use uniform KL loss and treat the attention weighting as a caveat.
+
+**Script:** `scripts/check_attention_cell_types.py`
+
+**Method:** For each key cytokine, extract per-cell attention weights a_i from the frozen trained model, group by cell type (from h5ad obs["cell_type"]), aggregate to donor level (median per donor, mean across donors). Report top-3 dominant cell types by mean attention.
+
+**Known ground-truth for pass/fail:**
+
+| Cytokine | Expected dominant cell type(s) |
+|---|---|
+| IL-12 | NK, NK CD56bright |
+| IFN-γ | NK, CD14 Mono |
+| IL-4 | B cells, CD4 T cells |
+| IL-2 | CD4 T, CD8 T |
+| TNF-α | CD14 Mono |
+
+**Verdict rule:** If ≥ 60% of tested cytokines match expected dominant cell type in top-3 attention → proxy is empirically grounded → use attention-weighted KL. Otherwise → use uniform KL and report as caveat.
+
+**Run before implementing `train_aux_decoder.py`.**
