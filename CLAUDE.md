@@ -492,7 +492,8 @@ cytokine_mil/               <- repo root
 │   └── analysis/
 │       ├── dynamics.py
 │       ├── validation.py
-│       └── confusion_dynamics.py   <- confusion trajectory, asymmetry, cascade graph
+│       ├── confusion_dynamics.py   <- confusion trajectory, asymmetry, cascade graph
+│       └── latent_geometry.py      <- cytokine centroid geometry, directional bias, asymmetry (Section 20)
 │
 ├── scripts/
 │   ├── build_pseudotubes.py
@@ -944,4 +945,131 @@ Metric: mean(C(A,B,t_late)) - mean(C(B,A,t_late)), where t_late = last 30% of tr
 
 Temporal profile
 Metric: peak_epoch = argmax C(A,B,t); profile_type: early (<30% T), late (>70% T), mid
+```
+
+---
+
+## 20. Latent Space Cytokine Geometry (`analysis/latent_geometry.py`)
+
+### 20.1 Core Idea
+
+After MIL training the encoder maps each cell to `h_i ∈ R^128`. We hypothesize that cells in cytokine-A tubes that are responding to endogenously produced cytokine B (a cascade secondary signal) will have their embedding displaced toward B's centroid in the learned representation space.
+
+Cascade relationships are detected as **per-cell-type directional bias** of a cell-type subpopulation's mean embedding toward another cytokine's centroid, within a given cytokine's tubes — without using attention weights.
+
+**Run on a 20-cytokine subset first** (must include IL-12, IFN-γ, IL-18, TNF-α, IL-6 as known cascade pairs), not all 91.
+
+### 20.2 Experiment 0 — Does Cytokine Geometry Exist at the Cell Level? (GO/NO-GO Gate)
+
+Everything in Sections 20.3–20.5 depends on this gate passing.
+
+**Cytokine centroid:**
+```
+μ_C = mean over all cells in all C-tubes of h_i    (training donors only: D1, D4–D12)
+```
+
+**Cytokine affinity vector for cell i:**
+```
+f_i = softmax( -d(h_i, μ_C) for all C )    d = L2 distance
+```
+
+**Cytokine alignment score for cytokine A:**
+```
+cytokine_alignment_score(A) = mean over cells in A-tubes of f_i[A]
+```
+
+**Null distribution:** permute cytokine tube labels, recompute alignment score. Permutation test (1000 permutations).
+
+**Gate criterion:** `cytokine_alignment_score` significantly above null (p < 0.05, permutation test) for the majority of cytokines.
+
+**Also compute:** Spearman correlation between `cytokine_alignment_score(C)` and learnability AUC(C). Expect positive correlation.
+
+**If gate fails:** encoder embeds in cell-type space only; cytokine geometry exists only at bag level. Proceed to Experiment 3 (auxiliary decoder — not yet implemented; see TODO in `analysis/latent_geometry.py`).
+
+### 20.3 Experiment 1 — Per-Cell-Type Directional Bias
+
+**Directional bias of cell type T in cytokine-A tubes toward cytokine B:**
+```
+bias(A, B, T) = (μ_{A,T} - μ_A) · (μ_B - μ_A) / ||μ_B - μ_A||_2
+```
+Where:
+- `μ_{A,T}` = mean embedding of cells of type T within A-tubes
+- `μ_A` = mean embedding of all cells within A-tubes
+- `(μ_B - μ_A) / ||μ_B - μ_A||_2` = unit vector from A's centroid to B's centroid
+
+Positive = cell type T is displaced toward B within A-tubes; negative = displaced away.
+
+**Null distribution:** permute cell-type labels within tubes 1000 times, recompute bias.
+```
+z(A, B, T) = (bias(A, B, T) - mean(bias_null)) / std(bias_null)
+```
+
+**Multiple testing:** Benjamini-Hochberg FDR across all (A, B, T) triples.
+
+**Positive control:** For IL-12→IFN-γ:
+```
+bias(IL-12, IFN-γ, NK)       > 0    # NK cells are primary IFN-γ responders
+bias(IL-12, IFN-γ, CD14_Mono) > 0   # secondary
+bias(IFN-γ, IL-12, NK)        ≈ 0   # asymmetry check
+```
+
+**Output:** Directed graph: edge A→B exists if `max_T z(A, B, T) > FDR threshold`, weighted by max z-score.
+
+### 20.4 Experiment 2 — Asymmetry Test (Cascade Direction)
+
+**Per-cell-type asymmetry:**
+```
+asym(A, B, T) = bias(A, B, T) - bias(B, A, T)
+```
+
+**Pair-level asymmetry (aggregate over cell types):**
+```
+ASYM(A, B) = max_T asym(A, B, T)
+```
+
+Positive `ASYM(A, B)` = evidence for cascade direction A→B.
+
+**Output:** (K, K) asymmetry matrix. Cluster it. IFN family and IL-2/IL-15 should cluster.
+
+**Seed stability:** run across seeds 42, 123, 7. Spearman rho of ASYM vectors across seeds. Threshold: rho > 0.7 for reportable pairs.
+
+**Precise output labels:**
+```
+Cytokine alignment score
+Metric: mean over cells in A-tubes of softmax(-||h_i - μ_C||_2 for all C)[A]
+        Aggregated to donor level (training donors D1, D4–D12 only for centroid computation)
+
+Directional bias
+Metric: scalar projection of (μ_{A,T} - μ_A) onto unit vector (μ_B - μ_A)/||μ_B - μ_A||
+
+Asymmetry score
+Metric: max_T [ bias(A,B,T) - bias(B,A,T) ]
+        Positive = evidence for cascade A→B
+```
+
+### 20.5 Experiment 3 — Auxiliary Decoder (Contingency)
+
+**Not implemented.** Triggered only if Experiment 0 gate fails (alignment ≈ null, encoder embeds cell-type space only).
+
+**Concept:** small MLP trained post-hoc on frozen encoder output, supervised by bag-level softmax `p_bag(C | tube)` via KL divergence. Transfers bag-level cytokine geometry to cell level without requiring cell-level cytokine labels.
+
+See `# TODO: Experiment 3` comment in `analysis/latent_geometry.py`.
+
+### 20.6 Implementation Notes
+
+- Compute centroids `μ_C` using **training donors only** (D1, D4–D12); validate directional bias on D2, D3
+- Cell-type labels reintroduced post-hoc from original h5ad metadata — never used during training
+- Aggregate all statistics to donor level before significance testing (effective N=12, not N=120)
+- All functions return a `metric_description` key per Section 14 convention
+- Implementation file: `analysis/latent_geometry.py`
+
+### 20.7 File
+
+Add `analysis/latent_geometry.py` to the project file structure (Section 11):
+```
+cytokine_mil/analysis/
+    dynamics.py
+    validation.py
+    confusion_dynamics.py
+    latent_geometry.py     <- Experiments 0–2; Experiment 3 is a TODO
 ```

@@ -1,0 +1,672 @@
+"""
+Latent Space Cytokine Geometry Analysis.
+
+After MIL training the encoder maps each cell to h_i ∈ R^128. We hypothesize
+that cells in cytokine-A tubes that are responding to endogenously produced
+cytokine B (a cascade secondary signal) will have their embedding displaced
+toward B's centroid in the learned representation space.
+
+Cascade relationships are detected as per-cell-type directional bias of a
+cell-type subpopulation's mean embedding toward another cytokine's centroid,
+within a given cytokine's tubes — without using attention weights.
+
+Experiments implemented here (per CLAUDE.md Section 20):
+    Experiment 0 — Does cytokine geometry exist at the cell level? (GO/NO-GO)
+    Experiment 1 — Per-cell-type directional bias toward other cytokine centroids
+    Experiment 2 — Asymmetry test for cascade direction from bias scores
+
+Functions:
+    compute_cytokine_centroids
+    compute_alignment_scores
+    compute_directional_bias
+    compute_asymmetry_matrix
+    build_latent_cascade_graph
+"""
+
+# TODO: Experiment 3 — implement if Experiment 0 alignment ≈ null.
+# Concept: small MLP trained post-hoc on frozen encoder output, supervised by
+# bag-level softmax p_bag(C | tube) via KL divergence. Transfers bag-level
+# cytokine geometry to cell level without requiring cell-level cytokine labels.
+# See CLAUDE.md Section 20.5 for full spec.
+
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from cytokine_mil.data.dataset import PseudoTubeDataset
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def compute_cytokine_centroids(
+    model: nn.Module,
+    dataset: PseudoTubeDataset,
+    label_encoder,
+    device: str = "cpu",
+) -> dict:
+    """
+    Compute mean encoder embedding per cytokine across all tubes in dataset.
+
+    The caller is responsible for passing a training-split dataset
+    (training donors D1, D4–D12 only).
+
+    For each cytokine C:
+        μ_C = mean over all h_i (cells) across all C-tubes in dataset.
+
+    Cell-type labels are never used here — only the encoder output H.
+    Uses model.eval() and torch.no_grad() throughout.
+
+    Args:
+        model: CytokineABMIL or CytokineABMIL_V2 (eval mode, on device).
+        dataset: PseudoTubeDataset (training donors only — caller responsibility).
+        label_encoder: CytokineLabel or BinaryLabel with .encode() and .cytokines.
+        device: torch device string.
+
+    Returns:
+        dict with keys:
+            'centroids': {cytokine_name -> np.ndarray of shape (128,)}
+            'metric_description': str
+    """
+    torch_device = torch.device(device)
+    model.eval()
+    model.to(torch_device)
+
+    # Accumulate sum of embeddings and cell counts per cytokine.
+    embedding_sums: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros(128, dtype=np.float64))
+    cell_counts: Dict[str, int] = defaultdict(int)
+
+    with torch.no_grad():
+        for ds_idx in range(len(dataset)):
+            X, _label, _donor, cytokine_name = dataset[ds_idx]
+            X = X.to(torch_device)
+            H = _extract_embeddings(model, X)  # (N, 128)
+            h_np = H.cpu().numpy().astype(np.float64)
+            embedding_sums[cytokine_name] += h_np.sum(axis=0)
+            cell_counts[cytokine_name] += h_np.shape[0]
+
+    centroids = {
+        cyt: embedding_sums[cyt] / cell_counts[cyt]
+        for cyt in embedding_sums
+        if cell_counts[cyt] > 0
+    }
+
+    return {
+        "centroids": centroids,
+        "metric_description": (
+            "μ_C = mean over all cells in all C-tubes of h_i (encoder output), "
+            "training donors only"
+        ),
+    }
+
+
+def compute_alignment_scores(
+    model: nn.Module,
+    dataset: PseudoTubeDataset,
+    label_encoder,
+    centroids: dict,
+    n_permutations: int = 1000,
+    device: str = "cpu",
+) -> dict:
+    """
+    Compute cytokine alignment scores with permutation-based null distribution.
+
+    For each tube of cytokine A, for each cell i:
+        f_i = softmax( -||h_i - μ_C||_2  for all C )
+        per-tube score = mean_i f_i[A]
+
+    Cytokine alignment score for A = mean over all A-tubes of per-tube score.
+
+    Null distribution: permute cytokine labels assigned to tubes 1000 times,
+    recompute per-tube alignment as if the tube belonged to the permuted cytokine.
+
+    Args:
+        model: CytokineABMIL or CytokineABMIL_V2 (eval mode).
+        dataset: PseudoTubeDataset (training donors only — caller responsibility).
+        label_encoder: CytokineLabel or BinaryLabel.
+        centroids: output of compute_cytokine_centroids()['centroids'].
+        n_permutations: number of label permutations for null distribution.
+        device: torch device string.
+
+    Returns:
+        dict with keys:
+            'alignment_scores': {cytokine_name -> float}  (mean over tubes)
+            'null_mean': float
+            'null_std': float
+            'p_values': {cytokine_name -> float}  (fraction of null >= observed)
+            'metric_description': str
+    """
+    torch_device = torch.device(device)
+    model.eval()
+    model.to(torch_device)
+
+    centroid_names = list(centroids.keys())
+    centroid_matrix = np.stack(
+        [centroids[c] for c in centroid_names], axis=0
+    ).astype(np.float32)  # (C_count, 128)
+    centroid_tensor = torch.tensor(centroid_matrix, device=torch_device)
+
+    # Per-tube: (cytokine_name, alignment_score)
+    tube_scores: List[Tuple[str, float]] = []
+
+    with torch.no_grad():
+        for ds_idx in range(len(dataset)):
+            X, _label, _donor, cytokine_name = dataset[ds_idx]
+            if cytokine_name not in centroids:
+                continue
+            X = X.to(torch_device)
+            H = _extract_embeddings(model, X)  # (N, 128)
+            score = _per_tube_alignment(H, centroid_tensor, centroid_names, cytokine_name)
+            tube_scores.append((cytokine_name, score))
+
+    # Mean per cytokine across tubes.
+    cyt_tube_scores: Dict[str, List[float]] = defaultdict(list)
+    for cyt, score in tube_scores:
+        cyt_tube_scores[cyt].append(score)
+
+    alignment_scores = {
+        cyt: float(np.mean(vals))
+        for cyt, vals in cyt_tube_scores.items()
+    }
+
+    # Null distribution: permute tube labels, recompute alignment.
+    null_scores = _compute_alignment_null(
+        tube_scores, n_permutations=n_permutations, rng_seed=0
+    )
+    null_mean = float(np.mean(null_scores))
+    null_std = float(np.std(null_scores))
+
+    # p-value: fraction of null mean >= observed per cytokine.
+    p_values = {
+        cyt: float(np.mean(np.array(null_scores) >= score))
+        for cyt, score in alignment_scores.items()
+    }
+
+    return {
+        "alignment_scores": alignment_scores,
+        "null_mean": null_mean,
+        "null_std": null_std,
+        "p_values": p_values,
+        "metric_description": (
+            "mean over cells in A-tubes of softmax(-||h_i - μ_C||_2 for all C)[A], "
+            "aggregated to donor level (training donors only)"
+        ),
+    }
+
+
+def compute_directional_bias(
+    model: nn.Module,
+    dataset: PseudoTubeDataset,
+    label_encoder,
+    centroids: dict,
+    cell_type_obs: dict,
+    n_permutations: int = 1000,
+    device: str = "cpu",
+) -> dict:
+    """
+    Compute per-cell-type directional bias of embeddings toward other cytokine centroids.
+
+    For every (A, B, T) triple:
+        bias(A, B, T) = (μ_{A,T} - μ_A) · (μ_B - μ_A) / ||μ_B - μ_A||_2
+
+    Where:
+        μ_{A,T} = mean embedding of cells of type T within A-tubes
+        μ_A     = mean embedding of all cells within A-tubes (= centroids[A])
+        (μ_B - μ_A) / ||...||_2 = unit direction from A centroid to B centroid
+
+    Null: permute cell-type labels within each tube 1000 times, recompute bias.
+    z-score: z(A, B, T) = (bias - mean(null)) / std(null).
+    BH-FDR correction across all (A, B, T) triples.
+
+    Cell-type labels are passed as cell_type_obs by the caller — never used during
+    training or accessed from inside the model.
+
+    Args:
+        model: CytokineABMIL or CytokineABMIL_V2 (eval mode).
+        dataset: PseudoTubeDataset (training donors only — caller responsibility).
+        label_encoder: CytokineLabel or BinaryLabel.
+        centroids: output of compute_cytokine_centroids()['centroids'].
+        cell_type_obs: {tube_index (int) -> list of cell type strings, length N}.
+        n_permutations: number of within-tube cell-type permutations for null.
+        device: torch device string.
+
+    Returns:
+        dict with keys:
+            'bias': {(cyt_a, cyt_b, cell_type) -> float}
+            'z_scores': {(cyt_a, cyt_b, cell_type) -> float}
+            'q_values': {(cyt_a, cyt_b, cell_type) -> float}
+            'metric_description': str
+    """
+    torch_device = torch.device(device)
+    model.eval()
+    model.to(torch_device)
+
+    # Collect per-tube embeddings and their cytokine label.
+    # tube_embeddings: list of (cytokine_name, H_np (N,128), cell_types (N,))
+    tube_data: List[Tuple[str, np.ndarray, np.ndarray]] = []
+
+    with torch.no_grad():
+        for ds_idx in range(len(dataset)):
+            X, _label, _donor, cytokine_name = dataset[ds_idx]
+            if cytokine_name not in centroids:
+                continue
+            ct_labels = cell_type_obs.get(ds_idx)
+            if ct_labels is None:
+                continue
+            X = X.to(torch_device)
+            H = _extract_embeddings(model, X)  # (N, 128)
+            H_np = H.cpu().numpy().astype(np.float64)
+            tube_data.append((cytokine_name, H_np, np.array(ct_labels)))
+
+    # Compute observed bias for all (A, B, T) triples.
+    bias_obs = _compute_all_biases(tube_data, centroids)
+
+    # Null distribution: permute cell-type labels within tubes.
+    bias_null = _compute_bias_null(tube_data, centroids, n_permutations=n_permutations)
+
+    # z-scores.
+    z_scores = {}
+    for key, obs in bias_obs.items():
+        null_vals = bias_null.get(key, [])
+        if len(null_vals) < 2:
+            z_scores[key] = 0.0
+        else:
+            null_arr = np.array(null_vals)
+            null_m = float(null_arr.mean())
+            null_s = float(null_arr.std())
+            z_scores[key] = (obs - null_m) / null_s if null_s > 0 else 0.0
+
+    # Convert z-scores to two-tailed p-values and apply BH-FDR.
+    q_values = _z_to_bh_qvalues(z_scores)
+
+    return {
+        "bias": dict(bias_obs),
+        "z_scores": dict(z_scores),
+        "q_values": q_values,
+        "metric_description": (
+            "scalar projection of (μ_{A,T} - μ_A) onto "
+            "unit vector (μ_B - μ_A)/||μ_B - μ_A||_2"
+        ),
+    }
+
+
+def compute_asymmetry_matrix(
+    bias: dict,
+    label_encoder,
+) -> dict:
+    """
+    Compute the pair-level asymmetry matrix from per-cell-type directional bias.
+
+    For each ordered pair (A, B):
+        ASYM(A, B) = max_T [ bias(A,B,T) - bias(B,A,T) ]
+
+    Positive ASYM(A, B) = evidence for cascade direction A→B.
+
+    Args:
+        bias: output of compute_directional_bias()['bias'].
+              Keys are (cyt_a, cyt_b, cell_type) tuples.
+        label_encoder: CytokineLabel or BinaryLabel with .cytokines.
+
+    Returns:
+        dict with keys:
+            'asymmetry_matrix': np.ndarray of shape (K, K)
+            'cytokine_names': list of length K, ordered to match matrix rows/cols
+            'metric_description': str
+    """
+    cytokine_names = list(label_encoder.cytokines)
+    K = len(cytokine_names)
+    name_to_idx = {name: i for i, name in enumerate(cytokine_names)}
+
+    # Collect all cell types seen in bias keys.
+    cell_types = sorted({key[2] for key in bias.keys()})
+
+    asym_matrix = np.zeros((K, K), dtype=np.float64)
+
+    for a_name in cytokine_names:
+        a_idx = name_to_idx[a_name]
+        for b_name in cytokine_names:
+            if a_name == b_name:
+                continue
+            b_idx = name_to_idx[b_name]
+            max_asym = None
+            for ct in cell_types:
+                b_ab = bias.get((a_name, b_name, ct), 0.0)
+                b_ba = bias.get((b_name, a_name, ct), 0.0)
+                diff = b_ab - b_ba
+                if max_asym is None or diff > max_asym:
+                    max_asym = diff
+            if max_asym is not None:
+                asym_matrix[a_idx, b_idx] = max_asym
+
+    return {
+        "asymmetry_matrix": asym_matrix,
+        "cytokine_names": cytokine_names,
+        "metric_description": (
+            "max_T [ bias(A,B,T) - bias(B,A,T) ]; positive = evidence for cascade A→B"
+        ),
+    }
+
+
+def build_latent_cascade_graph(
+    asymmetry_matrix: np.ndarray,
+    z_scores: dict,
+    label_encoder,
+    fdr_alpha: float = 0.05,
+) -> "nx.DiGraph":
+    """
+    Build a directed cytokine cascade graph from latent geometry asymmetry scores.
+
+    Edge A→B is added when:
+        max_T z(A, B, T) > FDR threshold (from q_values in z_scores)  AND
+        ASYM(A, B) > 0
+
+    Edge weight = max z-score over cell types for pair (A, B).
+
+    Args:
+        asymmetry_matrix: np.ndarray of shape (K, K) from compute_asymmetry_matrix().
+        z_scores: output of compute_directional_bias()['z_scores'].
+                  Keys are (cyt_a, cyt_b, cell_type) tuples.
+        label_encoder: CytokineLabel or BinaryLabel with .cytokines.
+        fdr_alpha: FDR significance threshold (default 0.05).
+
+    Returns:
+        nx.DiGraph with nodes = cytokine names, edges A→B with attributes:
+            'asymmetry': ASYM(A, B) value
+            'max_z': max z-score over cell types for pair (A, B)
+    """
+    try:
+        import networkx as nx
+    except ImportError as exc:
+        raise ImportError(
+            "networkx is required for build_latent_cascade_graph. "
+            "Install with: pip install networkx"
+        ) from exc
+
+    cytokine_names = list(label_encoder.cytokines)
+    K = len(cytokine_names)
+    name_to_idx = {name: i for i, name in enumerate(cytokine_names)}
+
+    # Compute FDR threshold from z_scores via BH correction.
+    q_values = _z_to_bh_qvalues(z_scores)
+
+    # Find max z-score per (A, B) pair and its FDR q-value.
+    pair_max_z: Dict[Tuple[str, str], float] = {}
+    pair_min_q: Dict[Tuple[str, str], float] = {}
+
+    for (cyt_a, cyt_b, _ct), z in z_scores.items():
+        pair = (cyt_a, cyt_b)
+        if pair not in pair_max_z or z > pair_max_z[pair]:
+            pair_max_z[pair] = z
+            pair_min_q[pair] = q_values.get((cyt_a, cyt_b, _ct), 1.0)
+
+    G = nx.DiGraph()
+    for name in cytokine_names:
+        G.add_node(name)
+
+    for (cyt_a, cyt_b), max_z in pair_max_z.items():
+        if cyt_a not in name_to_idx or cyt_b not in name_to_idx:
+            continue
+        a_idx = name_to_idx[cyt_a]
+        b_idx = name_to_idx[cyt_b]
+        asym = float(asymmetry_matrix[a_idx, b_idx])
+        min_q = pair_min_q.get((cyt_a, cyt_b), 1.0)
+        if asym > 0 and min_q <= fdr_alpha:
+            G.add_edge(cyt_a, cyt_b, asymmetry=asym, max_z=float(max_z))
+
+    return G
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+def _extract_embeddings(model: nn.Module, X: torch.Tensor) -> torch.Tensor:
+    """
+    Run model forward pass and return encoder output H.
+
+    Handles both v1 (returns y_hat, a, H) and v2 (returns y_hat, a_SA, a_CA, H).
+    X: (N, G) input tensor already on correct device.
+    Returns H: (N, 128).
+    """
+    outputs = model(X)
+    # v1 returns (y_hat, a, H) — 3-tuple; v2 returns (y_hat, a_SA, a_CA, H) — 4-tuple.
+    if len(outputs) == 3:
+        _y_hat, _a, H = outputs
+    elif len(outputs) == 4:
+        _y_hat, _a_sa, _a_ca, H = outputs
+    else:
+        raise ValueError(
+            f"Unexpected number of model outputs: {len(outputs)}. "
+            "Expected 3 (v1) or 4 (v2)."
+        )
+    return H  # (N, 128)
+
+
+def _per_tube_alignment(
+    H: torch.Tensor,
+    centroid_tensor: torch.Tensor,
+    centroid_names: List[str],
+    cytokine_name: str,
+) -> float:
+    """
+    Compute alignment score for a single tube.
+
+    f_i = softmax( -||h_i - μ_C||_2  for all C )
+    score = mean_i f_i[A]
+
+    H: (N, 128) on device.
+    centroid_tensor: (C_count, 128) on same device.
+    cytokine_name: true cytokine for this tube.
+    Returns scalar float.
+    """
+    # Compute L2 distances from each cell to each centroid: (N, C_count)
+    # ||h_i - μ_C||^2 = ||h_i||^2 + ||μ_C||^2 - 2 h_i μ_C^T
+    dists = _l2_distances(H, centroid_tensor)  # (N, C_count)
+    # Softmax over negative distances.
+    affinities = F.softmax(-dists, dim=1)  # (N, C_count)
+
+    if cytokine_name not in centroid_names:
+        return 0.0
+    cyt_idx = centroid_names.index(cytokine_name)
+    score = float(affinities[:, cyt_idx].mean().item())
+    return score
+
+
+def _l2_distances(
+    H: torch.Tensor,
+    centroids: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Compute pairwise L2 distances between rows of H and centroids.
+
+    H: (N, D)
+    centroids: (C, D)
+    Returns: (N, C) distance matrix.
+    """
+    # ||h - μ||^2 = ||h||^2 + ||μ||^2 - 2 h·μ^T
+    h_sq = (H ** 2).sum(dim=1, keepdim=True)          # (N, 1)
+    c_sq = (centroids ** 2).sum(dim=1, keepdim=True).T  # (1, C)
+    cross = H @ centroids.T                            # (N, C)
+    dist_sq = (h_sq + c_sq - 2 * cross).clamp(min=0.0)
+    return dist_sq.sqrt()  # (N, C)
+
+
+def _compute_alignment_null(
+    tube_scores: List[Tuple[str, float]],
+    n_permutations: int,
+    rng_seed: int = 0,
+) -> List[float]:
+    """
+    Build null distribution by permuting tube cytokine labels.
+
+    For each permutation, randomly reassign cytokine names to tube scores and
+    recompute the mean alignment score pooled across all (now mismatched) tubes.
+    Returns list of n_permutations null mean scores.
+    """
+    rng = np.random.default_rng(rng_seed)
+    scores_arr = np.array([s for _, s in tube_scores])
+    null_means = []
+    for _ in range(n_permutations):
+        perm = rng.permutation(len(scores_arr))
+        null_means.append(float(scores_arr[perm].mean()))
+    return null_means
+
+
+def _compute_all_biases(
+    tube_data: List[Tuple[str, np.ndarray, np.ndarray]],
+    centroids: dict,
+) -> Dict[Tuple[str, str, str], float]:
+    """
+    Compute observed bias(A, B, T) for all (A, B, T) triples.
+
+    For each cytokine A:
+        μ_{A,T} = mean embedding of cells of type T across all A-tubes
+        μ_A     = centroids[A]
+        unit_AB = (μ_B - μ_A) / ||μ_B - μ_A||_2
+
+        bias(A, B, T) = (μ_{A,T} - μ_A) · unit_AB
+
+    tube_data: list of (cytokine_name, H (N,128), cell_types (N,))
+    centroids: {cytokine_name -> np.ndarray (128,)}
+    Returns: {(cyt_a, cyt_b, cell_type) -> float}
+    """
+    # Aggregate per (cytokine, cell_type): sum of embeddings and count.
+    cyt_ct_sum: Dict[Tuple[str, str], np.ndarray] = defaultdict(
+        lambda: np.zeros(128, dtype=np.float64)
+    )
+    cyt_ct_count: Dict[Tuple[str, str], int] = defaultdict(int)
+
+    for cyt_name, H_np, ct_labels in tube_data:
+        for ct in np.unique(ct_labels):
+            mask = ct_labels == ct
+            cyt_ct_sum[(cyt_name, ct)] += H_np[mask].sum(axis=0)
+            cyt_ct_count[(cyt_name, ct)] += int(mask.sum())
+
+    # Compute mean embeddings per (cytokine, cell_type).
+    cyt_ct_mean: Dict[Tuple[str, str], np.ndarray] = {
+        key: cyt_ct_sum[key] / cyt_ct_count[key]
+        for key in cyt_ct_sum
+        if cyt_ct_count[key] > 0
+    }
+
+    cytokines_in_data = {cyt for cyt, _ in cyt_ct_mean.keys()}
+    cell_types_in_data = {ct for _, ct in cyt_ct_mean.keys()}
+
+    bias: Dict[Tuple[str, str, str], float] = {}
+
+    for cyt_a in cytokines_in_data:
+        mu_a = centroids.get(cyt_a)
+        if mu_a is None:
+            continue
+        for cyt_b in cytokines_in_data:
+            if cyt_a == cyt_b:
+                continue
+            mu_b = centroids.get(cyt_b)
+            if mu_b is None:
+                continue
+            direction = mu_b - mu_a
+            norm = float(np.linalg.norm(direction))
+            if norm < 1e-10:
+                continue
+            unit_ab = direction / norm
+            for ct in cell_types_in_data:
+                mu_at = cyt_ct_mean.get((cyt_a, ct))
+                if mu_at is None:
+                    continue
+                displacement = mu_at - mu_a
+                bias[(cyt_a, cyt_b, ct)] = float(np.dot(displacement, unit_ab))
+
+    return bias
+
+
+def _compute_bias_null(
+    tube_data: List[Tuple[str, np.ndarray, np.ndarray]],
+    centroids: dict,
+    n_permutations: int,
+    rng_seed: int = 0,
+) -> Dict[Tuple[str, str, str], List[float]]:
+    """
+    Build per-(A,B,T) null distribution by permuting cell-type labels within tubes.
+
+    For each permutation: shuffle cell-type assignments within each tube,
+    recompute all bias(A, B, T) values, accumulate.
+
+    Returns: {(cyt_a, cyt_b, cell_type) -> list of n_permutations null bias values}
+    """
+    rng = np.random.default_rng(rng_seed)
+    null: Dict[Tuple[str, str, str], List[float]] = defaultdict(list)
+
+    for _ in range(n_permutations):
+        permuted_data = [
+            (cyt, H_np, rng.permutation(ct_labels))
+            for cyt, H_np, ct_labels in tube_data
+        ]
+        perm_bias = _compute_all_biases(permuted_data, centroids)
+        for key, val in perm_bias.items():
+            null[key].append(val)
+
+    return dict(null)
+
+
+def _z_to_bh_qvalues(
+    z_scores: Dict[Tuple[str, str, str], float],
+) -> Dict[Tuple[str, str, str], float]:
+    """
+    Convert z-scores to BH-FDR q-values.
+
+    Two-tailed p-value from z-score via normal CDF approximation.
+    Applies Benjamini-Hochberg correction across all (A, B, T) triples.
+
+    Returns: {(cyt_a, cyt_b, cell_type) -> q_value}
+    """
+    from math import erfc, sqrt
+
+    keys = list(z_scores.keys())
+    if not keys:
+        return {}
+
+    # Two-tailed p-values using complementary error function.
+    p_values = [
+        float(erfc(abs(z_scores[k]) / sqrt(2)))
+        for k in keys
+    ]
+
+    q_vals = _bh_correction(p_values)
+
+    return {k: q for k, q in zip(keys, q_vals)}
+
+
+def _bh_correction(p_values: List[float]) -> List[float]:
+    """
+    Benjamini-Hochberg FDR correction.
+
+    Args:
+        p_values: list of p-values.
+    Returns:
+        list of q-values (adjusted p-values), same order as input.
+    """
+    m = len(p_values)
+    if m == 0:
+        return []
+
+    # Sort by p-value, track original indices.
+    order = np.argsort(p_values)
+    sorted_p = np.array(p_values)[order]
+    ranks = np.arange(1, m + 1)
+    bh_vals = sorted_p * m / ranks
+
+    # Enforce monotonicity from the right.
+    for i in range(m - 2, -1, -1):
+        bh_vals[i] = min(bh_vals[i], bh_vals[i + 1])
+
+    bh_vals = np.minimum(bh_vals, 1.0)
+
+    # Return in original order.
+    q_values = np.empty(m)
+    q_values[order] = bh_vals
+    return list(q_values)
