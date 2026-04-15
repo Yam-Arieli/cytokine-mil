@@ -68,11 +68,16 @@ def _log(msg=""):
 
 
 def _load_label_encoder(run_dir: Path) -> CytokineLabel:
+    """
+    Load label encoder from the format written by train_oesinghaus_full.py:
+    {"cytokines": [list ordered by index]}  (index i → cytokines[i], PBS at 90)
+    """
     with open(run_dir / "label_encoder.json") as f:
         data = json.load(f)
+    cytokines_list = data["cytokines"]
     le = CytokineLabel()
-    le.cytokines = data["cytokines"]
-    le._cytokine_to_idx = {c: i for i, c in enumerate(data["cytokines"])}
+    le._label_to_idx = {cyt: i for i, cyt in enumerate(cytokines_list)}
+    le._idx_to_label = {i: cyt for i, cyt in enumerate(cytokines_list)}
     return le
 
 
