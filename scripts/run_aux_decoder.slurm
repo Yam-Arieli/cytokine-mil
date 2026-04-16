@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=aux_decoder
-#SBATCH --output=logs/aux_decoder_%j.out
-#SBATCH --error=logs/aux_decoder_%j.err
+#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/aux_decoder_%j.out
+#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/aux_decoder_%j.err
 #SBATCH --partition=short
 #SBATCH --time=06:00:00
 #SBATCH --mem=32G
