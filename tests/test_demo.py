@@ -949,3 +949,176 @@ class TestConfusionDynamics:
             np.diag(asym), 0.0, atol=1e-6,
             err_msg="Diagonal of asymmetry matrix must be zero"
         )
+
+
+# ---------------------------------------------------------------------------
+# Experiment 3: AuxDecoder cache + training tests
+# ---------------------------------------------------------------------------
+
+class TestExperiment3:
+    """
+    Tests for the in-memory cache pipeline and AuxDecoder training.
+
+    Covers: build_cache, CachedTubeDataset, AuxDecoder forward pass,
+    and one training epoch via train_aux_decoder.
+    """
+
+    @pytest.fixture(scope="class")
+    def mil_model_frozen(self):
+        """Fresh frozen MIL model for cache tests."""
+        return _make_fresh_mil_model()
+
+    @pytest.fixture(scope="class")
+    def cache(self, dataset, mil_model_frozen):
+        from cytokine_mil.training.cache import build_cache
+        return build_cache(mil_model_frozen, dataset, device=torch.device("cpu"))
+
+    # --- build_cache ---
+
+    def test_cache_length_matches_dataset(self, cache, dataset):
+        assert len(cache) == len(dataset)
+
+    def test_cache_entry_keys(self, cache):
+        entry = cache[0]
+        assert set(entry.keys()) == {"H", "y_hat", "label", "donor", "cell_types"}
+
+    def test_cache_H_shape(self, cache):
+        n_cells = len(CELL_TYPES) * N_CELLS_PER_TYPE
+        for entry in cache:
+            assert entry["H"].shape == (n_cells, 128), (
+                f"Expected H shape ({n_cells}, 128), got {entry['H'].shape}"
+            )
+
+    def test_cache_y_hat_shape(self, cache):
+        for entry in cache:
+            assert entry["y_hat"].shape == (N_CLASSES,), (
+                f"Expected y_hat shape ({N_CLASSES},), got {entry['y_hat'].shape}"
+            )
+
+    def test_cache_y_hat_is_probability(self, cache):
+        for entry in cache:
+            total = entry["y_hat"].sum().item()
+            assert abs(total - 1.0) < 1e-4, f"y_hat does not sum to 1: {total}"
+            assert (entry["y_hat"] >= 0).all(), "y_hat has negative values"
+
+    def test_cache_label_type(self, cache):
+        for entry in cache:
+            assert isinstance(entry["label"], int)
+
+    def test_cache_donor_type(self, cache):
+        for entry in cache:
+            assert isinstance(entry["donor"], str)
+
+    def test_cache_cell_types_length(self, cache):
+        n_cells = len(CELL_TYPES) * N_CELLS_PER_TYPE
+        for entry in cache:
+            assert len(entry["cell_types"]) == n_cells, (
+                f"Expected {n_cells} cell_type labels, got {len(entry['cell_types'])}"
+            )
+
+    # --- CachedTubeDataset ---
+
+    def test_cached_dataset_len(self, cache, dataset):
+        from cytokine_mil.training.cache import CachedTubeDataset
+        cached_ds = CachedTubeDataset(cache)
+        assert len(cached_ds) == len(dataset)
+
+    def test_cached_dataset_item_shapes(self, cache):
+        from cytokine_mil.training.cache import CachedTubeDataset
+        cached_ds = CachedTubeDataset(cache)
+        H, y_hat, label, donor, cell_types = cached_ds[0]
+        n_cells = len(CELL_TYPES) * N_CELLS_PER_TYPE
+        assert H.shape == (n_cells, 128)
+        assert y_hat.shape == (N_CLASSES,)
+        assert isinstance(label, int)
+        assert isinstance(donor, str)
+        assert isinstance(cell_types, list)
+
+    def test_cached_dataset_item_types(self, cache):
+        from cytokine_mil.training.cache import CachedTubeDataset
+        cached_ds = CachedTubeDataset(cache)
+        H, y_hat, label, donor, cell_types = cached_ds[0]
+        assert isinstance(H, torch.Tensor)
+        assert isinstance(y_hat, torch.Tensor)
+
+    # --- AuxDecoder forward pass ---
+
+    def test_aux_decoder_output_shape(self):
+        from cytokine_mil.models.aux_decoder import AuxDecoder
+        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        h = torch.randn(100, 128)
+        logits = decoder(h)
+        assert logits.shape == (100, N_CLASSES), (
+            f"Expected (100, {N_CLASSES}), got {logits.shape}"
+        )
+
+    def test_aux_decoder_embed_shape(self):
+        from cytokine_mil.models.aux_decoder import AuxDecoder
+        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        h = torch.randn(50, 128)
+        g = decoder.embed(h)
+        assert g.shape == (50, 256), f"Expected (50, 256), got {g.shape}"
+
+    def test_aux_decoder_architecture(self):
+        from cytokine_mil.models.aux_decoder import AuxDecoder
+        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        assert decoder.hidden_dim == 256
+        assert decoder.input_dim == 128
+        assert decoder.n_classes == N_CLASSES
+
+    # --- train_aux_decoder ---
+
+    def test_train_aux_decoder_one_epoch(self, cache):
+        from cytokine_mil.models.aux_decoder import AuxDecoder
+        from cytokine_mil.training.train_aux_decoder import train_aux_decoder
+        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        trained = train_aux_decoder(
+            model=decoder,
+            cache=cache,
+            n_epochs=1,
+            lr=0.01,
+            device=torch.device("cpu"),
+            seed=42,
+            verbose=False,
+        )
+        assert trained is decoder  # in-place, same object
+
+    def test_train_aux_decoder_returns_eval_mode(self, cache):
+        from cytokine_mil.models.aux_decoder import AuxDecoder
+        from cytokine_mil.training.train_aux_decoder import train_aux_decoder
+        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        trained = train_aux_decoder(
+            model=decoder, cache=cache, n_epochs=1, lr=0.01,
+            device=torch.device("cpu"), seed=0, verbose=False,
+        )
+        assert not trained.training, "Decoder should be in eval mode after training"
+
+    def test_train_aux_decoder_loss_decreases(self, cache):
+        """Loss should decrease over training epochs."""
+        import torch.nn.functional as F
+        from cytokine_mil.models.aux_decoder import AuxDecoder
+        from cytokine_mil.training.train_aux_decoder import train_aux_decoder
+
+        def _mean_loss(decoder_model):
+            decoder_model.eval()
+            total = 0.0
+            with torch.no_grad():
+                for entry in cache:
+                    H = entry["H"]
+                    y_hat = entry["y_hat"]
+                    logits = decoder_model(H)
+                    pred = F.softmax(logits, dim=1)
+                    target = y_hat.unsqueeze(0).expand_as(pred)
+                    total += F.mse_loss(pred, target).item()
+            return total / len(cache)
+
+        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        loss_before = _mean_loss(decoder)
+        train_aux_decoder(
+            model=decoder, cache=cache, n_epochs=5, lr=0.01,
+            device=torch.device("cpu"), seed=7, verbose=False,
+        )
+        loss_after = _mean_loss(decoder)
+        assert loss_after < loss_before, (
+            f"Loss should decrease: before={loss_before:.6f}, after={loss_after:.6f}"
+        )

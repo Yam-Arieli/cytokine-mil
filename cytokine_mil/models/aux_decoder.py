@@ -1,15 +1,21 @@
 """
 AuxDecoder: post-hoc MLP that injects cytokine geometry into cell-level embeddings.
 
-Trained on frozen encoder/MIL output. Supervised by sharpened bag-level softmax
-(temperature τ). Used in Experiment 3 (latent geometry analysis) when Experiment 0
-alignment gate fails.
+Trained on frozen encoder/MIL output, supervised by bag-level softmax (ŷ).
+Used in Experiment 3 (latent geometry analysis) when Experiment 0 alignment
+gate fails.
 
-Loss (uniform KL — attention-weighted was empirically disqualified, see CLAUDE.md §20.8):
-    L = (1/N) sum_i KL( softmax(y_hat/τ) || softmax(decoder(h_i)) )
+Architecture:
+    h_i ∈ R^input_dim  →  Linear(input_dim, hidden_dim) → ReLU
+                        →  Linear(hidden_dim, n_classes) → cytokine_logits_i
 
-After training, g_i = decoder.embed(h_i) ∈ R^64 replaces h_i ∈ R^128 as the
-cell-level embedding for Experiments 1 and 2 in analysis/latent_geometry.py.
+The hidden layer output (hidden_dim intermediate) is exposed via embed() and
+used as the cytokine-aware cell embedding g_i ∈ R^hidden_dim for Experiments
+1 and 2 in analysis/latent_geometry.py.
+
+Scientific claim: decoder-injected cytokine geometry, not emergent encoder
+geometry. After training, g_i replaces h_i as the embedding space for
+directional bias analysis.
 """
 
 import torch
@@ -18,31 +24,29 @@ import torch.nn as nn
 
 class AuxDecoder(nn.Module):
     """
-    Post-hoc MLP: h_i ∈ R^input_dim → g_i ∈ R^embed_dim → cytokine_logits ∈ R^n_classes
+    Post-hoc MLP: h_i ∈ R^input_dim → g_i ∈ R^hidden_dim → logits ∈ R^n_classes
 
     Encoder and MIL model are frozen during training.
-    g_i (embed_dim intermediate) is the cytokine-aware cell embedding used in
+    g_i (hidden_dim intermediate) is the cytokine-aware cell embedding used in
     Experiments 1 and 2 of the latent geometry analysis.
-
-    Scientific claim: decoder-injected cytokine geometry, not emergent encoder geometry.
     """
 
     def __init__(
         self,
         input_dim: int = 128,
-        embed_dim: int = 64,
+        hidden_dim: int = 256,
         n_classes: int = 91,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
-        self.embed_dim = embed_dim
+        self.hidden_dim = hidden_dim
         self.n_classes = n_classes
 
         self.project = nn.Sequential(
-            nn.Linear(input_dim, embed_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
         )
-        self.head = nn.Linear(embed_dim, n_classes)
+        self.head = nn.Linear(hidden_dim, n_classes)
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -59,19 +63,18 @@ class AuxDecoder(nn.Module):
         Returns:
             logits: (N, n_classes) per-cell cytokine logits.
         """
-        g = self.project(h)
-        return self.head(g)
+        return self.head(self.project(h))
 
     def embed(self, h: torch.Tensor) -> torch.Tensor:
         """
         Return g_i — the cytokine-aware cell embedding (decoder intermediate).
 
         Used as the embedding space for latent geometry Experiments 1 and 2
-        after training. Replaces h_i ∈ R^128 with g_i ∈ R^embed_dim.
+        after training. Replaces h_i ∈ R^128 with g_i ∈ R^hidden_dim.
 
         Args:
             h: (N, input_dim) frozen encoder output.
         Returns:
-            g: (N, embed_dim) cytokine-aware cell embeddings.
+            g: (N, hidden_dim) cytokine-aware cell embeddings.
         """
         return self.project(h)

@@ -1080,14 +1080,11 @@ p_bag_τ(C | tube) = softmax(y_hat / τ)
 - τ < 1 sharpens supervision for ambiguous cytokines; for already-peaked predictions it has minimal effect
 - Default: τ = 0.5
 
-**Loss function (attention-weighted KL):**
+**Loss function (uniform KL):**
 ```
-L = sum_i  a_i * KL( p_bag_τ || softmax(decoder(h_i)) )
+L = (1/N) sum_i  KL( p_bag_τ || softmax(decoder(h_i)) )
 ```
-- a_i = attention weight of cell i from the frozen MIL model forward pass (sum to 1)
-- High-a_i cells: strong supervision → embed near the bag cytokine centroid
-- Low-a_i cells: weak supervision → less constrained; can retain secondary signal
-- Whether attention-weighting is justified depends on whether attention proxies primary responders (see Section 20.8)
+- Uniform weighting across all N cells per tube — attention-weighted KL was considered but disqualified: the attention proxy check (Section 20.8) found only 2/5 cytokines matched expected primary responders in top-3 attention (threshold: 3/5). Attention tracks discriminativeness across 91 classes, not cytokine responsiveness.
 
 **Training details:**
 - Optimizer: Adam, lr=1e-3
@@ -1150,3 +1147,14 @@ cytokine_mil/analysis/
 **Verdict rule:** If ≥ 60% of tested cytokines match expected dominant cell type in top-3 attention → proxy is empirically grounded → use attention-weighted KL. Otherwise → use uniform KL and report as caveat.
 
 **Run before implementing `train_aux_decoder.py`.**
+
+**Empirical result (seed 42, 9100 training tubes):**
+| Cytokine | Expected dominant | Top-3 observed | Match |
+|---|---|---|---|
+| IL-12 | NK, NK CD56bright | CD14 Mono, cDC, ILC | ❌ |
+| IFN-γ | NK, CD14 Mono | cDC, CD14 Mono, CD16 Mono | ✓ |
+| IL-4 | B cells, CD4 T | ILC, cDC, CD8 Naive | ❌ |
+| IL-2 | CD4 T, CD8 T | cDC, ILC, HSPC | ❌ |
+| TNF-α | CD14 Mono | ILC, CD16 Mono, CD14 Mono | ✓ |
+
+Result: 2/5 — **FAIL**. cDC and ILC dominate attention across most cytokines, consistent with those cell types being rare/discriminative rather than primary responders. Attention-weighted KL is disqualified; uniform KL used in `train_aux_decoder.py`.
