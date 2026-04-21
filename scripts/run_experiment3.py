@@ -197,13 +197,16 @@ def main():
 
     # ----------------------------------------------------------------
     # Step 4: Directional bias (Experiment 1)
+    # cell_type_obs reintroduced post-hoc from cache — never used during training
     # ----------------------------------------------------------------
     _log("\nStep 4: Directional bias (Experiment 1)...")
+    cell_type_obs = {i: entry["cell_types"] for i, entry in enumerate(cache)}
     bias_result = compute_directional_bias(
         model=mil_model,
         dataset=dataset,
         label_encoder=label_encoder,
         centroids=centroids["centroids"],
+        cell_type_obs=cell_type_obs,
         device=args.device,
         decoder=decoder,
         n_permutations=args.n_permutations,
