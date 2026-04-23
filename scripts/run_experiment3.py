@@ -83,6 +83,13 @@ def _parse_args():
         "--exp_name", type=str, default="experiment3_v2",
         help="Output subdirectory name under run_dir (default: experiment3_v2).",
     )
+    p.add_argument(
+        "--encoder_space", action="store_true", default=False,
+        help="Approach F: compute geometry in frozen h_i (encoder) space. "
+             "Decoder is trained normally but used only as a per-cell cytokine "
+             "confidence weight, not as an embedding space. Eliminates rotation "
+             "ambiguity by construction. (default: False = original g_i space)",
+    )
     return p.parse_args()
 
 
@@ -129,9 +136,10 @@ def _load_mil_model(
 
 
 def _report_alignment(centroids: dict, label_encoder: CytokineLabel) -> None:
-    _log("\nCytokine centroids computed (decoder embedding space):")
-    for cyt, mu in sorted(centroids["centroids"].items()):
-        _log(f"  {cyt:<25}  dim={mu.shape[0]}")
+    first_mu = next(iter(centroids["centroids"].values()))
+    _log(f"\nCytokine centroids computed: dim={first_mu.shape[0]}, "
+         f"n_cytokines={len(centroids['centroids'])}")
+    _log(f"  {centroids['metric_description']}")
 
 
 def main():
@@ -148,6 +156,8 @@ def main():
     _log(f"  device  : {args.device}")
     _log(f"  epochs  : {args.epochs}  lr={args.lr}  seed={args.seed}")
     _log(f"  hidden_dim: {args.hidden_dim}  min_conf={args.min_confidence}  exp_name={args.exp_name}")
+    _log(f"  encoder_space: {args.encoder_space}  "
+         f"({'h_i geometry, decoder as weights' if args.encoder_space else 'g_i geometry (original)'})")
     _log("=" * 62)
 
     with open(HVG_PATH) as f:
@@ -197,15 +207,20 @@ def main():
     _log(f"\n  Saved checkpoint: {ckpt_path}")
 
     # ----------------------------------------------------------------
-    # Step 3: Cytokine centroids in decoder embedding space
+    # Step 3: Cytokine centroids
+    # encoder_space=True  → h_i space, decoder-softmax weighted (Approach F)
+    # encoder_space=False → g_i = decoder.embed(h_i) space (original)
     # ----------------------------------------------------------------
-    _log("\nStep 3: Computing cytokine centroids (g_i = decoder.embed(h_i))...")
+    space_label = "h_i (encoder), decoder-weighted" if args.encoder_space \
+                  else "g_i = decoder.embed(h_i)"
+    _log(f"\nStep 3: Computing cytokine centroids ({space_label})...")
     centroids = compute_cytokine_centroids(
         model=mil_model,
         dataset=dataset,
         label_encoder=label_encoder,
         device=args.device,
         decoder=decoder,
+        encoder_space=args.encoder_space,
     )
     _report_alignment(centroids, label_encoder)
 
@@ -224,6 +239,7 @@ def main():
         device=args.device,
         decoder=decoder,
         n_permutations=args.n_permutations,
+        encoder_space=args.encoder_space,
     )
 
     # ----------------------------------------------------------------
@@ -245,7 +261,8 @@ def main():
             "epochs": args.epochs,
             "lr": args.lr,
             "seed": args.seed,
-            "hidden_dim": EMBED_DIM,
+            "hidden_dim": args.hidden_dim,
+            "encoder_space": args.encoder_space,
         },
     }
     out_path = out_dir / "latent_geometry.pkl"

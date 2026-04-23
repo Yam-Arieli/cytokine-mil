@@ -50,6 +50,7 @@ def compute_cytokine_centroids(
     label_encoder,
     device: str = "cpu",
     decoder: Optional[nn.Module] = None,
+    encoder_space: bool = False,
 ) -> dict:
     """
     Compute mean cell embedding per cytokine across all tubes in dataset.
@@ -68,8 +69,12 @@ def compute_cytokine_centroids(
         dataset: PseudoTubeDataset (training donors only — caller responsibility).
         label_encoder: CytokineLabel or BinaryLabel with .encode() and .cytokines.
         device: torch device string.
-        decoder: Optional AuxDecoder. If provided, embeddings are g_i = decoder.embed(h_i)
-                 (64-dim, decoder-injected cytokine space) instead of h_i (128-dim).
+        decoder: Optional AuxDecoder.
+        encoder_space: If True, always compute centroids in h_i (encoder) space.
+            When decoder is also provided, cell contributions are weighted by
+            decoder_softmax(h_i)[C] — "how cytokine-C-like is this cell?".
+            If False (default), use g_i = decoder.embed(h_i) when decoder is
+            provided, otherwise h_i (original behaviour).
 
     Returns:
         dict with keys:
@@ -85,19 +90,42 @@ def compute_cytokine_centroids(
 
     embed_dim: Optional[int] = None
     embedding_sums: Dict[str, np.ndarray] = {}
-    cell_counts: Dict[str, int] = defaultdict(int)
+    cell_counts: Dict[str, float] = defaultdict(float)
 
     with torch.no_grad():
         for ds_idx in range(len(dataset)):
             X, _label, _donor, cytokine_name = dataset[ds_idx]
             X = X.to(torch_device)
-            emb = _extract_embeddings(model, X, decoder=decoder)  # (N, D)
-            if embed_dim is None:
-                embed_dim = emb.shape[1]
-                embedding_sums = defaultdict(lambda: np.zeros(embed_dim, dtype=np.float64))
-            emb_np = emb.cpu().numpy().astype(np.float64)
-            embedding_sums[cytokine_name] += emb_np.sum(axis=0)
-            cell_counts[cytokine_name] += emb_np.shape[0]
+
+            if encoder_space:
+                H = _extract_h_embeddings(model, X)          # (N, 128) always
+                H_np = H.cpu().numpy().astype(np.float64)
+                if embed_dim is None:
+                    embed_dim = H_np.shape[1]
+                    embedding_sums = defaultdict(
+                        lambda: np.zeros(embed_dim, dtype=np.float64)
+                    )
+                if decoder is not None:
+                    # Weight each cell by how cytokine-C-like it looks.
+                    cyt_idx = label_encoder.encode(cytokine_name)
+                    logits = decoder(H)                       # (N, K)
+                    w = F.softmax(logits, dim=1)[:, cyt_idx] # (N,)
+                    w_np = w.cpu().numpy().astype(np.float64)
+                    embedding_sums[cytokine_name] += (w_np[:, None] * H_np).sum(axis=0)
+                    cell_counts[cytokine_name] += float(w_np.sum())
+                else:
+                    embedding_sums[cytokine_name] += H_np.sum(axis=0)
+                    cell_counts[cytokine_name] += float(H_np.shape[0])
+            else:
+                emb = _extract_embeddings(model, X, decoder=decoder)  # (N, D)
+                if embed_dim is None:
+                    embed_dim = emb.shape[1]
+                    embedding_sums = defaultdict(
+                        lambda: np.zeros(embed_dim, dtype=np.float64)
+                    )
+                emb_np = emb.cpu().numpy().astype(np.float64)
+                embedding_sums[cytokine_name] += emb_np.sum(axis=0)
+                cell_counts[cytokine_name] += float(emb_np.shape[0])
 
     centroids = {
         cyt: embedding_sums[cyt] / cell_counts[cyt]
@@ -105,12 +133,19 @@ def compute_cytokine_centroids(
         if cell_counts[cyt] > 0
     }
 
-    space = "g_i (AuxDecoder, decoder-injected cytokine space)" if decoder is not None \
-            else "h_i (encoder output)"
+    if encoder_space:
+        if decoder is not None:
+            space = "h_i (encoder), decoder-softmax weighted"
+        else:
+            space = "h_i (encoder), unweighted"
+    else:
+        space = "g_i (AuxDecoder, decoder-injected cytokine space)" \
+                if decoder is not None else "h_i (encoder output)"
+
     return {
         "centroids": centroids,
         "metric_description": (
-            f"μ_C = mean over all cells in all C-tubes of {space}, "
+            f"μ_C = weighted mean over all cells in all C-tubes of {space}, "
             "training donors only"
         ),
     }
@@ -227,6 +262,7 @@ def compute_directional_bias(
     n_permutations: int = 1000,
     device: str = "cpu",
     decoder: Optional[nn.Module] = None,
+    encoder_space: bool = False,
 ) -> dict:
     """
     Compute per-cell-type directional bias of embeddings toward other cytokine centroids.
@@ -239,7 +275,14 @@ def compute_directional_bias(
         μ_A     = mean embedding of all cells within A-tubes (= centroids[A])
         (μ_B - μ_A) / ||...||_2 = unit direction from A centroid to B centroid
 
-    When decoder is provided, h_i is replaced by g_i = decoder.embed(h_i).
+    When encoder_space=False and decoder is provided, h_i is replaced by
+    g_i = decoder.embed(h_i).
+
+    When encoder_space=True, h_i is always used. If decoder is also provided,
+    each cell's contribution to μ_{A,T} is weighted by decoder_softmax(h_i)[A]
+    — "how cytokine-A-like is this cell?" — matching the centroid weighting from
+    compute_cytokine_centroids(encoder_space=True). Cell-type permutations for
+    the null distribution permute only ct_labels; weights stay fixed per cell.
 
     Null: permute cell-type labels within each tube 1000 times, recompute bias.
     z-score: z(A, B, T) = (bias - mean(null)) / std(null).
@@ -256,7 +299,9 @@ def compute_directional_bias(
         cell_type_obs: {tube_index (int) -> list of cell type strings, length N}.
         n_permutations: number of within-tube cell-type permutations for null.
         device: torch device string.
-        decoder: Optional AuxDecoder. If provided, g_i = decoder.embed(h_i) is used.
+        decoder: Optional AuxDecoder.
+        encoder_space: If True, compute bias in h_i space with optional decoder
+            weighting (see above). If False, use g_i when decoder is provided.
 
     Returns:
         dict with keys:
@@ -272,8 +317,9 @@ def compute_directional_bias(
         decoder.eval()
         decoder.to(torch_device)
 
-    # Collect per-tube embeddings and their cytokine label.
-    tube_data: List[Tuple[str, np.ndarray, np.ndarray]] = []
+    # tube_data: (cyt_name, H_np, ct_labels, cell_weights_or_None)
+    # cell_weights (N,) = decoder_softmax[cyt_idx] per cell when encoder_space=True.
+    tube_data: List[Tuple[str, np.ndarray, np.ndarray, Optional[np.ndarray]]] = []
 
     with torch.no_grad():
         for ds_idx in range(len(dataset)):
@@ -284,14 +330,28 @@ def compute_directional_bias(
             if ct_labels is None:
                 continue
             X = X.to(torch_device)
-            H = _extract_embeddings(model, X, decoder=decoder)
-            H_np = H.cpu().numpy().astype(np.float64)
-            tube_data.append((cytokine_name, H_np, np.array(ct_labels)))
+
+            if encoder_space:
+                H = _extract_h_embeddings(model, X)          # (N, 128) always
+                H_np = H.cpu().numpy().astype(np.float64)
+                if decoder is not None:
+                    cyt_idx = label_encoder.encode(cytokine_name)
+                    logits = decoder(H)                       # (N, K)
+                    w = F.softmax(logits, dim=1)[:, cyt_idx] # (N,)
+                    w_np = w.cpu().numpy().astype(np.float64)
+                else:
+                    w_np = None
+            else:
+                H = _extract_embeddings(model, X, decoder=decoder)
+                H_np = H.cpu().numpy().astype(np.float64)
+                w_np = None
+
+            tube_data.append((cytokine_name, H_np, np.array(ct_labels), w_np))
 
     # Compute observed bias for all (A, B, T) triples.
     bias_obs = _compute_all_biases(tube_data, centroids)
 
-    # Null distribution: permute cell-type labels within tubes.
+    # Null: permute cell-type labels within tubes; weights stay fixed per cell.
     bias_null = _compute_bias_null(tube_data, centroids, n_permutations=n_permutations)
 
     # z-scores.
@@ -309,7 +369,14 @@ def compute_directional_bias(
     # Convert z-scores to two-tailed p-values and apply BH-FDR.
     q_values = _z_to_bh_qvalues(z_scores)
 
-    space = "g_i (AuxDecoder)" if decoder is not None else "h_i"
+    if encoder_space:
+        if decoder is not None:
+            space = "h_i (encoder), decoder-softmax weighted"
+        else:
+            space = "h_i (encoder), unweighted"
+    else:
+        space = "g_i (AuxDecoder)" if decoder is not None else "h_i"
+
     return {
         "bias": dict(bias_obs),
         "z_scores": dict(z_scores),
@@ -451,6 +518,30 @@ def build_latent_cascade_graph(
 # Private helpers
 # ---------------------------------------------------------------------------
 
+def _extract_h_embeddings(
+    model: nn.Module,
+    X: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Extract h_i from model — always encoder output, ignores decoder.
+
+    Handles both v1 (y_hat, a, H) and v2 (y_hat, a_SA, a_CA, H).
+    X: (N, G) input tensor already on correct device.
+    Returns H ∈ R^(N, 128).
+    """
+    outputs = model(X)
+    if len(outputs) == 3:
+        _, _, H = outputs
+    elif len(outputs) == 4:
+        _, _, _, H = outputs
+    else:
+        raise ValueError(
+            f"Unexpected number of model outputs: {len(outputs)}. "
+            "Expected 3 (v1) or 4 (v2)."
+        )
+    return H
+
+
 def _extract_embeddings(
     model: nn.Module,
     X: torch.Tensor,
@@ -467,17 +558,7 @@ def _extract_embeddings(
       Use this for Experiment 3 (AuxDecoder) where cytokine geometry has been
       injected post-hoc into a lower-dimensional space.
     """
-    outputs = model(X)
-    # v1 returns (y_hat, a, H) — 3-tuple; v2 returns (y_hat, a_SA, a_CA, H) — 4-tuple.
-    if len(outputs) == 3:
-        _y_hat, _a, H = outputs
-    elif len(outputs) == 4:
-        _y_hat, _a_sa, _a_ca, H = outputs
-    else:
-        raise ValueError(
-            f"Unexpected number of model outputs: {len(outputs)}. "
-            "Expected 3 (v1) or 4 (v2)."
-        )
+    H = _extract_h_embeddings(model, X)
     if decoder is not None:
         return decoder.embed(H)   # (N, embed_dim) — decoder-injected cytokine space
     return H                      # (N, 128)       — encoder space
@@ -554,21 +635,23 @@ def _compute_alignment_null(
 
 
 def _compute_all_biases(
-    tube_data: List[Tuple[str, np.ndarray, np.ndarray]],
+    tube_data: List[Tuple[str, np.ndarray, np.ndarray, Optional[np.ndarray]]],
     centroids: dict,
 ) -> Dict[Tuple[str, str, str], float]:
     """
     Compute observed bias(A, B, T) for all (A, B, T) triples.
 
     For each cytokine A:
-        μ_{A,T} = mean embedding of cells of type T across all A-tubes
+        μ_{A,T} = (optionally weighted) mean embedding of cells of type T across
+                  all A-tubes
         μ_A     = centroids[A]
         unit_AB = (μ_B - μ_A) / ||μ_B - μ_A||_2
 
         bias(A, B, T) = (μ_{A,T} - μ_A) · unit_AB
 
-    tube_data: list of (cytokine_name, H (N,128), cell_types (N,))
-    centroids: {cytokine_name -> np.ndarray (128,)}
+    tube_data: list of (cytokine_name, H (N,D), cell_types (N,), weights (N,) or None)
+        When weights is None, uniform weighting is used.
+    centroids: {cytokine_name -> np.ndarray (D,)}
     Returns: {(cyt_a, cyt_b, cell_type) -> float}
     """
     # Infer embedding dimension from first tube.
@@ -580,13 +663,17 @@ def _compute_all_biases(
     cyt_ct_sum: Dict[Tuple[str, str], np.ndarray] = defaultdict(
         lambda: np.zeros(embed_dim, dtype=np.float64)
     )
-    cyt_ct_count: Dict[Tuple[str, str], int] = defaultdict(int)
+    cyt_ct_count: Dict[Tuple[str, str], float] = defaultdict(float)
 
-    for cyt_name, H_np, ct_labels in tube_data:
+    for cyt_name, H_np, ct_labels, cell_weights in tube_data:
         for ct in np.unique(ct_labels):
             mask = ct_labels == ct
-            cyt_ct_sum[(cyt_name, ct)] += H_np[mask].sum(axis=0)
-            cyt_ct_count[(cyt_name, ct)] += int(mask.sum())
+            if cell_weights is not None:
+                w = cell_weights[mask]                         # (n_ct,)
+            else:
+                w = np.ones(mask.sum(), dtype=np.float64)
+            cyt_ct_sum[(cyt_name, ct)] += (w[:, None] * H_np[mask]).sum(axis=0)
+            cyt_ct_count[(cyt_name, ct)] += float(w.sum())
 
     # Compute mean embeddings per (cytokine, cell_type).
     cyt_ct_mean: Dict[Tuple[str, str], np.ndarray] = {
@@ -626,7 +713,7 @@ def _compute_all_biases(
 
 
 def _compute_bias_null(
-    tube_data: List[Tuple[str, np.ndarray, np.ndarray]],
+    tube_data: List[Tuple[str, np.ndarray, np.ndarray, Optional[np.ndarray]]],
     centroids: dict,
     n_permutations: int,
     rng_seed: int = 0,
@@ -636,6 +723,8 @@ def _compute_bias_null(
 
     For each permutation: shuffle cell-type assignments within each tube,
     recompute all bias(A, B, T) values, accumulate.
+    Cell weights (if any) are tied to cells, not to cell-type labels — they are
+    preserved as-is while only ct_labels are permuted.
 
     Returns: {(cyt_a, cyt_b, cell_type) -> list of n_permutations null bias values}
     """
@@ -644,8 +733,8 @@ def _compute_bias_null(
 
     for _ in range(n_permutations):
         permuted_data = [
-            (cyt, H_np, rng.permutation(ct_labels))
-            for cyt, H_np, ct_labels in tube_data
+            (cyt, H_np, rng.permutation(ct_labels), cell_weights)
+            for cyt, H_np, ct_labels, cell_weights in tube_data
         ]
         perm_bias = _compute_all_biases(permuted_data, centroids)
         for key, val in perm_bias.items():
