@@ -135,7 +135,7 @@ def main():
     run_dir = Path(args.run_dir)
     device = torch.device(args.device)
     out_dir = run_dir / args.exp_name
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     _log("=" * 62)
     _log("Experiment 3 — AuxDecoder (in-memory cache pipeline)")

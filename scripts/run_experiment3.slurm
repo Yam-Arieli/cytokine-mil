@@ -30,6 +30,8 @@ echo "  decoder_seed: ${DECODER_SEED}"
 echo "  run_dir     : ${RUN_DIR}"
 echo "========================================================"
 
+set -e
+
 source /cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/activate
 cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 
