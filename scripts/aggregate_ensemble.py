@@ -47,9 +47,9 @@ def main():
     args = _parse_args()
     results_dir = Path(args.results_dir)
 
-    pkls = sorted(results_dir.glob(f"*/experiment3_v2/dec*/latent_geometry.pkl"))
+    pkls = sorted(results_dir.glob(f"*/{args.exp_name}/dec*/latent_geometry.pkl"))
     if not pkls:
-        # Also accept flat exp_name paths
+        # Also accept flat exp_name paths (no dec* subdirectory)
         pkls = sorted(results_dir.glob(f"*/{args.exp_name}/latent_geometry.pkl"))
 
     if not pkls:

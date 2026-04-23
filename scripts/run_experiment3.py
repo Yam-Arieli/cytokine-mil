@@ -68,6 +68,10 @@ def _parse_args():
     p.add_argument("--lr", type=float, default=LR)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
+        "--hidden_dim", type=int, default=EMBED_DIM,
+        help="AuxDecoder hidden/embedding dimension (default: 64).",
+    )
+    p.add_argument(
         "--n_permutations", type=int, default=1000,
         help="Permutations for bias null distribution.",
     )
@@ -143,7 +147,7 @@ def main():
     _log(f"  out_dir : {out_dir}")
     _log(f"  device  : {args.device}")
     _log(f"  epochs  : {args.epochs}  lr={args.lr}  seed={args.seed}")
-    _log(f"  min_conf: {args.min_confidence}  exp_name={args.exp_name}")
+    _log(f"  hidden_dim: {args.hidden_dim}  min_conf={args.min_confidence}  exp_name={args.exp_name}")
     _log("=" * 62)
 
     with open(HVG_PATH) as f:
@@ -174,7 +178,7 @@ def main():
     # ----------------------------------------------------------------
     _log("\nStep 2: Training AuxDecoder (SGD+momentum, MSE)...")
     decoder = AuxDecoder(
-        input_dim=128, hidden_dim=EMBED_DIM, n_classes=label_encoder.n_classes()
+        input_dim=128, hidden_dim=args.hidden_dim, n_classes=label_encoder.n_classes()
     )
     decoder = train_aux_decoder(
         model=decoder,
