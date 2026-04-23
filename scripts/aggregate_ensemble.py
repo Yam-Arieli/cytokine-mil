@@ -122,6 +122,33 @@ def main():
         if shown >= args.top_n:
             break
 
+    # --- Pairs of interest: always report rank + stats regardless of position ---
+    # Positive control: IL-12 → IFN-gamma (best-documented PBMC cascade)
+    # Negative control: IL-6 ↔ IL-10 (shared STAT3 pathway, no cascade — expect ~0 asymmetry)
+    pairs_of_interest = [
+        ("IL-12",    "IFN-gamma",  "positive control (IL-12→IFN-γ cascade)"),
+        ("IFN-gamma","IL-12",      "reverse of positive control"),
+        ("IL-6",     "IL-10",      "negative control (shared STAT3, no cascade expected)"),
+        ("IL-10",    "IL-6",       "negative control reverse"),
+    ]
+    name_to_idx = {n: i for i, n in enumerate(cyt_names)}
+    print("\nPairs of interest (ranked in full ensemble, PBS excluded):")
+    print(f"  {'Pair':<45}  {'mean':>8}  {'std':>7}  {'SNR':>6}  {'rank':>6}  {'note'}")
+    print("  " + "-" * 95)
+    n_off_diag = int(mask.sum())
+    for src, tgt, note in pairs_of_interest:
+        si, ti = name_to_idx.get(src), name_to_idx.get(tgt)
+        if si is None or ti is None:
+            print(f"  {src} → {tgt}  — NOT FOUND in cytokine list")
+            continue
+        mean_val = float(mean_mat[si, ti])
+        std_val  = float(std_mat[si, ti])
+        snr = mean_val / std_val if std_val > 0 else float("inf")
+        # rank among all off-diagonal pairs (1 = highest asymmetry)
+        rank = int((flat > mean_val).sum()) + 1
+        pair_str = f"{src:<20} → {tgt:<20}"
+        print(f"  {pair_str}  {mean_val:8.4f}  {std_val:7.4f}  {snr:6.2f}  {rank:6}/{n_off_diag}  {note}")
+
     # Cross-run pair overlap at top-50
     print(f"\nTop-50 pair overlap across all {len(mats)} runs:")
     top50s = []
