@@ -71,13 +71,23 @@ def main():
         mats.append(m)
 
     mats = np.stack(mats, axis=0)  # (n_runs, K, K)
+
+    # --- Exclude PBS from all analysis (no cascade interpretation) ---
+    pbs_idx = next((i for i, n in enumerate(cyt_names) if n == "PBS"), None)
+    if pbs_idx is not None:
+        keep = [i for i in range(len(cyt_names)) if i != pbs_idx]
+        mats = mats[:, keep, :][:, :, keep]
+        cyt_names = [cyt_names[i] for i in keep]
+        print(f"  PBS excluded from analysis (was index {pbs_idx}). "
+              f"Remaining cytokines: {len(cyt_names)}")
+
     mean_mat = mats.mean(axis=0)   # (K, K)
     std_mat  = mats.std(axis=0)    # (K, K)
 
     K = mean_mat.shape[0]
     mask = ~np.eye(K, dtype=bool)
 
-    print(f"\nEnsemble summary: {len(mats)} runs, K={K} cytokines")
+    print(f"\nEnsemble summary: {len(mats)} runs, K={K} cytokines (PBS excluded)")
     print(f"  off-diag mean asymmetry: {mean_mat[mask].mean():.4f}")
     print(f"  off-diag mean std:       {std_mat[mask].mean():.4f}")
 
@@ -94,7 +104,7 @@ def main():
     std_flat = std_mat[mask]
     order = np.argsort(flat)[::-1]
 
-    print(f"\nTop-{args.top_n} cascade pairs (ensemble mean asymmetry):")
+    print(f"\nTop-{args.top_n} cascade pairs (ensemble mean asymmetry, PBS excluded):")
     print(f"  {'Source':<25}  {'Target':<25}  {'mean':>8}  {'std':>7}  {'SNR':>6}")
     print("  " + "-" * 75)
     shown = 0

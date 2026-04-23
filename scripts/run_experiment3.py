@@ -249,16 +249,16 @@ def main():
         pickle.dump(results, f)
     _log(f"\nResults saved: {out_path}")
 
-    # Print top cascade candidates from asymmetry
+    # Print top cascade candidates from asymmetry (PBS excluded — no cascade interpretation)
     asym_matrix = asym_result.get("asymmetry_matrix")
     if asym_matrix is not None:
         cytokine_names = asym_result.get("cytokine_names", [])
-        _log("\nTop asymmetry scores (evidence for A→B cascade):")
+        _log("\nTop asymmetry scores (evidence for A→B cascade, PBS excluded):")
         pairs = []
         K = asym_matrix.shape[0]
         for a in range(K):
             for b in range(K):
-                if a != b:
+                if a != b and cytokine_names[a] != "PBS" and cytokine_names[b] != "PBS":
                     pairs.append((asym_matrix[a, b], cytokine_names[a], cytokine_names[b]))
         pairs.sort(reverse=True)
         for score, a, b in pairs[:10]:
