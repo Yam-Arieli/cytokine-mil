@@ -50,7 +50,7 @@ from cytokine_mil.training.train_aux_decoder import train_aux_decoder
 HVG_PATH = (
     "/cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/hvg_list.json"
 )
-EMBED_DIM = 256
+EMBED_DIM = 64
 EPOCHS = 50
 LR = 0.01
 MOMENTUM = 0.9
@@ -70,6 +70,14 @@ def _parse_args():
     p.add_argument(
         "--n_permutations", type=int, default=1000,
         help="Permutations for bias null distribution.",
+    )
+    p.add_argument(
+        "--min_confidence", type=float, default=0.5,
+        help="Skip training tubes where max(ŷ) < threshold (default 0.5).",
+    )
+    p.add_argument(
+        "--exp_name", type=str, default="experiment3_v2",
+        help="Output subdirectory name under run_dir (default: experiment3_v2).",
     )
     return p.parse_args()
 
@@ -126,7 +134,7 @@ def main():
     args = _parse_args()
     run_dir = Path(args.run_dir)
     device = torch.device(args.device)
-    out_dir = run_dir / "experiment3"
+    out_dir = run_dir / args.exp_name
     out_dir.mkdir(exist_ok=True)
 
     _log("=" * 62)
@@ -135,6 +143,7 @@ def main():
     _log(f"  out_dir : {out_dir}")
     _log(f"  device  : {args.device}")
     _log(f"  epochs  : {args.epochs}  lr={args.lr}  seed={args.seed}")
+    _log(f"  min_conf: {args.min_confidence}  exp_name={args.exp_name}")
     _log("=" * 62)
 
     with open(HVG_PATH) as f:
@@ -176,6 +185,7 @@ def main():
         seed=args.seed,
         momentum=MOMENTUM,
         verbose=True,
+        min_confidence=args.min_confidence,
     )
 
     ckpt_path = out_dir / "aux_decoder.pt"

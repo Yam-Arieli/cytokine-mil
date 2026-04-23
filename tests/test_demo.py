@@ -1045,7 +1045,7 @@ class TestExperiment3:
 
     def test_aux_decoder_output_shape(self):
         from cytokine_mil.models.aux_decoder import AuxDecoder
-        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        decoder = AuxDecoder(input_dim=128, hidden_dim=64, n_classes=N_CLASSES)
         h = torch.randn(100, 128)
         logits = decoder(h)
         assert logits.shape == (100, N_CLASSES), (
@@ -1054,15 +1054,15 @@ class TestExperiment3:
 
     def test_aux_decoder_embed_shape(self):
         from cytokine_mil.models.aux_decoder import AuxDecoder
-        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        decoder = AuxDecoder(input_dim=128, hidden_dim=64, n_classes=N_CLASSES)
         h = torch.randn(50, 128)
         g = decoder.embed(h)
-        assert g.shape == (50, 256), f"Expected (50, 256), got {g.shape}"
+        assert g.shape == (50, 64), f"Expected (50, 64), got {g.shape}"
 
     def test_aux_decoder_architecture(self):
         from cytokine_mil.models.aux_decoder import AuxDecoder
-        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
-        assert decoder.hidden_dim == 256
+        decoder = AuxDecoder(input_dim=128, hidden_dim=64, n_classes=N_CLASSES)
+        assert decoder.hidden_dim == 64
         assert decoder.input_dim == 128
         assert decoder.n_classes == N_CLASSES
 
@@ -1071,7 +1071,7 @@ class TestExperiment3:
     def test_train_aux_decoder_one_epoch(self, cache):
         from cytokine_mil.models.aux_decoder import AuxDecoder
         from cytokine_mil.training.train_aux_decoder import train_aux_decoder
-        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        decoder = AuxDecoder(input_dim=128, hidden_dim=64, n_classes=N_CLASSES)
         trained = train_aux_decoder(
             model=decoder,
             cache=cache,
@@ -1086,7 +1086,7 @@ class TestExperiment3:
     def test_train_aux_decoder_returns_eval_mode(self, cache):
         from cytokine_mil.models.aux_decoder import AuxDecoder
         from cytokine_mil.training.train_aux_decoder import train_aux_decoder
-        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        decoder = AuxDecoder(input_dim=128, hidden_dim=64, n_classes=N_CLASSES)
         trained = train_aux_decoder(
             model=decoder, cache=cache, n_epochs=1, lr=0.01,
             device=torch.device("cpu"), seed=0, verbose=False,
@@ -1112,7 +1112,7 @@ class TestExperiment3:
                     total += F.mse_loss(pred, target).item()
             return total / len(cache)
 
-        decoder = AuxDecoder(input_dim=128, hidden_dim=256, n_classes=N_CLASSES)
+        decoder = AuxDecoder(input_dim=128, hidden_dim=64, n_classes=N_CLASSES)
         loss_before = _mean_loss(decoder)
         train_aux_decoder(
             model=decoder, cache=cache, n_epochs=5, lr=0.01,

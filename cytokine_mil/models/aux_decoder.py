@@ -34,7 +34,7 @@ class AuxDecoder(nn.Module):
     def __init__(
         self,
         input_dim: int = 128,
-        hidden_dim: int = 256,
+        hidden_dim: int = 64,
         n_classes: int = 91,
     ) -> None:
         super().__init__()
