@@ -445,6 +445,173 @@ def compute_asymmetry_matrix(
     }
 
 
+def compute_cytokine_centroids_from_cache(
+    cache: list,
+    label_encoder,
+    h_transform_fn=None,
+) -> dict:
+    """
+    Compute mean cell embedding per cytokine from a prebuilt in-memory cache.
+
+    Avoids repeated h5ad disk I/O — uses the H tensors already cached by
+    build_cache(). Intended for post-hoc geometry variants (PBS-relative,
+    h_residual) where a cell-level transformation is applied before centroid
+    computation.
+
+    Args:
+        cache: list of dicts with keys "H" (N, D) CPU tensor, "label" int,
+               "cell_types" list[str].  Output of build_cache().
+        label_encoder: CytokineLabel with ._idx_to_label dict.
+        h_transform_fn: Optional callable (H_np: ndarray, ct_labels: ndarray)
+               -> ndarray.  Applied to each tube's H before accumulation.
+               Use make_pbs_relative_fn() or make_hresidual_fn() from the
+               run_experiment_geo script.
+
+    Returns:
+        dict with keys:
+            'centroids': {cytokine_name -> np.ndarray of shape (D,)}
+            'metric_description': str
+    """
+    if not cache:
+        return {"centroids": {}, "metric_description": "empty cache"}
+
+    embed_dim = cache[0]["H"].shape[1]
+    embedding_sums: Dict[str, np.ndarray] = defaultdict(
+        lambda: np.zeros(embed_dim, dtype=np.float64)
+    )
+    cell_counts: Dict[str, float] = defaultdict(float)
+
+    for entry in cache:
+        H_np = entry["H"].numpy().astype(np.float64)          # (N, D)
+        ct_labels = np.array(entry["cell_types"])              # (N,)
+        cytokine = label_encoder._idx_to_label[entry["label"]]
+
+        if h_transform_fn is not None:
+            H_np = h_transform_fn(H_np, ct_labels)
+
+        embedding_sums[cytokine] += H_np.sum(axis=0)
+        cell_counts[cytokine] += float(H_np.shape[0])
+
+    centroids = {
+        cyt: embedding_sums[cyt] / cell_counts[cyt]
+        for cyt in embedding_sums
+        if cell_counts[cyt] > 0
+    }
+
+    transform_label = (
+        h_transform_fn.__name__ if hasattr(h_transform_fn, "__name__") else "custom"
+    ) if h_transform_fn is not None else "none"
+
+    return {
+        "centroids": centroids,
+        "metric_description": (
+            f"μ_C = mean h_i over all C-tubes in cache "
+            f"(h_transform: {transform_label})"
+        ),
+    }
+
+
+def build_tube_data_from_cache(
+    cache: list,
+    label_encoder,
+    centroids: dict,
+    h_transform_fn=None,
+) -> list:
+    """
+    Build tube_data list for compute_directional_bias_from_arrays() from cache.
+
+    Each entry is a 4-tuple:
+        (cytokine_name, H_np (N,D), ct_labels (N,), cell_weights or None)
+
+    Only tubes whose cytokine is present in centroids are included.
+
+    Args:
+        cache: output of build_cache().
+        label_encoder: CytokineLabel with ._idx_to_label.
+        centroids: dict from compute_cytokine_centroids_from_cache()['centroids'].
+        h_transform_fn: same optional transform as in centroid computation.
+
+    Returns:
+        List of (cytokine_name, H_np, ct_labels, None) tuples.
+    """
+    tube_data = []
+    for entry in cache:
+        H_np = entry["H"].numpy().astype(np.float64)
+        ct_labels = np.array(entry["cell_types"])
+        cytokine = label_encoder._idx_to_label[entry["label"]]
+
+        if cytokine not in centroids:
+            continue
+
+        if h_transform_fn is not None:
+            H_np = h_transform_fn(H_np, ct_labels)
+
+        tube_data.append((cytokine, H_np, ct_labels, None))  # None = uniform weights
+
+    return tube_data
+
+
+def compute_directional_bias_from_arrays(
+    tube_data: list,
+    centroids: dict,
+    n_permutations: int = 1000,
+    transform_label: str = "none",
+) -> dict:
+    """
+    Compute directional bias, z-scores, and BH-FDR q-values from pre-built arrays.
+
+    Accepts tube_data already built and transformed (no model or dataset needed).
+    Intended for use with compute_cytokine_centroids_from_cache() and
+    build_tube_data_from_cache().
+
+    For every (A, B, T) triple:
+        bias(A, B, T) = (μ_{A,T} - μ_A) · (μ_B - μ_A) / ||μ_B - μ_A||_2
+
+    Null: permute cell-type labels within each tube n_permutations times.
+    z-score: (obs - null_mean) / null_std.
+    BH-FDR correction across all (A, B, T) triples.
+
+    Args:
+        tube_data: list of (cytokine_name, H_np (N,D), ct_labels (N,), weights or None).
+                   Output of build_tube_data_from_cache().
+        centroids: {cytokine_name -> np.ndarray (D,)}.
+        n_permutations: number of cell-type permutations for null distribution.
+        transform_label: string describing the h_transform applied (for metric_description).
+
+    Returns:
+        dict with keys:
+            'bias': {(cyt_a, cyt_b, cell_type) -> float}
+            'z_scores': {(cyt_a, cyt_b, cell_type) -> float}
+            'q_values': {(cyt_a, cyt_b, cell_type) -> float}
+            'metric_description': str
+    """
+    bias_obs = _compute_all_biases(tube_data, centroids)
+    bias_null = _compute_bias_null(tube_data, centroids, n_permutations=n_permutations)
+
+    z_scores: Dict[Tuple[str, str, str], float] = {}
+    for key, obs in bias_obs.items():
+        null_vals = bias_null.get(key, [])
+        if len(null_vals) < 2:
+            z_scores[key] = 0.0
+        else:
+            null_arr = np.array(null_vals)
+            null_m = float(null_arr.mean())
+            null_s = float(null_arr.std())
+            z_scores[key] = (obs - null_m) / null_s if null_s > 0 else 0.0
+
+    q_values = _z_to_bh_qvalues(z_scores)
+
+    return {
+        "bias": dict(bias_obs),
+        "z_scores": dict(z_scores),
+        "q_values": q_values,
+        "metric_description": (
+            f"scalar projection of (μ_{{A,T}} - μ_A) [h_i, transform={transform_label}] "
+            "onto unit vector (μ_B - μ_A)/||μ_B - μ_A||_2"
+        ),
+    }
+
+
 def build_latent_cascade_graph(
     asymmetry_matrix: np.ndarray,
     z_scores: dict,
