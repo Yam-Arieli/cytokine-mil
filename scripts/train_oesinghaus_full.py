@@ -295,6 +295,11 @@ def main():
     # ------------------------------------------------------------------
     _print_learnability_summary(dynamics, label_enc, log)
 
+    # ------------------------------------------------------------------
+    # Quick-access run summary (avoids loading full dynamics.pkl later)
+    # ------------------------------------------------------------------
+    _save_run_summary(dynamics, args, out_dir, log)
+
     log("\nDone.")
     log_file.close()
 
@@ -315,6 +320,46 @@ def _plot_loss_curve(loss_components, logged_epochs, out_dir, log):
     fig.savefig(out_dir / "loss_curve.png", dpi=150)
     plt.close(fig)
     log("  Saved: loss_curve.png")
+
+
+def _save_run_summary(dynamics, args, out_dir, log):
+    """Save run_summary.json — quick-access metrics without loading dynamics.pkl."""
+    train_recs = dynamics["records"]
+    val_recs   = dynamics.get("val_records", [])
+
+    def _safe_mean(recs, key="p_correct_trajectory", agg=lambda x: x[-1]):
+        if not recs:
+            return None
+        vals = [agg(r[key]) for r in recs if key in r]
+        return float(np.mean(vals)) if vals else None
+
+    final_train = _safe_mean(train_recs, agg=lambda x: x[-1])
+    auc_train   = _safe_mean(train_recs, agg=np.mean)
+    final_val   = _safe_mean(val_recs,   agg=lambda x: x[-1])
+    auc_val     = _safe_mean(val_recs,   agg=np.mean)
+
+    loss_total = dynamics.get("loss_components", {}).get("total", [])
+    summary = {
+        "seed":                    args.seed,
+        "timestamp":               datetime.now().isoformat(),
+        "final_train_p_correct":   final_train,
+        "auc_train_p_correct":     auc_train,
+        "final_val_p_correct":     final_val,
+        "auc_val_p_correct":       auc_val,
+        "final_loss":              float(loss_total[-1]) if loss_total else None,
+        "n_train_records":         len(train_recs),
+        "n_val_records":           len(val_recs),
+        "stage1_epochs":           args.stage1_epochs,
+        "stage2_epochs":           args.stage2_epochs,
+        "stage2_lr":               args.lr,
+        "embed_dim":               args.embed_dim,
+        "attention_hidden_dim":    args.attention_hidden_dim,
+        "val_donors":              VAL_DONORS,
+    }
+    with open(out_dir / "run_summary.json", "w") as fh:
+        json.dump(summary, fh, indent=2)
+    log(f"  Saved: run_summary.json  "
+        f"(train_final={final_train:.4f}, val_final={final_val:.4f})")
 
 
 def _print_learnability_summary(dynamics, label_enc, log):
