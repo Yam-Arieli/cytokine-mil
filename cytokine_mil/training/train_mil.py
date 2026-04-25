@@ -39,6 +39,8 @@ def train_mil(
     val_dataset: Optional[PseudoTubeDataset] = None,
     kl_lambda: float = 0.0,
     aux_loss_weight: float = 0.0,
+    checkpoint_dir: Optional[str] = None,
+    checkpoint_epochs: Optional[List[int]] = None,
 ) -> Dict:
     """
     Train the CytokineABMIL model and record dynamics trajectories.
@@ -97,6 +99,13 @@ def train_mil(
     scheduler = _build_scheduler(optimizer, n_epochs, lr_scheduler, lr_warmup_epochs)
     rng = np.random.default_rng(seed)
 
+    # Checkpoint setup
+    import pathlib
+    _ckpt_dir = pathlib.Path(checkpoint_dir) if checkpoint_dir is not None else None
+    _ckpt_epochs = set(checkpoint_epochs) if checkpoint_epochs is not None else set()
+    if _ckpt_dir is not None:
+        _ckpt_dir.mkdir(parents=True, exist_ok=True)
+
     entries = dataset.get_entries()
     queues = build_cytokine_queues(entries, dataset.label_encoder)
 
@@ -139,6 +148,11 @@ def train_mil(
                     val_cytokine_confusion_epochs, val_dataset.label_encoder, device,
                 )
             logged_epochs.append(epoch)
+
+        # Save checkpoint if requested
+        if _ckpt_dir is not None and epoch in _ckpt_epochs:
+            ckpt_path = _ckpt_dir / f"epoch_{epoch:04d}.pt"
+            torch.save(model.state_dict(), ckpt_path)
 
         if verbose:
             print(f"[Stage 2/3] Epoch {epoch:3d}/{n_epochs} | loss={epoch_loss:.4f}"

@@ -108,6 +108,8 @@ def _parse_args():
     p.add_argument("--embed_dim",      type=int,   default=EMBED_DIM)
     p.add_argument("--attention_hidden_dim", type=int, default=ATTENTION_HIDDEN_DIM)
     p.add_argument("--log_every",      type=int,   default=LOG_EVERY)
+    p.add_argument("--checkpoint_epochs", type=str, default=None,
+                   help="Comma-separated epochs to save checkpoints, e.g. '25,50,75,100'")
     return p.parse_args()
 
 
@@ -243,6 +245,13 @@ def main():
         f"n_classes={label_enc.n_classes()}")
     log(f"  Stage 2: {args.stage2_epochs} epochs, lr={args.lr}, log_every={args.log_every}")
 
+    ckpt_epochs = None
+    ckpt_dir    = None
+    if args.checkpoint_epochs:
+        ckpt_epochs = [int(e) for e in args.checkpoint_epochs.split(",")]
+        ckpt_dir    = str(out_dir / "checkpoints")
+        log(f"  Checkpoints at epochs: {ckpt_epochs}  → {ckpt_dir}")
+
     dynamics = train_mil(
         model,
         train_dataset,
@@ -254,6 +263,8 @@ def main():
         seed=args.seed,
         verbose=True,
         val_dataset=val_dataset,
+        checkpoint_dir=ckpt_dir,
+        checkpoint_epochs=ckpt_epochs,
     )
 
     torch.save(model.state_dict(), out_dir / "model_stage2.pt")
