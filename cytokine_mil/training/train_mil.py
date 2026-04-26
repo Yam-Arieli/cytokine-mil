@@ -123,6 +123,11 @@ def train_mil(
     }
 
     for epoch in range(1, n_epochs + 1):
+        # Apply LR warmup BEFORE training each epoch so epoch 1 starts
+        # at a small LR (scale = 1/warmup_epochs), not the full LR.
+        if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
+            _apply_warmup(optimizer, lr, epoch, lr_warmup_epochs)
+
         epoch_loss_dict = _train_epoch(
             model, dataset, queues, optimizer, criterion, device, rng,
             kl_lambda=kl_lambda, aux_loss_weight=aux_loss_weight,
@@ -134,7 +139,7 @@ def train_mil(
                 loss_components[key].append(epoch_loss_dict[key])
 
         if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
-            _apply_warmup(optimizer, lr, epoch, lr_warmup_epochs)
+            pass  # warmup already applied above
         elif scheduler is not None:
             scheduler.step()
 
@@ -291,9 +296,17 @@ def _train_epoch(
             else:
                 y_hat, _a, _H = model(X)
                 loss = criterion(y_hat.unsqueeze(0), label_t) / n
+            # Guard against NaN loss (e.g. from corrupted input or early
+            # gradient explosion) — skip backward for this tube rather than
+            # propagating NaN into the weight tensors.
+            if torch.isnan(loss):
+                continue
             loss.backward()
             mb_loss += loss.item()
 
+        # Gradient clipping: essential when the encoder is unfrozen (Stage 3),
+        # prevents first-step gradient explosion from setting weights to NaN.
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
         total_loss += mb_loss
         total_main += mb_main

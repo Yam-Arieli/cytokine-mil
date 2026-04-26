@@ -32,5 +32,7 @@ ${PYTHON} scripts/train_oesinghaus_full.py \
     --stage3_epochs 150 \
     --encoder_lr_factor 0.1 \
     --lr 0.01 \
+    --stage3_lr 0.001 \
+    --stage3_warmup 5 \
     --log_every 1 \
     --checkpoint_epochs_stage3 ${S3_CKPTS}

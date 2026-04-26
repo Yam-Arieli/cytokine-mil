@@ -39,17 +39,20 @@ class CytokineABMIL(nn.Module):
         self.encoder = encoder
         self.attention = attention
         self.classifier = classifier
+        self.encoder_frozen: bool = encoder_frozen  # tracked for _build_optimizer
         if encoder_frozen:
             self._freeze_encoder()
 
     def _freeze_encoder(self) -> None:
         for param in self.encoder.parameters():
             param.requires_grad = False
+        self.encoder_frozen = True
 
     def unfreeze_encoder(self) -> None:
         """Enable encoder weight updates (Stage 3 fine-tuning)."""
         for param in self.encoder.parameters():
             param.requires_grad = True
+        self.encoder_frozen = False
 
     def forward(
         self, X: torch.Tensor

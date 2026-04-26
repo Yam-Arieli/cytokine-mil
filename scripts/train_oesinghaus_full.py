@@ -114,6 +114,11 @@ def _parse_args():
                    help="Stage 3 epochs (unfrozen encoder). 0 = skip Stage 3.")
     p.add_argument("--encoder_lr_factor", type=float, default=0.1,
                    help="Encoder LR multiplier for Stage 3 (default 0.1 = 10x lower than MIL head).")
+    p.add_argument("--stage3_lr", type=float, default=None,
+                   help="LR for Stage 3 MIL head (default: same as --lr). "
+                        "Encoder gets stage3_lr * encoder_lr_factor.")
+    p.add_argument("--stage3_warmup", type=int, default=5,
+                   help="LR warmup epochs at start of Stage 3 (default 5).")
     p.add_argument("--checkpoint_epochs_stage3", type=str, default=None,
                    help="Comma-separated Stage 3 checkpoint epochs, e.g. '5,10,15,...,150'")
     return p.parse_args()
@@ -294,13 +299,18 @@ def main():
             s3_ckpt_dir    = str(out_dir / "checkpoints_stage3")
             log(f"  Checkpoints at {len(s3_ckpt_epochs)} epochs → {s3_ckpt_dir}")
 
+        s3_lr = args.stage3_lr if args.stage3_lr is not None else args.lr
+        log(f"  Stage 3 LR: head={s3_lr:.4f}, encoder={s3_lr * args.encoder_lr_factor:.5f}")
+        log(f"  LR warmup: {args.stage3_warmup} epochs, grad clip max_norm=5.0")
+
         dynamics_s3 = train_mil(
             model,
             train_dataset,
             n_epochs=args.stage3_epochs,
-            lr=args.lr,
+            lr=s3_lr,
             encoder_lr_factor=args.encoder_lr_factor,
             momentum=STAGE2_MOMENTUM,
+            lr_warmup_epochs=args.stage3_warmup,
             log_every_n_epochs=args.log_every,
             device=device,
             seed=args.seed,
