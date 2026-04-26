@@ -109,7 +109,13 @@ def _parse_args():
     p.add_argument("--attention_hidden_dim", type=int, default=ATTENTION_HIDDEN_DIM)
     p.add_argument("--log_every",      type=int,   default=LOG_EVERY)
     p.add_argument("--checkpoint_epochs", type=str, default=None,
-                   help="Comma-separated epochs to save checkpoints, e.g. '25,50,75,100'")
+                   help="Comma-separated Stage 2 checkpoint epochs, e.g. '25,50,75,100'")
+    p.add_argument("--stage3_epochs",  type=int,   default=0,
+                   help="Stage 3 epochs (unfrozen encoder). 0 = skip Stage 3.")
+    p.add_argument("--encoder_lr_factor", type=float, default=0.1,
+                   help="Encoder LR multiplier for Stage 3 (default 0.1 = 10x lower than MIL head).")
+    p.add_argument("--checkpoint_epochs_stage3", type=str, default=None,
+                   help="Comma-separated Stage 3 checkpoint epochs, e.g. '5,10,15,...,150'")
     return p.parse_args()
 
 
@@ -271,6 +277,68 @@ def main():
     log("  Saved: model_stage2.pt")
 
     # ------------------------------------------------------------------
+    # Stage 3: fine-tuning with unfrozen encoder (optional)
+    # ------------------------------------------------------------------
+    if args.stage3_epochs > 0:
+        log("\n" + "=" * 60)
+        log("STAGE 3: AB-MIL fine-tuning (unfrozen encoder)")
+        log(f"  Epochs: {args.stage3_epochs} | encoder_lr_factor: {args.encoder_lr_factor}")
+        log("=" * 60)
+
+        model.unfreeze_encoder()
+
+        s3_ckpt_epochs = None
+        s3_ckpt_dir    = None
+        if args.checkpoint_epochs_stage3:
+            s3_ckpt_epochs = [int(e) for e in args.checkpoint_epochs_stage3.split(",")]
+            s3_ckpt_dir    = str(out_dir / "checkpoints_stage3")
+            log(f"  Checkpoints at {len(s3_ckpt_epochs)} epochs → {s3_ckpt_dir}")
+
+        dynamics_s3 = train_mil(
+            model,
+            train_dataset,
+            n_epochs=args.stage3_epochs,
+            lr=args.lr,
+            encoder_lr_factor=args.encoder_lr_factor,
+            momentum=STAGE2_MOMENTUM,
+            log_every_n_epochs=args.log_every,
+            device=device,
+            seed=args.seed,
+            verbose=True,
+            val_dataset=val_dataset,
+            checkpoint_dir=s3_ckpt_dir,
+            checkpoint_epochs=s3_ckpt_epochs,
+        )
+
+        torch.save(model.state_dict(), out_dir / "model_stage3.pt")
+        log("  Saved: model_stage3.pt")
+
+        s3_payload = {
+            "records":                          dynamics_s3["records"],
+            "val_records":                      dynamics_s3["val_records"],
+            "logged_epochs":                    dynamics_s3["logged_epochs"],
+            "confusion_entropy_trajectory":     dynamics_s3["confusion_entropy_trajectory"],
+            "val_confusion_entropy_trajectory": dynamics_s3["val_confusion_entropy_trajectory"],
+            "loss_components":                  dynamics_s3["loss_components"],
+            "label_encoder_cytokines":          list(label_enc.cytokines),
+            "seed":                             args.seed,
+            "val_donors":                       VAL_DONORS,
+            "stage3_epochs":                    args.stage3_epochs,
+            "stage3_lr":                        args.lr,
+            "encoder_lr_factor":                args.encoder_lr_factor,
+        }
+        with open(out_dir / "dynamics_stage3.pkl", "wb") as fh:
+            pickle.dump(s3_payload, fh)
+        log("  Saved: dynamics_stage3.pkl")
+
+        _plot_loss_curve(
+            dynamics_s3["loss_components"], dynamics_s3["logged_epochs"],
+            out_dir, log, title="Stage 3 Training Loss — Oesinghaus Full 91-class",
+            filename="loss_curve_stage3.png",
+        )
+        _print_learnability_summary(dynamics_s3, label_enc, log)
+
+    # ------------------------------------------------------------------
     # Save dynamics
     # ------------------------------------------------------------------
     log("\nSaving dynamics...")
@@ -319,18 +387,20 @@ def main():
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _plot_loss_curve(loss_components, logged_epochs, out_dir, log):
+def _plot_loss_curve(loss_components, logged_epochs, out_dir, log,
+                     title="Stage 2 Training Loss — Oesinghaus Full 91-class",
+                     filename="loss_curve.png"):
     epochs = range(1, len(loss_components["total"]) + 1)
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(list(epochs), loss_components["total"], label="total loss", color="steelblue")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
-    ax.set_title("Stage 2 Training Loss — Oesinghaus Full 91-class")
+    ax.set_title(title)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(out_dir / "loss_curve.png", dpi=150)
+    fig.savefig(out_dir / filename, dpi=150)
     plt.close(fig)
-    log("  Saved: loss_curve.png")
+    log(f"  Saved: {filename}")
 
 
 def _save_run_summary(dynamics, args, out_dir, log):

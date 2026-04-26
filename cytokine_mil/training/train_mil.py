@@ -30,6 +30,7 @@ def train_mil(
     n_epochs: int,
     lr: float = 0.01,
     momentum: float = 0.9,
+    encoder_lr_factor: float = 1.0,
     lr_scheduler: Optional[str] = None,
     lr_warmup_epochs: int = 0,
     log_every_n_epochs: int = 1,
@@ -95,7 +96,7 @@ def train_mil(
 
     model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = _build_optimizer(model, lr, momentum)
+    optimizer = _build_optimizer(model, lr, momentum, encoder_lr_factor)
     scheduler = _build_scheduler(optimizer, n_epochs, lr_scheduler, lr_warmup_epochs)
     rng = np.random.default_rng(seed)
 
@@ -185,11 +186,24 @@ def train_mil(
 # ---------------------------------------------------------------------------
 
 def _build_optimizer(
-    model, lr: float, momentum: float
+    model, lr: float, momentum: float, encoder_lr_factor: float = 1.0
 ) -> torch.optim.SGD:
+    encoder_frozen = getattr(model, "encoder_frozen", True)
+    if encoder_lr_factor != 1.0 and not encoder_frozen:
+        # Differential LR: encoder gets lr * encoder_lr_factor, MIL head gets lr.
+        encoder_param_ids = {id(p) for p in model.encoder.parameters()}
+        enc_params   = [p for p in model.parameters()
+                        if p.requires_grad and id(p) in encoder_param_ids]
+        head_params  = [p for p in model.parameters()
+                        if p.requires_grad and id(p) not in encoder_param_ids]
+        param_groups = [
+            {"params": enc_params,  "lr": lr * encoder_lr_factor, "base_lr": lr * encoder_lr_factor},
+            {"params": head_params, "lr": lr,                      "base_lr": lr},
+        ]
+        return torch.optim.SGD(param_groups, momentum=momentum)
     return torch.optim.SGD(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        lr=lr,
+        [{"params": p, "lr": lr, "base_lr": lr}
+         for p in filter(lambda p: p.requires_grad, model.parameters())],
         momentum=momentum,
     )
 
@@ -204,7 +218,7 @@ def _build_scheduler(optimizer, n_epochs, scheduler_type, warmup_epochs):
 def _apply_warmup(optimizer, base_lr: float, epoch: int, warmup_epochs: int) -> None:
     scale = epoch / warmup_epochs
     for pg in optimizer.param_groups:
-        pg["lr"] = base_lr * scale
+        pg["lr"] = pg.get("base_lr", base_lr) * scale
 
 
 def _train_epoch(

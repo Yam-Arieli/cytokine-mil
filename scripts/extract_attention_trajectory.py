@@ -45,8 +45,10 @@ HVG_PATH = "/cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/hvg_li
 
 def _parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--run_dir", required=True)
-    p.add_argument("--device", default="cpu")
+    p.add_argument("--run_dir",           required=True)
+    p.add_argument("--checkpoint_subdir", default="checkpoints",
+                   help="Subdirectory under run_dir containing epoch_*.pt files.")
+    p.add_argument("--device",            default="cpu")
     return p.parse_args()
 
 
@@ -145,7 +147,7 @@ def main():
     run_dir = Path(args.run_dir)
     device  = torch.device(args.device)
 
-    ckpt_dir = run_dir / "checkpoints"
+    ckpt_dir = run_dir / args.checkpoint_subdir
     if not ckpt_dir.exists():
         _log(f"ERROR: No checkpoints directory found at {ckpt_dir}")
         sys.exit(1)
