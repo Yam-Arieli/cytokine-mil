@@ -121,6 +121,8 @@ def _parse_args():
                    help="LR warmup epochs at start of Stage 3 (default 5).")
     p.add_argument("--checkpoint_epochs_stage3", type=str, default=None,
                    help="Comma-separated Stage 3 checkpoint epochs, e.g. '5,10,15,...,150'")
+    p.add_argument("--stage3_only", action="store_true",
+                   help="Skip Stage 1+2; load model_stage2.pt from --output_dir and run Stage 3 only.")
     return p.parse_args()
 
 
@@ -196,90 +198,121 @@ def main():
     log(f"  Train: {len(train_manifest)} tubes | Val: {len(val_manifest)} tubes")
     log(f"  Val donors: {VAL_DONORS}")
 
-    # ------------------------------------------------------------------
-    # Stage 1: Encoder pre-training
-    # ------------------------------------------------------------------
-    log("\n" + "=" * 60)
-    log("STAGE 1: Encoder pre-training (cell-type classification)")
-    log("=" * 60)
+    if args.stage3_only:
+        # ------------------------------------------------------------------
+        # Stage 3-only mode: skip Stage 1+2, load existing model_stage2.pt
+        # ------------------------------------------------------------------
+        log("\n*** --stage3_only: loading Stage 2 model from output_dir ***")
+        train_dataset = PseudoTubeDataset(
+            str(out_dir / "manifest_train.json"), label_enc, gene_names=gene_names, preload=True,
+        )
+        val_dataset = PseudoTubeDataset(
+            str(out_dir / "manifest_val.json"), label_enc, gene_names=gene_names, preload=True,
+        )
 
-    cell_dataset = CellDataset(
-        str(stage1_manifest_path), gene_names=gene_names, preload=True,
-    )
-    cell_loader = DataLoader(
-        cell_dataset, batch_size=256, shuffle=True, num_workers=0,
-    )
+        # Rebuild encoder architecture (needed to load state dict)
+        cell_dataset = CellDataset(
+            str(out_dir / "manifest_stage1.json"), gene_names=gene_names, preload=True,
+        )
+        n_cell_types = len(cell_dataset.cell_type_to_idx)
+        encoder = build_encoder(
+            n_input_genes=len(gene_names), n_cell_types=n_cell_types, embed_dim=args.embed_dim,
+        )
+        model = build_mil_model(
+            encoder, embed_dim=args.embed_dim, attention_hidden_dim=args.attention_hidden_dim,
+            n_classes=label_enc.n_classes(), encoder_frozen=True,
+        )
+        model.load_state_dict(torch.load(out_dir / "model_stage2.pt", map_location="cpu"))
+        log(f"  Loaded: {out_dir / 'model_stage2.pt'}")
 
-    n_cell_types = len(cell_dataset.cell_type_to_idx)
-    encoder = build_encoder(
-        n_input_genes=len(gene_names),
-        n_cell_types=n_cell_types,
-        embed_dim=args.embed_dim,
-    )
-    log(f"  Encoder: input={len(gene_names)}, embed_dim={args.embed_dim}, "
-        f"n_cell_types={n_cell_types}")
+        # dynamics is not re-computed for Stage 2 in this mode — use existing dynamics.pkl
+        dynamics = None
 
-    train_encoder(
-        encoder=encoder,
-        dataloader=cell_loader,
-        n_epochs=args.stage1_epochs,
-        lr=args.stage1_lr,
-        momentum=STAGE1_MOMENTUM,
-        device=device,
-        verbose=True,
-    )
-    torch.save(encoder.state_dict(), out_dir / "encoder_stage1.pt")
-    log("  Saved: encoder_stage1.pt")
+    else:
+        # ------------------------------------------------------------------
+        # Stage 1: Encoder pre-training
+        # ------------------------------------------------------------------
+        log("\n" + "=" * 60)
+        log("STAGE 1: Encoder pre-training (cell-type classification)")
+        log("=" * 60)
 
-    # ------------------------------------------------------------------
-    # Stage 2: MIL training (frozen encoder)
-    # ------------------------------------------------------------------
-    log("\n" + "=" * 60)
-    log("STAGE 2: AB-MIL training (frozen encoder, 91-class)")
-    log("=" * 60)
+        cell_dataset = CellDataset(
+            str(stage1_manifest_path), gene_names=gene_names, preload=True,
+        )
+        cell_loader = DataLoader(
+            cell_dataset, batch_size=256, shuffle=True, num_workers=0,
+        )
 
-    train_dataset = PseudoTubeDataset(
-        str(train_m_path), label_enc, gene_names=gene_names, preload=True,
-    )
-    val_dataset = PseudoTubeDataset(
-        str(val_m_path), label_enc, gene_names=gene_names, preload=True,
-    )
+        n_cell_types = len(cell_dataset.cell_type_to_idx)
+        encoder = build_encoder(
+            n_input_genes=len(gene_names),
+            n_cell_types=n_cell_types,
+            embed_dim=args.embed_dim,
+        )
+        log(f"  Encoder: input={len(gene_names)}, embed_dim={args.embed_dim}, "
+            f"n_cell_types={n_cell_types}")
 
-    model = build_mil_model(
-        encoder,
-        embed_dim=args.embed_dim,
-        attention_hidden_dim=args.attention_hidden_dim,
-        n_classes=label_enc.n_classes(),
-        encoder_frozen=True,
-    )
-    log(f"  Model: embed_dim={args.embed_dim}, attn_hidden={args.attention_hidden_dim}, "
-        f"n_classes={label_enc.n_classes()}")
-    log(f"  Stage 2: {args.stage2_epochs} epochs, lr={args.lr}, log_every={args.log_every}")
+        train_encoder(
+            encoder=encoder,
+            dataloader=cell_loader,
+            n_epochs=args.stage1_epochs,
+            lr=args.stage1_lr,
+            momentum=STAGE1_MOMENTUM,
+            device=device,
+            verbose=True,
+        )
+        torch.save(encoder.state_dict(), out_dir / "encoder_stage1.pt")
+        log("  Saved: encoder_stage1.pt")
 
-    ckpt_epochs = None
-    ckpt_dir    = None
-    if args.checkpoint_epochs:
-        ckpt_epochs = [int(e) for e in args.checkpoint_epochs.split(",")]
-        ckpt_dir    = str(out_dir / "checkpoints")
-        log(f"  Checkpoints at epochs: {ckpt_epochs}  → {ckpt_dir}")
+        # ------------------------------------------------------------------
+        # Stage 2: MIL training (frozen encoder)
+        # ------------------------------------------------------------------
+        log("\n" + "=" * 60)
+        log("STAGE 2: AB-MIL training (frozen encoder, 91-class)")
+        log("=" * 60)
 
-    dynamics = train_mil(
-        model,
-        train_dataset,
-        n_epochs=args.stage2_epochs,
-        lr=args.lr,
-        momentum=STAGE2_MOMENTUM,
-        log_every_n_epochs=args.log_every,
-        device=device,
-        seed=args.seed,
-        verbose=True,
-        val_dataset=val_dataset,
-        checkpoint_dir=ckpt_dir,
-        checkpoint_epochs=ckpt_epochs,
-    )
+        train_dataset = PseudoTubeDataset(
+            str(train_m_path), label_enc, gene_names=gene_names, preload=True,
+        )
+        val_dataset = PseudoTubeDataset(
+            str(val_m_path), label_enc, gene_names=gene_names, preload=True,
+        )
 
-    torch.save(model.state_dict(), out_dir / "model_stage2.pt")
-    log("  Saved: model_stage2.pt")
+        model = build_mil_model(
+            encoder,
+            embed_dim=args.embed_dim,
+            attention_hidden_dim=args.attention_hidden_dim,
+            n_classes=label_enc.n_classes(),
+            encoder_frozen=True,
+        )
+        log(f"  Model: embed_dim={args.embed_dim}, attn_hidden={args.attention_hidden_dim}, "
+            f"n_classes={label_enc.n_classes()}")
+        log(f"  Stage 2: {args.stage2_epochs} epochs, lr={args.lr}, log_every={args.log_every}")
+
+        ckpt_epochs = None
+        ckpt_dir    = None
+        if args.checkpoint_epochs:
+            ckpt_epochs = [int(e) for e in args.checkpoint_epochs.split(",")]
+            ckpt_dir    = str(out_dir / "checkpoints")
+            log(f"  Checkpoints at epochs: {ckpt_epochs}  → {ckpt_dir}")
+
+        dynamics = train_mil(
+            model,
+            train_dataset,
+            n_epochs=args.stage2_epochs,
+            lr=args.lr,
+            momentum=STAGE2_MOMENTUM,
+            log_every_n_epochs=args.log_every,
+            device=device,
+            seed=args.seed,
+            verbose=True,
+            val_dataset=val_dataset,
+            checkpoint_dir=ckpt_dir,
+            checkpoint_epochs=ckpt_epochs,
+        )
+
+        torch.save(model.state_dict(), out_dir / "model_stage2.pt")
+        log("  Saved: model_stage2.pt")
 
     # ------------------------------------------------------------------
     # Stage 3: fine-tuning with unfrozen encoder (optional)
@@ -349,45 +382,36 @@ def main():
         _print_learnability_summary(dynamics_s3, label_enc, log)
 
     # ------------------------------------------------------------------
-    # Save dynamics
+    # Save Stage 2 dynamics (skipped in --stage3_only mode)
     # ------------------------------------------------------------------
-    log("\nSaving dynamics...")
-    dynamics_payload = {
-        "records":                      dynamics["records"],
-        "val_records":                  dynamics["val_records"],
-        "logged_epochs":                dynamics["logged_epochs"],
-        "confusion_entropy_trajectory": dynamics["confusion_entropy_trajectory"],
-        "val_confusion_entropy_trajectory": dynamics["val_confusion_entropy_trajectory"],
-        "loss_components":              dynamics["loss_components"],
-        "label_encoder_cytokines":      list(label_enc.cytokines),
-        "seed":                         args.seed,
-        "val_donors":                   VAL_DONORS,
-        "stage2_epochs":                args.stage2_epochs,
-        "stage2_lr":                    args.lr,
-    }
-    with open(out_dir / "dynamics.pkl", "wb") as fh:
-        pickle.dump(dynamics_payload, fh)
-    log("  Saved: dynamics.pkl")
-    log(f"  Records: {len(dynamics['records'])} train, {len(dynamics['val_records'])} val")
-    if dynamics["records"]:
-        sm = dynamics["records"][0].get("softmax_trajectory")
-        if sm is not None:
-            log(f"  softmax_trajectory shape per record: {sm.shape} (K x T)")
-
-    # ------------------------------------------------------------------
-    # Loss curve plot
-    # ------------------------------------------------------------------
-    _plot_loss_curve(dynamics["loss_components"], dynamics["logged_epochs"], out_dir, log)
-
-    # ------------------------------------------------------------------
-    # Learnability summary
-    # ------------------------------------------------------------------
-    _print_learnability_summary(dynamics, label_enc, log)
-
-    # ------------------------------------------------------------------
-    # Quick-access run summary (avoids loading full dynamics.pkl later)
-    # ------------------------------------------------------------------
-    _save_run_summary(dynamics, args, out_dir, log)
+    if dynamics is not None:
+        log("\nSaving dynamics...")
+        dynamics_payload = {
+            "records":                      dynamics["records"],
+            "val_records":                  dynamics["val_records"],
+            "logged_epochs":                dynamics["logged_epochs"],
+            "confusion_entropy_trajectory": dynamics["confusion_entropy_trajectory"],
+            "val_confusion_entropy_trajectory": dynamics["val_confusion_entropy_trajectory"],
+            "loss_components":              dynamics["loss_components"],
+            "label_encoder_cytokines":      list(label_enc.cytokines),
+            "seed":                         args.seed,
+            "val_donors":                   VAL_DONORS,
+            "stage2_epochs":                args.stage2_epochs,
+            "stage2_lr":                    args.lr,
+        }
+        with open(out_dir / "dynamics.pkl", "wb") as fh:
+            pickle.dump(dynamics_payload, fh)
+        log("  Saved: dynamics.pkl")
+        log(f"  Records: {len(dynamics['records'])} train, {len(dynamics['val_records'])} val")
+        if dynamics["records"]:
+            sm = dynamics["records"][0].get("softmax_trajectory")
+            if sm is not None:
+                log(f"  softmax_trajectory shape per record: {sm.shape} (K x T)")
+        _plot_loss_curve(dynamics["loss_components"], dynamics["logged_epochs"], out_dir, log)
+        _print_learnability_summary(dynamics, label_enc, log)
+        _save_run_summary(dynamics, args, out_dir, log)
+    else:
+        log("\n(--stage3_only: skipping Stage 2 dynamics save — existing dynamics.pkl retained)")
 
     log("\nDone.")
     log_file.close()
