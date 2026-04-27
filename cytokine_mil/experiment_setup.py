@@ -29,13 +29,19 @@ from cytokine_mil.models.instance_encoder import InstanceEncoder
 def build_stage1_manifest(
     manifest: List[dict],
     save_path: Optional[str] = None,
+    donor_offset: int = 0,
 ) -> List[dict]:
     """
     Select one tube per cytokine from the full manifest, rotating donors.
 
     For each cytokine (sorted alphabetically), picks the entry at donor index
-    ``i % n_donors`` where ``i`` is the cytokine's sorted rank. This distributes
-    Stage 1 training across donors without repetition.
+    ``(i + donor_offset) % n_donors`` where ``i`` is the cytokine's sorted rank.
+    This distributes Stage 1 training across donors without repetition.
+
+    ``donor_offset=0`` gives the default rotation (cytokine 0 → donor 0, etc.).
+    ``donor_offset=1`` shifts the assignment by one donor, producing a fully
+    disjoint set of tubes from offset=0 (each cytokine is represented by a
+    different donor's cells), enabling data-level reproducibility checks.
 
     Only tube_idx == 0 entries are considered so the selection is deterministic
     regardless of how many pseudo-tubes exist per (donor, cytokine) pair.
@@ -43,6 +49,7 @@ def build_stage1_manifest(
     Args:
         manifest: Full manifest list loaded from manifest.json.
         save_path: If provided, writes the result to this path as JSON.
+        donor_offset: Integer shift applied to the donor rotation index (default 0).
     Returns:
         List of manifest entries — one per cytokine (~91 for the full dataset).
     """
@@ -54,7 +61,7 @@ def build_stage1_manifest(
     stage1_manifest = []
     for i, cyt in enumerate(sorted(cyt_to_entries)):
         entries = sorted(cyt_to_entries[cyt], key=lambda e: e["donor"])
-        stage1_manifest.append(entries[i % len(entries)])
+        stage1_manifest.append(entries[(i + donor_offset) % len(entries)])
 
     if save_path is not None:
         with open(save_path, "w") as f:

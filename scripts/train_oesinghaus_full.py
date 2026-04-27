@@ -101,6 +101,10 @@ def _parse_args():
     p = argparse.ArgumentParser(description="Oesinghaus full 91-class AB-MIL training.")
     p.add_argument("--seed",           type=int,   default=SEED)
     p.add_argument("--output_dir",     type=str,   default=None)
+    p.add_argument("--donor_offset",   type=int,   default=0,
+                   help="Shift donor rotation in Stage 1 manifest by this amount. "
+                        "0 = default (cytokine i from donor i%%N). "
+                        "1 = shifted (cytokine i from donor (i+1)%%N).")
     p.add_argument("--stage1_epochs",  type=int,   default=STAGE1_EPOCHS)
     p.add_argument("--stage2_epochs",  type=int,   default=STAGE2_EPOCHS)
     p.add_argument("--lr",             type=float, default=STAGE2_LR)
@@ -181,8 +185,12 @@ def main():
     # ------------------------------------------------------------------
     log("\nBuilding Stage 1 manifest...")
     stage1_manifest_path = out_dir / "manifest_stage1.json"
-    stage1_manifest = build_stage1_manifest(manifest, save_path=str(stage1_manifest_path))
-    log(f"  {len(stage1_manifest)} tubes (one per cytokine)")
+    stage1_manifest = build_stage1_manifest(
+        manifest,
+        save_path=str(stage1_manifest_path),
+        donor_offset=args.donor_offset,
+    )
+    log(f"  {len(stage1_manifest)} tubes (one per cytokine, donor_offset={args.donor_offset})")
 
     # ------------------------------------------------------------------
     # Train/val split
