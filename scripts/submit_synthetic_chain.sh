@@ -1,14 +1,31 @@
 #!/bin/bash
 # Submit the full synthetic cascade v2 pipeline as a chained dependency.
-# build (CPU) → train 6-seed array (GPU) → geo 6-seed array (CPU) → aggregate (CPU)
-# Run from the cluster login node: bash cytokine-mil/scripts/submit_synthetic_chain.sh
+# build (CPU) → train 6-seed array (GPU, ~5 min) → geo 6-seed array (CPU) → aggregate (CPU)
+#
+# PBS-RC geometry is purely geometric — no MIL Stage 2 needed.
+# Train step: Stage 1 encoder only (cell-type classification, 50 epochs).
+#
+# Run from the cluster login node:
+#   bash cytokine-mil/scripts/submit_synthetic_chain.sh
+#
+# To skip build (data already exists at synthetic_cascades_v2/):
+#   bash cytokine-mil/scripts/submit_synthetic_chain.sh --skip-build
 set -e
 cd /cs/labs/mornitzan/yam.arieli
 
-BUILD_JID=$(sbatch --parsable cytokine-mil/scripts/run_synthetic_build.slurm)
-echo "Build job:     ${BUILD_JID}"
+SKIP_BUILD=0
+[[ "${1}" == "--skip-build" ]] && SKIP_BUILD=1
 
-TRAIN_JID=$(sbatch --parsable --dependency=afterok:${BUILD_JID} \
+if [[ ${SKIP_BUILD} -eq 0 ]]; then
+    BUILD_JID=$(sbatch --parsable cytokine-mil/scripts/run_synthetic_build.slurm)
+    echo "Build job:     ${BUILD_JID}"
+    TRAIN_DEP="--dependency=afterok:${BUILD_JID}"
+else
+    echo "Build skipped (--skip-build)"
+    TRAIN_DEP=""
+fi
+
+TRAIN_JID=$(sbatch --parsable ${TRAIN_DEP} \
     cytokine-mil/scripts/run_synthetic_train.slurm)
 echo "Train job:     ${TRAIN_JID}"
 
@@ -27,4 +44,4 @@ AGG_JID=$(sbatch --parsable \
 echo "Aggregate job: ${AGG_JID}"
 
 echo ""
-echo "Chain: build=${BUILD_JID} -> train=${TRAIN_JID} -> geo=${GEO_JID} -> agg=${AGG_JID}"
+echo "Chain: train=${TRAIN_JID} -> geo=${GEO_JID} -> agg=${AGG_JID}"

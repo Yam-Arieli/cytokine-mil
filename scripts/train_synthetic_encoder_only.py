@@ -46,7 +46,7 @@ from cytokine_mil.training.train_encoder import train_encoder
 # Paths & constants
 # ---------------------------------------------------------------------------
 
-SYNTHETIC_DIR = Path("/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v1")
+SYNTHETIC_DIR = Path("/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v2")
 MANIFEST_PATH = str(SYNTHETIC_DIR / "manifest.json")
 HVG_PATH      = str(SYNTHETIC_DIR / "hvg_list.json")
 OUTPUT_BASE   = REPO_ROOT / "results" / "synthetic_cascades"
@@ -65,6 +65,8 @@ SEED                 = 42
 def _parse_args():
     p = argparse.ArgumentParser(description="Train Stage 1 encoder on synthetic cascade data.")
     p.add_argument("--seed",           type=int,   default=SEED)
+    p.add_argument("--output_dir",     type=str,   default=None,
+                   help="Override output directory (default: results/synthetic_cascades/seed{N})")
     p.add_argument("--stage1_epochs",  type=int,   default=STAGE1_EPOCHS)
     p.add_argument("--lr",             type=float, default=STAGE1_LR)
     p.add_argument("--embed_dim",      type=int,   default=EMBED_DIM)
@@ -78,7 +80,7 @@ def _parse_args():
 def main():
     args = _parse_args()
 
-    out_dir = OUTPUT_BASE / f"seed{args.seed}"
+    out_dir = Path(args.output_dir) if args.output_dir else OUTPUT_BASE / f"seed{args.seed}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = open(out_dir / "train.log", "w")
