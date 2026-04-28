@@ -31,6 +31,6 @@ python scripts/build_synthetic_cascades.py \
     --n_per_cell_type 30 \
     --n_cell_types 12 \
     --n_cytokines 20 \
-    --n_genes 512
+    --n_genes 600
 
 echo "Done — dataset written to ${OUT_DIR}"

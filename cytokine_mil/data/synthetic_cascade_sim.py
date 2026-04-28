@@ -49,7 +49,7 @@ class SimConfig:
 
     n_cell_types: int = 12
     n_cytokines: int = 20  # excluding PBS
-    n_genes: int = 512
+    n_genes: int = 600   # must be ≥ n_housekeeping + n_cell_types*n_markers_per_type + n_cytokines*n_program_per_cytokine
     n_donors: int = 6
     n_pseudo_tubes: int = 8
     n_per_cell_type: int = 30
