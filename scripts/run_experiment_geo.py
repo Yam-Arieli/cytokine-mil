@@ -72,6 +72,10 @@ def _parse_args():
         "--n_permutations", type=int, default=1000,
         help="Permutations for bias null distribution (default: 1000).",
     )
+    p.add_argument(
+        "--hvg_path", type=str, default=None,
+        help="Path to hvg_list.json. Defaults to the Oesinghaus HVG list.",
+    )
     return p.parse_args()
 
 
@@ -320,7 +324,8 @@ def main():
     _log(f"  n_permutations : {args.n_permutations}")
     _log("=" * 62)
 
-    with open(HVG_PATH) as f:
+    hvg_path = args.hvg_path if args.hvg_path else HVG_PATH
+    with open(hvg_path) as f:
         gene_names = json.load(f)
 
     label_encoder = _load_label_encoder(run_dir)
