@@ -15,7 +15,7 @@ SEEDS=(42 123 7 1 2 3)
 SEED=${SEEDS[$SLURM_ARRAY_TASK_ID]}
 
 RUN_DIR=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/synthetic_cascades/seed${SEED}
-HVG_PATH=/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v1/hvg_list.json
+HVG_PATH=/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v2/hvg_list.json
 
 echo "========================================================"
 echo "PBS-RC geometry — synthetic cascade"

@@ -7,11 +7,11 @@
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=2
 
-# Build the synthetic cascade dataset on the cluster.
+# Build the synthetic cascade dataset (v2 — calibrated simulator) on the cluster.
 # Must complete before training jobs start.
-# Output: /cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v1/
+# Output: /cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v2/
 
-OUT_DIR=/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v1
+OUT_DIR=/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v2
 
 echo "========================================================"
 echo "Building synthetic cascade dataset"
@@ -31,6 +31,6 @@ python scripts/build_synthetic_cascades.py \
     --n_per_cell_type 30 \
     --n_cell_types 12 \
     --n_cytokines 20 \
-    --n_genes 600
+    --n_genes 1000
 
 echo "Done — dataset written to ${OUT_DIR}"

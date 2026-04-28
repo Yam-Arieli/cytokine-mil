@@ -47,7 +47,7 @@ from cytokine_mil.analysis.dynamics import aggregate_to_donor_level
 # Paths & Constants
 # ---------------------------------------------------------------------------
 
-SYNTHETIC_DIR = Path("/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v1")
+SYNTHETIC_DIR = Path("/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v2")
 MANIFEST_PATH = str(SYNTHETIC_DIR / "manifest.json")
 HVG_PATH      = str(SYNTHETIC_DIR / "hvg_list.json")
 OUTPUT_BASE   = REPO_ROOT / "results" / "synthetic_cascades"
@@ -174,7 +174,8 @@ def main():
     )
     log(f"  Encoder: {len(gene_names)} → {args.embed_dim}d  |  {n_cell_types} cell types")
 
-    enc_dynamics = train_encoder(
+    # train_encoder returns the trained encoder in-place (not a dict).
+    encoder = train_encoder(
         encoder,
         cell_loader,
         n_epochs=args.stage1_epochs,
@@ -183,13 +184,7 @@ def main():
         device=device,
     )
     torch.save(encoder.state_dict(), out_dir / "encoder_stage1.pt")
-
-    fig, ax = plt.subplots()
-    ax.plot(enc_dynamics["loss"], label="train loss")
-    ax.set_xlabel("Epoch"); ax.set_ylabel("CE loss")
-    ax.set_title("Stage 1 encoder loss"); ax.legend()
-    fig.savefig(out_dir / "stage1_loss.png", dpi=120); plt.close(fig)
-    log(f"  Saved encoder_stage1.pt  |  final loss={enc_dynamics['loss'][-1]:.4f}")
+    log(f"  Saved encoder_stage1.pt")
 
     # ------------------------------------------------------------------
     # Stage 2: MIL training (frozen encoder)

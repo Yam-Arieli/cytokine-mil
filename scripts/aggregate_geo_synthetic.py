@@ -37,7 +37,7 @@ import numpy as np
 from scipy.stats import mannwhitneyu, spearmanr
 
 RESULTS_DIR    = Path("/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/synthetic_cascades")
-SYNTHETIC_DIR  = Path("/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v1")
+SYNTHETIC_DIR  = Path("/cs/labs/mornitzan/yam.arieli/datasets/synthetic_cascades_v2")
 OUT_DIR        = RESULTS_DIR / "geo_summary"
 
 SEEDS = [42, 123, 7, 1, 2, 3]
