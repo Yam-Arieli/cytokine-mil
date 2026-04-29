@@ -1,6 +1,6 @@
 """
 Synthetic cytokine pseudo-tube simulator with known cascade ground truth.
-v2 — calibrated to real Oesinghaus data statistics.
+v3 — PBS-RC compatible (response-pool genes are cell-type discriminative).
 
 Key design changes vs v1:
   - Expression scale matched to real log1p Oesinghaus data (marker_high ≈ 1.2,
@@ -9,6 +9,15 @@ Key design changes vs v1:
     exclusive per-cytokine blocks.  Gives realistic program overlap and SVD
     effective rank ≈ 20 matching real data (was artificially orthogonal).
   - n_genes = 1000: 100 HK + 12×25 markers + 400 response pool + 100 background.
+
+Key fix in v3 (critical for PBS-RC cascade detection):
+  - Response-pool genes now have cell-type-specific baselines with
+    response_baseline_sigma=0.25 (was 0.05).  Between-type variation (0.25)
+    now exceeds within-type noise (0.15), so the cell-type encoder learns
+    non-zero weights for these genes.  Cytokine perturbations (+0.5 per gene)
+    are then represented in embedding space, making PBS-RC asymmetry scores
+    carry cascade-directional signal.  Previously, flat response-pool baselines
+    (sigma=0.05 < noise 0.15) caused the encoder to ignore those genes entirely.
 
 Hub-gene architecture:
   - Response pool split into n_hub_genes "popular" genes (shared by ~60% of
@@ -71,8 +80,13 @@ class SimConfig:
     marker_high_sigma: float = 0.25
     marker_low_mu: float = 0.02      # real ct_means median ≈ 0.002
     marker_low_sigma: float = 0.02
-    response_baseline_mu: float = 0.05   # resting expression of pool genes
-    response_baseline_sigma: float = 0.05
+    response_baseline_mu: float = 0.25   # resting expression of pool genes
+    # CRITICAL: sigma must exceed cell_noise_sigma (0.15) so that response-pool
+    # genes are discriminative across cell types.  The encoder then learns non-zero
+    # weights for these genes, making cytokine program perturbations visible in
+    # embedding space (required for PBS-RC asymmetry to carry cascade signal).
+    # With sigma=0.25: between-type SNR ≈ 0.25/0.15 = 1.7 → clearly informative.
+    response_baseline_sigma: float = 0.25
     background_mu: float = 0.02
     background_sigma: float = 0.03
 
