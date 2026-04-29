@@ -20,15 +20,26 @@ Key fix in v3 (encoder encodes response-pool genes):
 Key fix in v4 (correct asymmetry direction):
   - Soft non-responder assignment: non-responder cell types get a small but
     nonzero effect (non_responder_effect=0.05) instead of exactly 0.
-  - With binary assignment (effect=0 for non-responders): non-responders in
-    cytokine B tubes sit at PBS baseline while responders are shifted far
-    toward delta(B).  The ASYM max-over-T picks up this large negative
-    deviation for non-responders, inflating ASYM(B->A) for EVERY pair
-    regardless of cascade structure -- reverse edges rank systematically high.
-  - With soft assignment: non-responders at 0.05*delta(B) deviate only
-    ~-0.19*delta(B) from B centroid (vs -avg_effect without soft).  The
-    artificial reverse-direction inflation collapses; cascade signal
-    (beta * 0.80 * delta(B) for true responders) dominates ASYM(A->B).
+  - Prevents ASYM max-over-T from being dominated by non-responders sitting
+    at PBS baseline (binary assignment created a systematic reverse-direction
+    inflation for every cytokine pair regardless of cascade structure).
+
+Key fix in v5 (cascade-responder subset constraint):
+  - Root cause of v4 failure: for cascade A->B, any T in resp(A) but NOT
+    resp(B) is strongly shifted toward delta(A) in A-tubes.  This makes
+    bias(A->B, T) large NEGATIVE (T deviates away from B direction).  The
+    ASYM formula ASYM(B->A) = max_T[bias(B->A,T) - bias(A->B,T)] picks up
+    this T and inflates the REVERSE edge score enormously.
+  - Fix: enforce resp(src) subset resp(dst) for every cascade edge (src->dst).
+    No T exists that is in resp(src) but not resp(dst), eliminating the artifact.
+  - Cascade signal comes from T in resp(dst) minus resp(src) ("dst-exclusive"
+    responders).  These cells see beta*delta(dst) in src-tubes (cascade) but
+    full delta(dst) in dst-tubes (primary) -> strong positive bias(src->dst, T)
+    -> large ASYM(src->dst).  Critically, they also have NEGATIVE
+    bias(dst->src, T) in dst-tubes (deviating toward dst, away from src) ->
+    ASYM(dst->src) is actively suppressed.
+  - n_cascade_extra (default 2): minimum dst-exclusive responders guaranteed
+    per cascade edge to ensure the cascade signal is consistently present.
 
 Hub-gene architecture:
   - Response pool split into n_hub_genes "popular" genes (shared by ~60% of
@@ -114,6 +125,13 @@ class SimConfig:
     # sitting at PBS baseline, which otherwise creates a systematic artifact
     # inflating ASYM in the REVERSE direction for every cytokine pair.
     non_responder_effect: float = 0.05
+    # v5: minimum number of dst-exclusive responders (resp(dst) minus resp(src)) per
+    # cascade edge.  These cells carry the cascade signal in src-tubes (they see
+    # beta*delta(dst) without a primary delta(src) shift) and are necessary for
+    # ASYM(src->dst) to be reliably positive.  Without this guarantee the random
+    # initial responder assignment could leave src and dst with identical responder
+    # sets, killing the cascade signal.
+    n_cascade_extra: int = 2
 
     cell_noise_sigma: float = 0.15   # real mean within-CT std ≈ 0.156
     donor_offset_sigma: float = 0.06
@@ -364,13 +382,77 @@ def _make_cytokine_programs(
         hub_genes_used[cyt] = activated_hubs
         specific_genes_used[cyt] = spec_genes
 
-        # Responder cell types and per-(cyt, ct) effect gain.
-        # Non-responders get a small non-zero effect (soft assignment, v4 fix):
-        # this prevents the ASYM max-over-T from being dominated by non-responders
-        # sitting at PBS baseline, which otherwise inflates reverse-edge scores.
+        # Responder cell types — assigned initially at random.
+        # Cascade-edge post-processing (v5) will adjust these below.
         n_resp = int(rng.integers(cfg.n_responders_min, cfg.n_responders_max + 1))
         resp = sorted(rng.choice(cell_types, size=n_resp, replace=False).tolist())
         responders[cyt] = resp
+
+    # ------------------------------------------------------------------ #
+    # 1b. v5: Cascade-responder subset constraint.
+    #
+    #     For every cascade edge (src -> dst):
+    #       - Enforce resp(src) SUBSET resp(dst):  add src's responders to dst.
+    #         This eliminates T in resp(src) \ resp(dst), which would otherwise
+    #         create large negative bias(src->dst, T) and inflate ASYM(dst->src).
+    #       - Guarantee ≥ n_cascade_extra dst-exclusive responders
+    #         (resp(dst) minus resp(src)).  These "cascade reporter" cells see
+    #         beta*delta(dst) in src-tubes (without src's primary shift) and
+    #         produce the clean positive bias(src->dst, T) that drives the signal.
+    #
+    #     Multiple passes until stable (handles chains like cy3->cy4->cy5 where
+    #     the cy3->cy4 update must propagate into cy4->cy5 before that edge is
+    #     processed).
+    # ------------------------------------------------------------------ #
+
+    # Pass A: propagate subset constraint transitively.
+    changed = True
+    while changed:
+        changed = False
+        for (src, dst, _beta) in graph.cascades:
+            src_set = set(responders[src])
+            dst_set = set(responders[dst])
+            new_dst = dst_set | src_set
+            if new_dst != dst_set:
+                responders[dst] = sorted(new_dst)
+                changed = True
+
+    # Pass B: guarantee ≥ n_cascade_extra exclusive responders per edge.
+    # Process in cascade order so later edges (e.g. cy4->cy5 in a chain) see
+    # the already-updated dst from earlier edges (e.g. cy3->cy4).
+    for (src, dst, _beta) in graph.cascades:
+        src_set = set(responders[src])
+        dst_set = set(responders[dst])
+        exclusive = [ct for ct in dst_set if ct not in src_set]
+        need = cfg.n_cascade_extra - len(exclusive)
+        if need > 0:
+            extra_pool = [ct for ct in cell_types if ct not in dst_set]
+            if extra_pool:
+                n_add = min(need, len(extra_pool))
+                extra = rng.choice(extra_pool, size=n_add, replace=False).tolist()
+                responders[dst] = sorted(dst_set | set(extra))
+
+    # Pass C: second subset-propagation pass to pick up any extras added in
+    # Pass B.  In chains (cy3->cy4->cy5) Pass B may add new cell types to
+    # cy4; this pass ensures cy5 inherits them so the subset constraint holds
+    # transitively.
+    changed = True
+    while changed:
+        changed = False
+        for (src, dst, _beta) in graph.cascades:
+            src_set = set(responders[src])
+            dst_set = set(responders[dst])
+            new_dst = dst_set | src_set
+            if new_dst != dst_set:
+                responders[dst] = sorted(new_dst)
+                changed = True
+
+    # Assign per-(cyt, ct) effect gains now that responders are finalised.
+    # Non-responders get a small non-zero effect (soft assignment, v4):
+    # prevents ASYM max-over-T from being dominated by non-responders sitting
+    # exactly at PBS baseline.
+    for cyt in cytokines:
+        resp = responders[cyt]
         for ct in cell_types:
             effect[(cyt, ct)] = (
                 float(rng.uniform(cfg.effect_min, cfg.effect_max))
