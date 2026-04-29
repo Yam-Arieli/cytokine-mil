@@ -1,38 +1,49 @@
 """
 Synthetic cytokine pseudo-tube simulator with known cascade ground truth.
-v3 — PBS-RC compatible (response-pool genes are cell-type discriminative).
+v4 -- PBS-RC compatible with correct directional asymmetry.
 
 Key design changes vs v1:
-  - Expression scale matched to real log1p Oesinghaus data (marker_high ≈ 1.2,
-    not 4.0; housekeeping ≈ 0.3, not 2.0; cell_noise ≈ 0.15, not 0.4).
+  - Expression scale matched to real log1p Oesinghaus data (marker_high ~1.2,
+    not 4.0; housekeeping ~0.3, not 2.0; cell_noise ~0.15, not 0.4).
   - Programs drawn from a SHARED response pool (hub-gene architecture), not
     exclusive per-cytokine blocks.  Gives realistic program overlap and SVD
-    effective rank ≈ 20 matching real data (was artificially orthogonal).
-  - n_genes = 1000: 100 HK + 12×25 markers + 400 response pool + 100 background.
+    effective rank ~20 matching real data (was artificially orthogonal).
+  - n_genes = 1000: 100 HK + 12x25 markers + 400 response pool + 100 background.
 
-Key fix in v3 (critical for PBS-RC cascade detection):
+Key fix in v3 (encoder encodes response-pool genes):
   - Response-pool genes now have cell-type-specific baselines with
     response_baseline_sigma=0.25 (was 0.05).  Between-type variation (0.25)
     now exceeds within-type noise (0.15), so the cell-type encoder learns
-    non-zero weights for these genes.  Cytokine perturbations (+0.5 per gene)
-    are then represented in embedding space, making PBS-RC asymmetry scores
-    carry cascade-directional signal.  Previously, flat response-pool baselines
-    (sigma=0.05 < noise 0.15) caused the encoder to ignore those genes entirely.
+    non-zero weights for these genes.  Cytokine perturbations are then
+    represented in embedding space.
+
+Key fix in v4 (correct asymmetry direction):
+  - Soft non-responder assignment: non-responder cell types get a small but
+    nonzero effect (non_responder_effect=0.05) instead of exactly 0.
+  - With binary assignment (effect=0 for non-responders): non-responders in
+    cytokine B tubes sit at PBS baseline while responders are shifted far
+    toward delta(B).  The ASYM max-over-T picks up this large negative
+    deviation for non-responders, inflating ASYM(B->A) for EVERY pair
+    regardless of cascade structure -- reverse edges rank systematically high.
+  - With soft assignment: non-responders at 0.05*delta(B) deviate only
+    ~-0.19*delta(B) from B centroid (vs -avg_effect without soft).  The
+    artificial reverse-direction inflation collapses; cascade signal
+    (beta * 0.80 * delta(B) for true responders) dominates ASYM(A->B).
 
 Hub-gene architecture:
   - Response pool split into n_hub_genes "popular" genes (shared by ~60% of
     cytokines) and a specific-gene remainder.
   - Each cytokine activates hub genes with prob hub_activation_prob and draws
     n_specific_per_cytokine unique genes from the specific pool.
-  - Similar pairs additionally share ≥70% of each other's specific genes.
-  - Cascade A→B: B's full δ vector (hub + specific) is added to B's responders
-    inside A-tubes at β scale, AFTER A's own primary perturbation (two-pass).
+  - Similar pairs additionally share >=70% of each other's specific genes.
+  - Cascade A->B: B's full delta vector (hub + specific) is added to B's
+    responders inside A-tubes at beta scale, AFTER A's own primary perturbation.
 
 Cascade ordering (unchanged from v1):
-  PASS 0: baseline (μ_T + donor_offset) — no perturbation
-  PASS 1: _apply_primary_perturbation — cytokine's program → own responders
-  PASS 2: _apply_cascade_perturbation — β × child δ → child's responders
-  PASS 3: _finalize_tube — per-cell noise + clip + log1p
+  PASS 0: baseline (mu_T + donor_offset) -- no perturbation
+  PASS 1: _apply_primary_perturbation -- cytokine's program -> own responders
+  PASS 2: _apply_cascade_perturbation -- beta * child delta -> child's responders
+  PASS 3: _finalize_tube -- per-cell noise + clip + log1p
 """
 
 from __future__ import annotations
@@ -97,6 +108,12 @@ class SimConfig:
     n_responders_max: int = 4
     effect_min: float = 0.6
     effect_max: float = 1.0
+    # Soft non-responder assignment (v4 fix).  Non-responder cell types receive
+    # this fraction of the cytokine program instead of exactly 0.  Prevents the
+    # ASYM formula (max over cell types) from being dominated by non-responders
+    # sitting at PBS baseline, which otherwise creates a systematic artifact
+    # inflating ASYM in the REVERSE direction for every cytokine pair.
+    non_responder_effect: float = 0.05
 
     cell_noise_sigma: float = 0.15   # real mean within-CT std ≈ 0.156
     donor_offset_sigma: float = 0.06
@@ -146,12 +163,12 @@ def default_cascade_graph() -> CascadeGraph:
     """The baked-in cascade structure."""
     return CascadeGraph(
         cascades=[
-            ("cy1",  "cy2",  0.45),                          # short, strong
-            ("cy3",  "cy4",  0.45),                          # 2-step part 1
-            ("cy4",  "cy5",  0.35),                          # 2-step part 2
-            ("cy6",  "cy7",  0.40),
-            ("cy8",  "cy9",  0.40), ("cy8", "cy10", 0.40),  # fan-out
-            ("cy11", "cy12", 0.40), ("cy13", "cy12", 0.40), # fan-in
+            ("cy1",  "cy2",  0.70),                          # short, strong
+            ("cy3",  "cy4",  0.70),                          # 2-step part 1
+            ("cy4",  "cy5",  0.60),                          # 2-step part 2
+            ("cy6",  "cy7",  0.65),
+            ("cy8",  "cy9",  0.65), ("cy8", "cy10", 0.65),  # fan-out
+            ("cy11", "cy12", 0.65), ("cy13", "cy12", 0.65), # fan-in
         ],
         similar=[("cy14", "cy15"), ("cy16", "cy17")],
         isolated=["cy18", "cy19", "cy20"],
@@ -348,13 +365,16 @@ def _make_cytokine_programs(
         specific_genes_used[cyt] = spec_genes
 
         # Responder cell types and per-(cyt, ct) effect gain.
+        # Non-responders get a small non-zero effect (soft assignment, v4 fix):
+        # this prevents the ASYM max-over-T from being dominated by non-responders
+        # sitting at PBS baseline, which otherwise inflates reverse-edge scores.
         n_resp = int(rng.integers(cfg.n_responders_min, cfg.n_responders_max + 1))
         resp = sorted(rng.choice(cell_types, size=n_resp, replace=False).tolist())
         responders[cyt] = resp
         for ct in cell_types:
             effect[(cyt, ct)] = (
                 float(rng.uniform(cfg.effect_min, cfg.effect_max))
-                if ct in resp else 0.0
+                if ct in resp else cfg.non_responder_effect
             )
 
     # ------------------------------------------------------------------ #
