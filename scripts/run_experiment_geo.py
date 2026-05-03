@@ -33,6 +33,7 @@ import pickle
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -41,10 +42,19 @@ REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from cytokine_mil.analysis.latent_geometry import (
+    build_latent_cascade_graph_from_calls,
     build_tube_data_from_cache,
     compute_asymmetry_matrix,
     compute_cytokine_centroids_from_cache,
     compute_directional_bias_from_arrays,
+    compute_directional_bias_per_donor,
+    test_directional_significance,
+)
+from cytokine_mil.analysis.pbs_rc import (
+    compute_pbs_centroids_per_cell_type,
+    make_hresidual_fn,
+    make_pbs_relative_fn,
+    precompute_transform_means,
 )
 from cytokine_mil.data.dataset import PseudoTubeDataset
 from cytokine_mil.data.label_encoder import CytokineLabel
@@ -75,6 +85,21 @@ def _parse_args():
     p.add_argument(
         "--hvg_path", type=str, default=None,
         help="Path to hvg_list.json. Defaults to the Oesinghaus HVG list.",
+    )
+    p.add_argument(
+        "--legacy-asymmetry", action="store_true",
+        help="Reproduce the deprecated antisymmetric `bias - bias` pipeline. "
+             "Default behavior is the refined per-donor Wilcoxon path.",
+    )
+    p.add_argument(
+        "--alpha", type=float, default=0.05,
+        help="BH-FDR alpha for cascade calls (refined path only).",
+    )
+    p.add_argument(
+        "--direction-mode", type=str, default="global",
+        choices=["global", "cell_type"],
+        help="Direction vector for refined path: û_{A→B} ('global') or "
+             "µ̂_{B,T} ('cell_type').",
     )
     return p.parse_args()
 
@@ -128,77 +153,15 @@ def _load_mil_model(
 # ---------------------------------------------------------------------------
 # Transform precomputation
 # ---------------------------------------------------------------------------
-
-def precompute_transform_means(cache: list, label_encoder) -> tuple:
-    """
-    Compute per-cell-type embedding means needed for both transforms.
-
-    Returns:
-        global_ct_means: {cell_type -> mean h_i across ALL conditions} (h_residual)
-        pbs_ct_means:    {cell_type -> mean h_i in PBS tubes only}     (PBS-relative)
-    """
-    embed_dim = cache[0]["H"].shape[1]
-
-    ct_sum   = defaultdict(lambda: np.zeros(embed_dim, dtype=np.float64))
-    ct_count = defaultdict(float)
-    pbs_sum   = defaultdict(lambda: np.zeros(embed_dim, dtype=np.float64))
-    pbs_count = defaultdict(float)
-
-    for entry in cache:
-        H_np      = entry["H"].numpy().astype(np.float64)   # (N, D)
-        ct_labels = entry["cell_types"]                       # list[str], len N
-        cytokine  = label_encoder._idx_to_label[entry["label"]]
-
-        for i, ct in enumerate(ct_labels):
-            ct_sum[ct]   += H_np[i]
-            ct_count[ct] += 1.0
-            if cytokine == "PBS":
-                pbs_sum[ct]   += H_np[i]
-                pbs_count[ct] += 1.0
-
-    global_ct_means = {
-        ct: ct_sum[ct] / ct_count[ct]
-        for ct in ct_sum
-    }
-    pbs_ct_means = {
-        ct: pbs_sum[ct] / pbs_count[ct]
-        for ct in pbs_sum
-        if pbs_count[ct] > 0
-    }
-
-    return global_ct_means, pbs_ct_means
-
-
-def make_pbs_relative_fn(pbs_ct_means: dict):
-    """
-    Returns a transform: h_i^pbs = h_i - μ_{PBS, cell_type(i)}.
-
-    Cells whose cell type has no PBS representation are left unchanged.
-    """
-    def fn(H_np: np.ndarray, ct_labels: np.ndarray) -> np.ndarray:
-        result = H_np.copy()
-        for i, ct in enumerate(ct_labels):
-            if ct in pbs_ct_means:
-                result[i] -= pbs_ct_means[ct]
-        return result
-    fn.__name__ = "pbs_relative"
-    return fn
-
-
-def make_hresidual_fn(global_ct_means: dict):
-    """
-    Returns a transform: h_i^resid = h_i - μ_{global, cell_type(i)}.
-
-    Removes the cell-type component shared across all cytokine conditions.
-    """
-    def fn(H_np: np.ndarray, ct_labels: np.ndarray) -> np.ndarray:
-        result = H_np.copy()
-        for i, ct in enumerate(ct_labels):
-            if ct in global_ct_means:
-                result[i] -= global_ct_means[ct]
-        return result
-    fn.__name__ = "h_residual"
-    return fn
+#
+# The transform helpers (precompute_transform_means, make_pbs_relative_fn,
+# make_hresidual_fn) live in cytokine_mil.analysis.pbs_rc. They are imported
+# above and re-exported here for any caller that imports them from this script.
+__all__ = [
+    "precompute_transform_means",
+    "make_pbs_relative_fn",
+    "make_hresidual_fn",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -212,10 +175,19 @@ def run_one_experiment(
     transform_label: str,
     n_permutations: int,
     out_dir: Path,
+    legacy_asymmetry: bool = False,
+    pbs_ct_means: Optional[dict] = None,
+    train_donors: Optional[list] = None,
+    direction_mode: str = "global",
+    alpha: float = 0.05,
 ):
     """
     Run full geometry pipeline (centroids → biases → asymmetry) for one transform.
     Saves results to out_dir/latent_geometry.pkl.
+
+    When `legacy_asymmetry=False` (default) and the transform is PBS-relative,
+    additionally runs the refined per-donor Wilcoxon path and stores
+    `cascade_calls` in the output.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     _log(f"\n  [{transform_label}] Computing centroids...")
@@ -243,16 +215,43 @@ def run_one_experiment(
     )
     _log(f"  [{transform_label}] {len(bias_result['bias'])} (A,B,T) triples computed")
 
-    _log(f"  [{transform_label}] Computing asymmetry matrix...")
+    _log(f"  [{transform_label}] Computing asymmetry matrix (legacy)...")
     asym_result = compute_asymmetry_matrix(bias_result["bias"], label_encoder)
+
+    refined = None
+    if not legacy_asymmetry and pbs_ct_means is not None:
+        _log(f"  [{transform_label}] Refined per-donor Wilcoxon path "
+             f"(direction_mode={direction_mode}, alpha={alpha})...")
+        bias_pd = compute_directional_bias_per_donor(
+            cache, label_encoder, pbs_ct_means,
+            train_donors=train_donors,
+            direction_mode=direction_mode,
+        )
+        sig = test_directional_significance(bias_pd, label_encoder, alpha=alpha)
+        refined = {
+            "bias_per_donor": bias_pd,
+            "significance": sig,
+            "config": {
+                "direction_mode": direction_mode,
+                "alpha": alpha,
+                "train_donors": list(train_donors) if train_donors else None,
+            },
+        }
+        n_calls = sum(1 for v in sig["cascade_call"].values() if v == "A->B")
+        _log(f"  [{transform_label}] refined: {n_calls} A→B cascade calls "
+             f"at alpha={alpha}")
 
     results = {
         "centroids": centroids_result,
         "bias": bias_result,
         "asymmetry": asym_result,
+        "refined": refined,
         "config": {
             "transform": transform_label,
             "n_permutations": n_permutations,
+            "legacy_asymmetry": legacy_asymmetry,
+            "direction_mode": direction_mode,
+            "alpha": alpha,
         },
     }
 
@@ -350,6 +349,10 @@ def main():
     _log(f"  Cell types found (global): {sorted(global_ct_means.keys())[:5]} ...")
     _log(f"  Cell types in PBS: {len(pbs_ct_means)}/{len(global_ct_means)}")
 
+    # Determine training donors from the manifest (used for refined per-donor path).
+    train_donors = sorted({entry.get("donor") for entry in cache
+                           if entry.get("donor") is not None})
+
     # ---- Fix 1: PBS-relative ----
     _log("\nStep 3: Running PBS-relative experiment...")
     pbs_fn = make_pbs_relative_fn(pbs_ct_means)
@@ -360,6 +363,11 @@ def main():
         transform_label="pbs_relative",
         n_permutations=args.n_permutations,
         out_dir=run_dir / "experiment_geo_pbs_rel",
+        legacy_asymmetry=args.legacy_asymmetry,
+        pbs_ct_means=pbs_ct_means,
+        train_donors=train_donors,
+        direction_mode=args.direction_mode,
+        alpha=args.alpha,
     )
 
     # ---- Fix 2: h_residual ----
@@ -372,6 +380,7 @@ def main():
         transform_label="h_residual",
         n_permutations=args.n_permutations,
         out_dir=run_dir / "experiment_geo_hresid",
+        legacy_asymmetry=True,  # refined path is PBS-RC specific
     )
 
     _log("\nDone.")

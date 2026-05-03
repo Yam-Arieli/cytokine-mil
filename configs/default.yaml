@@ -30,3 +30,9 @@ dynamics:
   confusion_late_epoch_fraction: 0.3   # fraction of final epochs used for asymmetry score
   confusion_fdr_alpha: 0.05            # BH FDR threshold for cascade graph edges
   cascade_graph_min_seed_rho: 0.7      # min Spearman rho across seeds for reportable pairs
+
+latent_geometry:
+  direction_mode: global         # 'global' (û_{A→B}) or 'cell_type' (µ̂_{B,T})
+  alpha: 0.05                    # BH-FDR alpha for cascade calls
+  bonferroni_n_cell_types: 18    # within-pair Bonferroni divisor for relay search
+  use_per_donor: true            # false to fall back to deprecated asymmetry path

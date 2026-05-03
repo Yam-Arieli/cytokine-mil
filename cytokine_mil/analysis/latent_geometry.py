@@ -37,6 +37,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from cytokine_mil.analysis.pbs_rc import make_pbs_relative_fn
 from cytokine_mil.data.dataset import PseudoTubeDataset
 
 
@@ -388,11 +389,360 @@ def compute_directional_bias(
     }
 
 
+def compute_directional_bias_per_donor(
+    cache: list,
+    label_encoder,
+    pbs_ct_means: dict,
+    train_donors=None,
+    direction_mode: str = "global",
+) -> dict:
+    """
+    Per-donor directional bias in PBS-RC space. The refined readout that replaces
+    the antisymmetric `bias - bias` subtraction.
+
+    For each cytokine pair (A, B), each cell type T, each training donor d:
+
+        b_fwd^{(d)}(A→B, T) = µ_{A,T}^{(d)} · û_{A→B}     (does T move toward B in A-tubes?)
+        b_rev^{(d)}(B→A, T) = µ_{B,T}^{(d)} · û_{B→A}     (does T move toward A in B-tubes?)
+
+    All embeddings are first transformed into PBS-RC space:
+        h̃_i = h_i - µ_{PBS, τ(i)}.
+    PBS centroids are computed on `train_donors` only and passed in via
+    `pbs_ct_means` (use `pbs_rc.compute_pbs_centroids_per_cell_type`).
+
+    The projection is (µ_{A,T}^{(d)} − µ_A) · û_{A→B}: the PBS-RC centroid of A
+    is subtracted before projection so that the score reflects T's specific
+    deviation from cytokine A's average cross-cell-type response, isolating the
+    T-specific cascade component from A's direct generic effect on all cells.
+
+    Args:
+        cache: list of dicts with keys "H" (N, D) torch tensor, "label" int,
+               "cell_types" list[str], "donor" str.
+        label_encoder: object with `_idx_to_label` (int -> cytokine name) and
+               `cytokines` (ordered list of names).
+        pbs_ct_means: {cell_type -> µ_{PBS, T}} from
+               pbs_rc.compute_pbs_centroids_per_cell_type.
+        train_donors: iterable of donor names to include. If None, every donor
+               in the cache is used.
+        direction_mode: 'global' uses û_{A→B} = (µ_B - µ_A)/||...||;
+               'cell_type' uses µ̂_{B,T} = µ_{B,T}/||µ_{B,T}|| as the direction
+               for cell type T (T-specific direction).
+
+    Returns:
+        dict with keys:
+            'b_per_donor':  {(A, T) -> {donor -> µ_{A,T}^{(d)}  in PBS-RC space}}
+            'centroids':    {A -> µ_A in PBS-RC space (training-donor mean)}
+            'centroids_AT': {(A, T) -> µ_{A,T} in PBS-RC space (training-donor mean)}
+            'donors':       sorted list of donor names actually present
+            'metric_description': str
+    """
+    if direction_mode not in ("global", "cell_type"):
+        raise ValueError(
+            f"direction_mode must be 'global' or 'cell_type', got {direction_mode!r}"
+        )
+
+    pbs_fn = make_pbs_relative_fn(pbs_ct_means)
+    train_set = set(train_donors) if train_donors is not None else None
+
+    # (A, T, donor) -> [sum vector, count]
+    sums: Dict[Tuple[str, str, str], np.ndarray] = {}
+    counts: Dict[Tuple[str, str, str], float] = defaultdict(float)
+    embed_dim = None
+    donors_seen = set()
+
+    for entry in cache:
+        donor = entry.get("donor")
+        if train_set is not None and donor not in train_set:
+            continue
+        H_np = entry["H"].numpy().astype(np.float64)
+        ct_labels = np.array(entry["cell_types"])
+        cyt = label_encoder._idx_to_label[entry["label"]]
+        if embed_dim is None:
+            embed_dim = H_np.shape[1]
+        H_pbs = pbs_fn(H_np, ct_labels)
+        donors_seen.add(donor)
+        for ct in np.unique(ct_labels):
+            mask = ct_labels == ct
+            key = (cyt, ct, donor)
+            if key not in sums:
+                sums[key] = np.zeros(embed_dim, dtype=np.float64)
+            sums[key] += H_pbs[mask].sum(axis=0)
+            counts[key] += float(mask.sum())
+
+    # Per-donor µ_{A,T}^{(d)} in PBS-RC space.
+    b_per_donor: Dict[Tuple[str, str], Dict[str, np.ndarray]] = defaultdict(dict)
+    for (cyt, ct, donor), s in sums.items():
+        c = counts[(cyt, ct, donor)]
+        if c <= 0:
+            continue
+        b_per_donor[(cyt, ct)][donor] = s / c
+
+    # Pooled-train centroids µ_A and µ_{A,T} (used for direction vectors).
+    cyt_sums: Dict[str, np.ndarray] = {}
+    cyt_counts: Dict[str, float] = defaultdict(float)
+    at_sums: Dict[Tuple[str, str], np.ndarray] = {}
+    at_counts: Dict[Tuple[str, str], float] = defaultdict(float)
+    for (cyt, ct, _donor), s in sums.items():
+        c = counts[(cyt, ct, _donor)]
+        if cyt not in cyt_sums:
+            cyt_sums[cyt] = np.zeros(embed_dim, dtype=np.float64)
+        cyt_sums[cyt] += s
+        cyt_counts[cyt] += c
+        if (cyt, ct) not in at_sums:
+            at_sums[(cyt, ct)] = np.zeros(embed_dim, dtype=np.float64)
+        at_sums[(cyt, ct)] += s
+        at_counts[(cyt, ct)] += c
+
+    centroids = {
+        cyt: cyt_sums[cyt] / cyt_counts[cyt]
+        for cyt in cyt_sums if cyt_counts[cyt] > 0
+    }
+    centroids_AT = {
+        key: at_sums[key] / at_counts[key]
+        for key in at_sums if at_counts[key] > 0
+    }
+
+    description = (
+        "µ_{{A,T}}^{{(d)}} · û_{{A→B}} per donor in PBS-RC space (direction_mode={mode})"
+    ).format(mode=direction_mode)
+
+    return {
+        "b_per_donor": dict(b_per_donor),
+        "centroids": centroids,
+        "centroids_AT": centroids_AT,
+        "donors": sorted(d for d in donors_seen if d is not None),
+        "direction_mode": direction_mode,
+        "metric_description": description,
+    }
+
+
+def test_directional_significance(
+    bias_per_donor: dict,
+    label_encoder,
+    alpha: float = 0.05,
+) -> dict:
+    """
+    Donor-level Wilcoxon tests on per-donor PBS-RC bias scores.
+
+    For each ordered pair (A, B) and each cell type T:
+        - Compute b_fwd^{(d)}(A→B, T) = µ_{A,T}^{(d)} · û_{A→B}
+        - Compute b_rev^{(d)}(B→A, T) = µ_{B,T}^{(d)} · û_{B→A}
+          where û_{A→B} = (µ_B - µ_A) / ||µ_B - µ_A|| (or µ̂_{B,T} when
+          direction_mode='cell_type').
+        - One-sided Wilcoxon signed-rank tests (alternative='greater'), independently.
+        - Bonferroni-correct p-values by the number of cell types (relay search).
+        - BH-FDR across the K(K-1) ordered pairs on the per-pair min p value.
+
+    No subtraction of forward vs reverse anywhere. The two tests are stored
+    side by side. Cascade direction is decided by their pattern of significance.
+
+    Args:
+        bias_per_donor: output of compute_directional_bias_per_donor().
+        label_encoder: object with `.cytokines` ordered list of names.
+        alpha: BH-FDR alpha for cascade calls.
+
+    Returns:
+        dict with keys:
+            'p_fwd', 'p_rev':            {(A, B, T) -> p-value}
+            'p_fwd_bonf', 'p_rev_bonf':  {(A, B, T) -> Bonferroni-adjusted p}
+            'q_pair_fwd', 'q_pair_rev':  {(A, B) -> BH q-value of min Bonf p across T}
+            'b_fwd', 'b_rev':            {(A, B, T) -> np.ndarray of per-donor scores}
+            'relay_T':                   {(A, B) -> T* = argmin_T p_fwd_bonf}
+            'cascade_call':              {(A, B) -> 'A->B' | 'B->A' | 'shared' | 'none'}
+            'metric_description':        str
+    """
+    try:
+        from scipy.stats import wilcoxon
+    except ImportError as exc:
+        raise ImportError(
+            "scipy>=1.10 is required for test_directional_significance. "
+            "Install with: pip install 'scipy>=1.10'"
+        ) from exc
+
+    b_per_donor = bias_per_donor["b_per_donor"]
+    centroids = bias_per_donor["centroids"]
+    centroids_AT = bias_per_donor["centroids_AT"]
+    donors = bias_per_donor["donors"]
+    direction_mode = bias_per_donor.get("direction_mode", "global")
+
+    cytokine_names = list(label_encoder.cytokines)
+    cell_types = sorted({ct for (_cyt, ct) in b_per_donor.keys()})
+    n_cell_types = max(len(cell_types), 1)
+
+    # Pre-compute direction unit vectors.
+    def _unit(v: np.ndarray) -> Optional[np.ndarray]:
+        n = float(np.linalg.norm(v))
+        return None if n < 1e-10 else v / n
+
+    if direction_mode == "global":
+        unit_dirs: Dict[Tuple[str, str], np.ndarray] = {}
+        for a in cytokine_names:
+            mu_a = centroids.get(a)
+            if mu_a is None:
+                continue
+            for b in cytokine_names:
+                if a == b:
+                    continue
+                mu_b = centroids.get(b)
+                if mu_b is None:
+                    continue
+                u = _unit(mu_b - mu_a)
+                if u is not None:
+                    unit_dirs[(a, b)] = u
+    else:  # cell_type
+        unit_dirs_t: Dict[Tuple[str, str], np.ndarray] = {}
+        for (cyt, ct), mu in centroids_AT.items():
+            u = _unit(mu)
+            if u is not None:
+                unit_dirs_t[(cyt, ct)] = u
+
+    b_fwd: Dict[Tuple[str, str, str], np.ndarray] = {}
+    b_rev: Dict[Tuple[str, str, str], np.ndarray] = {}
+    p_fwd: Dict[Tuple[str, str, str], float] = {}
+    p_rev: Dict[Tuple[str, str, str], float] = {}
+
+    for a in cytokine_names:
+        for b in cytokine_names:
+            if a == b:
+                continue
+            for ct in cell_types:
+                # Forward: project µ_{A,T}^{(d)} onto direction toward B.
+                if direction_mode == "global":
+                    u_ab = unit_dirs.get((a, b))
+                    u_ba = unit_dirs.get((b, a))
+                else:
+                    u_ab = unit_dirs_t.get((b, ct))   # direction = µ̂_{B,T}
+                    u_ba = unit_dirs_t.get((a, ct))   # direction = µ̂_{A,T}
+                if u_ab is None or u_ba is None:
+                    continue
+
+                # Subtract the pooled cytokine centroid before projection so that
+                # the per-donor score reflects T's *specific* deviation from
+                # cytokine A's average response across all cell types, not the
+                # raw PBS-RC displacement (which is dominated by A's direct effect).
+                mu_a = centroids.get(a)
+                mu_b = centroids.get(b)
+                fwd_per_donor = []
+                for d in donors:
+                    mu_at = b_per_donor.get((a, ct), {}).get(d)
+                    if mu_at is None:
+                        continue
+                    vec = mu_at - mu_a if mu_a is not None else mu_at
+                    fwd_per_donor.append(float(np.dot(vec, u_ab)))
+                rev_per_donor = []
+                for d in donors:
+                    mu_bt = b_per_donor.get((b, ct), {}).get(d)
+                    if mu_bt is None:
+                        continue
+                    vec = mu_bt - mu_b if mu_b is not None else mu_bt
+                    rev_per_donor.append(float(np.dot(vec, u_ba)))
+
+                if len(fwd_per_donor) >= 2:
+                    arr = np.array(fwd_per_donor)
+                    b_fwd[(a, b, ct)] = arr
+                    p_fwd[(a, b, ct)] = _one_sided_wilcoxon_greater(arr, wilcoxon)
+                if len(rev_per_donor) >= 2:
+                    arr = np.array(rev_per_donor)
+                    b_rev[(b, a, ct)] = arr
+                    p_rev[(b, a, ct)] = _one_sided_wilcoxon_greater(arr, wilcoxon)
+
+    # Bonferroni across cell types (relay search) — per ordered pair.
+    p_fwd_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_fwd.items()}
+    p_rev_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_rev.items()}
+
+    # Per-pair min p across cell types.
+    pair_min_fwd: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
+    pair_min_rev: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
+    pair_argmin_fwd: Dict[Tuple[str, str], Optional[str]] = defaultdict(lambda: None)
+    for (a, b, ct), p in p_fwd_bonf.items():
+        if p < pair_min_fwd[(a, b)]:
+            pair_min_fwd[(a, b)] = p
+            pair_argmin_fwd[(a, b)] = ct
+    for (a, b, ct), p in p_rev_bonf.items():
+        if p < pair_min_rev[(a, b)]:
+            pair_min_rev[(a, b)] = p
+
+    # BH-FDR across ordered pairs.
+    pair_keys = sorted(pair_min_fwd.keys())
+    if pair_keys:
+        q_fwd_list = _bh_correction([pair_min_fwd[k] for k in pair_keys])
+        q_pair_fwd = {k: q for k, q in zip(pair_keys, q_fwd_list)}
+    else:
+        q_pair_fwd = {}
+    pair_keys_r = sorted(pair_min_rev.keys())
+    if pair_keys_r:
+        q_rev_list = _bh_correction([pair_min_rev[k] for k in pair_keys_r])
+        q_pair_rev = {k: q for k, q in zip(pair_keys_r, q_rev_list)}
+    else:
+        q_pair_rev = {}
+
+    # Cascade calls.
+    cascade_call: Dict[Tuple[str, str], str] = {}
+    relay_T: Dict[Tuple[str, str], Optional[str]] = {}
+    for (a, b) in q_pair_fwd:
+        fwd_sig = q_pair_fwd.get((a, b), 1.0) <= alpha
+        rev_sig = q_pair_rev.get((b, a), 1.0) <= alpha
+        if fwd_sig and not rev_sig:
+            cascade_call[(a, b)] = "A->B"
+        elif rev_sig and not fwd_sig:
+            cascade_call[(a, b)] = "B->A"
+        elif fwd_sig and rev_sig:
+            cascade_call[(a, b)] = "shared"
+        else:
+            cascade_call[(a, b)] = "none"
+        relay_T[(a, b)] = pair_argmin_fwd.get((a, b))
+
+    return {
+        "p_fwd": p_fwd,
+        "p_rev": p_rev,
+        "p_fwd_bonf": p_fwd_bonf,
+        "p_rev_bonf": p_rev_bonf,
+        "q_pair_fwd": q_pair_fwd,
+        "q_pair_rev": q_pair_rev,
+        "b_fwd": b_fwd,
+        "b_rev": b_rev,
+        "relay_T": relay_T,
+        "cascade_call": cascade_call,
+        "alpha": alpha,
+        "n_cell_types": n_cell_types,
+        "metric_description": (
+            "Two independent one-sided Wilcoxon signed-rank tests on per-donor "
+            "µ_{A,T}^{(d)} · û_{A→B} (forward) and µ_{B,T}^{(d)} · û_{B→A} (reverse) "
+            f"in PBS-RC space; Bonferroni across {n_cell_types} cell types, "
+            f"BH-FDR across ordered pairs at alpha={alpha}."
+        ),
+    }
+
+
+def _one_sided_wilcoxon_greater(x: np.ndarray, wilcoxon_fn) -> float:
+    """One-sided Wilcoxon signed-rank H1: median(x) > 0. Robust to all-zero / tied."""
+    x = np.asarray(x, dtype=np.float64)
+    if x.size < 2:
+        return 1.0
+    if np.allclose(x, 0):
+        return 1.0
+    try:
+        res = wilcoxon_fn(x, alternative="greater", zero_method="wilcox")
+        return float(res.pvalue)
+    except ValueError:
+        return 1.0
+
+
 def compute_asymmetry_matrix(
     bias: dict,
     label_encoder,
 ) -> dict:
     """
+    DEPRECATED. The antisymmetric subtraction `bias(A,B,T) - bias(B,A,T)` injects
+    a `µ_{B,T} · u_{A→B}` contamination term: a cell type that is a strong
+    direct B-responder (no cascade) inflates the asymmetry score in the A→B
+    direction. The score is also antisymmetric by construction, so it cannot
+    distinguish a genuine cascade from an algebraic sign flip.
+
+    Use `compute_directional_bias_per_donor` + `test_directional_significance`
+    instead. Kept here only for backwards compatibility with the legacy pipeline
+    (`scripts/run_experiment_geo.py --legacy-asymmetry`).
+
     Compute the pair-level asymmetry matrix from per-cell-type directional bias.
 
     For each ordered pair (A, B):
@@ -612,6 +962,54 @@ def compute_directional_bias_from_arrays(
     }
 
 
+def build_latent_cascade_graph_from_calls(
+    significance: dict,
+    label_encoder,
+) -> "nx.DiGraph":
+    """
+    Build a directed cytokine cascade graph from `test_directional_significance`
+    output. This is the refined replacement for `build_latent_cascade_graph`.
+
+    Edge A→B is added when `cascade_call[(A, B)] == 'A->B'`. Edge attributes
+    record the per-pair forward q-value and the predicted relay cell type.
+
+    Args:
+        significance: output of test_directional_significance().
+        label_encoder: object with `.cytokines`.
+
+    Returns:
+        nx.DiGraph with nodes = cytokine names, edges A→B with attributes:
+            'q_pair_fwd': BH q-value for the (A, B) forward pair test
+            'relay_T':    predicted relay cell type (argmin Bonferroni p_fwd)
+            'call':       'A->B'
+    """
+    try:
+        import networkx as nx
+    except ImportError as exc:
+        raise ImportError(
+            "networkx is required for build_latent_cascade_graph_from_calls. "
+            "Install with: pip install networkx"
+        ) from exc
+
+    G = nx.DiGraph()
+    for name in label_encoder.cytokines:
+        G.add_node(name)
+
+    cascade_call = significance.get("cascade_call", {})
+    q_pair_fwd = significance.get("q_pair_fwd", {})
+    relay_T = significance.get("relay_T", {})
+
+    for (a, b), call in cascade_call.items():
+        if call == "A->B":
+            G.add_edge(
+                a, b,
+                q_pair_fwd=float(q_pair_fwd.get((a, b), 1.0)),
+                relay_T=relay_T.get((a, b)),
+                call=call,
+            )
+    return G
+
+
 def build_latent_cascade_graph(
     asymmetry_matrix: np.ndarray,
     z_scores: dict,
@@ -619,6 +1017,10 @@ def build_latent_cascade_graph(
     fdr_alpha: float = 0.05,
 ) -> "nx.DiGraph":
     """
+    DEPRECATED. Uses the legacy antisymmetric `compute_asymmetry_matrix` output.
+    Use `build_latent_cascade_graph_from_calls(test_directional_significance(...),
+    label_encoder)` instead.
+
     Build a directed cytokine cascade graph from latent geometry asymmetry scores.
 
     Edge A→B is added when:

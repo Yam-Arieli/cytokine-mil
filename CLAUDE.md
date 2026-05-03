@@ -166,79 +166,10 @@ class CytokineABMIL(nn.Module):
 
 ### 5.5. Two-Layer Attention (v2 architecture)
 
-**Motivation:** the single-layer attention model treats all cells equally as potential signal sources. Cytokine signaling operates in cascades: a cytokine directly activates certain cell types (primary responders), which then secrete secondary cytokines that activate other cell types (secondary responders). The two-layer architecture encodes this biological structure directly:
-- **Layer 1 (SA)** learns to identify primary responders from their strong direct transcriptional signal.
-- **Layer 2 (CA)** re-attends over all cells conditioned on what Layer 1 found, learning to identify secondary responders whose signal is only interpretable given the primary response context.
-
-This specialization emerges purely from the classification objective — no prior knowledge about which cytokines cascade into which is required. SA dynamics track when the model learns direct signals; CA dynamics track when it learns cascade signals.
-
-**Architecture** — given H ∈ R^(N×128) from `InstanceEncoder`:
-
-**Layer 1 — Self-Attention (SA):** standard AB-MIL attention, identical to `AttentionModule`:
-```
-a_SA ∈ R^N  (sum to 1)
-z_SA = sum_i( a_SA_i * h_i ) ∈ R^128
-```
-
-**Layer 2 — Cross-Attention (CA):** re-attends over H conditioned on z_SA:
-```
-Query: z_SA;  Keys/Values: H
-a_CA_i = softmax( w^T * tanh(V * h_i + U * z_SA) )
-z_CA = sum_i( a_CA_i * h_i ) ∈ R^128
-```
-
-**Classifier input:** concatenate z_SA and z_CA → linear classifier. *(Try both sum and concat; keep the one giving cleaner loss curves.)*
-
-**Implementation files** (coexist with existing v1 files — nothing is replaced):
-- `models/two_layer_attention.py` — `TwoLayerAttentionModule` (SA + CA)
-- `models/cytokine_abmil_v2.py` — `CytokineABMIL_V2`
-
-**Forward pass contract** — `CytokineABMIL_V2.forward(X)` returns:
-```
-y_hat ∈ R^K,  a_SA ∈ R^N,  a_CA ∈ R^N,  H ∈ R^(N×128)
-```
-Both attention vectors must be returned for dynamics tracking.
-
-`CytokineABMIL_V2.forward_with_aux(X)` returns a 6-tuple for regularized training:
-```
-y_hat ∈ R^K,  a_SA ∈ R^N,  a_CA ∈ R^N,  H ∈ R^(N×128),  y_hat_sa ∈ R^K,  y_hat_ca ∈ R^K
-```
-`y_hat_sa` and `y_hat_ca` are produced by auxiliary classification heads (`sa_head`, `ca_head`: `nn.Linear(embed_dim, n_classes)`) that classify from the SA and CA aggregates alone. Used during training only; `forward()` and `_log_dynamics` are unchanged.
-
-**KL Regularization (v2 only):**
-
-*Motivation:* Without regularization, CA may learn to re-express the same signal as SA differently — not because the signal required contextual reasoning, but because the optimization landscape allows it. The KL regularization creates an asymmetry: CA deviating from SA has a cost, so it will only do so when the classification loss demands it. This makes the SA/CA divergence pattern interpretable: when CA diverges from SA, it is because the signal required contextual reasoning (cascade), not by chance. This strengthens the scientific claim — the specialization is not just emergent, it is robust under pressure to collapse.
-
-**Full loss formula:**
-```
-L_total = L_class(z_combined) + α · L_class(z_SA) + α · L_class(z_CA) + λ · KL(a_CA || a_SA)
-```
-- `L_class(z_combined)` — cross-entropy on the concatenated SA+CA representation (main signal)
-- `L_class(z_SA)` — auxiliary cross-entropy from SA aggregate alone (forces SA to be independently useful)
-- `L_class(z_CA)` — auxiliary cross-entropy from CA aggregate alone (forces CA to add genuine signal)
-- `KL(a_CA || a_SA)` — penalizes CA for deviating from SA; only when classification loss demands it
-- `α` = `training.aux_loss_weight` (default 0.5), `λ` = `training.kl_lambda` (default 0.1)
-
-Implementation: `F.kl_div((a_SA + 1e-8).log(), a_CA, reduction='batchmean')` = `KL(a_CA || a_SA)`.
-
-**Loss component logging:** `train_mil` returns `loss_components` in the dynamics dict:
-- `total`: total loss per epoch (all models)
-- `main`, `sa_aux`, `ca_aux`, `kl`: per-component losses per epoch (v2 only, empty lists for v1)
-
-**Constraints:**
-- The two layers **must NOT share weights** — they must specialize independently.
-- Zero dropout in both attention layers (same reasoning as current architecture).
-- KL regularization is **only applied during v2 training** (`kl_lambda > 0`). The v1 training loop is completely unchanged.
-- Controlled by config flag `model.use_two_layer_attention: false` in `configs/default.yaml`.
-
-**Dynamics extension:** `compute_instance_confidence` in `analysis/dynamics.py` accepts an optional second attention weight vector. When provided:
-```
-C_SA_i(t) = a_SA_i(t) * P(t)(Y_correct)
-C_CA_i(t) = a_CA_i(t) * P(t)(Y_correct)
-```
-Both trajectories stored per cell per logged epoch. See Section 8.3.
-
-**Notebook:** `notebooks/experiment_v2_two_layer_attention.ipynb` mirrors `experiment_bootstrap.ipynb` but uses `CytokineABMIL_V2`. Additional analysis section: SA vs CA confidence trajectories side by side per cytokine; overlap/divergence between a_SA and a_CA weight distributions across cell types.
+Two-layer SA+CA attention for cascade specialization. Controlled by
+`model.use_two_layer_attention` in `configs/default.yaml`. See `/v2-two-layer-attention`
+skill for full architecture spec, KL regularization formula, loss logging, and v2
+dynamics extension.
 
 ---
 
@@ -704,457 +635,85 @@ val_donor_traj   = aggregate_to_donor_level(dynamics["val_records"])
 
 ## 17. Binary Experiment Notebook (`notebooks/experiment_binary.ipynb`)
 
-**Purpose:** one binary AB-MIL per cytokine (cytokine vs PBS, n_classes=2) with a single shared frozen encoder. Isolates classification signal per cytokine without multi-class softmax competition.
-
-**Cytokine subset** (same 10 as `experiment_subset.ipynb`):
-```
-IL-4, M-CSF, IL-10, TNF-alpha, IL-2, IL-22, VEGF, IL-12, OSM, HGF
-```
-
-### Training Protocol
-
-**Stage 1 — Shared encoder** (identical to subset experiment): single `InstanceEncoder` trained via cell-type classification on all 10 cytokines + PBS.
-
-**Stage 2 — Per-cytokine binary models:**
-```python
-bin_manifest, bin_label = make_binary_manifest(manifest_subset, target_cytokine)
-# bin_label: positive→0 (cytokine), negative→1 (PBS), n_classes()==2
-train_bin, val_bin = split_manifest_by_donor(bin_manifest, val_donors=VAL_DONORS)
-model = build_mil_model(encoder, n_classes=2, encoder_frozen=True)
-dynamics = train_mil(model, train_dataset, n_epochs=..., val_dataset=val_dataset)
-```
-Each model trained independently (no shared attention/classifier). `VAL_DONORS = ["Donor2", "Donor3"]`.
-
-### Metrics
-
-Both aggregated to donor level (median per donor, mean across donors).
-
-**1. Normalized Trajectory AUC:**
-```
-normalized_AUC(C) = AUC( p_correct(t) / max_t(p_correct(t)) )
-```
-Divide trajectory by its own maximum; trapezoid-rule AUC normalized by `n_logged_epochs - 1`. Captures *shape* of learning independent of absolute confidence.
-
-**2. Final Probability:**
-```
-final_p(C) = p_correct(t_final)
-```
-- `> 0.5` — better than chance; `≈ 1.0` — confident; `≤ 0.5` — no reliable signal.
-
-Both metrics computed on train and val donors separately.
-
-### Results Table
-
-| Cytokine | Norm AUC (train) | Norm AUC (val) | Final P (train) | Final P (val) | Group |
-|----------|-----------------|----------------|-----------------|---------------|-------|
-
-**Group thresholds:**
-- **EASY** — `final_p (train) > 0.75` AND `normalized_AUC (train) > 0.75`
-- **HARD** — `final_p (train) <= 0.5` OR `normalized_AUC (train) <= 0.5`
-- **MED** — everything else
-
-Sort by `normalized_AUC (train)` descending. Column headers must use full metric descriptions, e.g. `AUC(norm_p_correct_trajectory, train donors)`.
-
-**Precise output labels:**
-```
-Binary learnability — Normalized Trajectory AUC
-Metric: AUC(p_correct(t) / max(p_correct(t))), aggregated to donor level
-        (median across pseudo-tubes per donor, then mean across donors)
-
-Binary learnability — Final Probability
-Metric: p_correct(t_final), aggregated to donor level
-        (median across pseudo-tubes per donor, then mean across donors)
-```
-
-**Relationship to multi-class:** binary framing removes cross-cytokine softmax competition. If a cytokine ranks high in multi-class but low in binary `final_p`, the model discriminated it *relative to other cytokines* but not vs resting state. Consistent rankings across framings indicate robust signal.
+One binary AB-MIL per cytokine (cytokine vs PBS, n_classes=2) with a shared frozen
+encoder. Uses same 10-cytokine subset as `experiment_subset.ipynb`. See `/binary-experiment`
+skill for training protocol, metrics (Normalized Trajectory AUC, Final Probability),
+group thresholds (EASY/HARD/MED), and precise output labels.
 
 ---
 
-## 18. Bootstrap Experiment Cytokine Groups (`notebooks/experiment_bootstrap.ipynb`)
+## 18. Bootstrap Experiment (`notebooks/experiment_bootstrap.ipynb`)
 
-**Purpose:** test whether simple cytokines are learned faster than complex cytokines using a bootstrapped 5+5 subset design controlled by a single `BOOTSTRAP_SEED`.
-
-### Pre-registered Hypothesis
-> **Simple cytokines should rank higher in learnability AUC than complex cytokines.**
-> Tested post-training with a one-sided Mann-Whitney U test (never repeated to avoid p-hacking).
-
-### Top-level Controls
-```python
-BOOTSTRAP_SEED     = 42
-N_SAMPLE_PER_GROUP = 5
-```
-
-### Cytokine Pools
-
-**Name corrections vs user-facing notation:**
-- IL-1β → `IL-1-beta`, IFN-β → `IFN-beta`, IL-32β → `IL-32-beta`, TGF-β → `TGF-beta1`
-
-**Cytokine pools:** See `cytokine-pools` skill for full pool definitions, mechanisms, and rationale.
-
-**Simple Pool** (9 candidates): `IL-4`, `IL-10`, `IL-2`, `M-CSF`, `TNF-alpha`, `IL-1-beta`, `IFN-beta`, `IL-7`, `G-CSF`
-
-**Complex Pool** (8 candidates): `IL-12`, `IL-32-beta`, `OSM`, `IL-22`, `VEGF`, `HGF`, `TGF-beta1`, `IL-6`
-
-### Sampling Logic
-```python
-_rng = random.Random(BOOTSTRAP_SEED)
-SIMPLE_CYTOKINES  = sorted(_rng.sample(SIMPLE_POOL,  N_SAMPLE_PER_GROUP))
-COMPLEX_CYTOKINES = sorted(_rng.sample(COMPLEX_POOL, N_SAMPLE_PER_GROUP))
-SUBSET_CYTOKINES  = SIMPLE_CYTOKINES + COMPLEX_CYTOKINES
-```
-
-### Training Protocol
-Identical to `experiment_subset.ipynb`: Stage 1 encoder on 10 sampled cytokines + PBS; Stage 2 AB-MIL frozen encoder; Stage 3 optional fine-tuning. `VAL_DONORS = ["Donor2", "Donor3"]`. Saved artifacts include seed in filename (e.g., `encoder_stage1_bootstrap_42.pt`).
-
-### Hypothesis Test
-One-sided Mann-Whitney U: simple AUC > complex AUC (5 vs 5, donor-aggregated). Report rank-biserial correlation alongside p-value (low power with n=5).
-
-### Group Labels & Colors
-`SIMPLE` (steelblue) and `COMPLEX` (tomato). Not `EASY`/`HARD`.
-
-### Validation Checks
-- **Generalization:** Spearman rho between train and val learnability rankings
-- **Stage stability:** Spearman rho between Stage 2 and Stage 3 rankings
-- **Seed robustness:** compare group-level Mann-Whitney p-values across different `BOOTSTRAP_SEED` values
+Tests SIMPLE vs COMPLEX cytokine learnability via a bootstrapped 5+5 subset
+(controlled by `BOOTSTRAP_SEED = 42`). Pre-registered: one-sided Mann-Whitney U,
+never repeated. See `/bootstrap-experiment` skill for pool definitions, sampling
+logic, hypothesis test, and validation checks. Cytokine pool definitions also in
+`/cytokine-pools` skill.
 
 ---
 
 ## 19. Cascade Inference via Confusion Dynamics (`analysis/confusion_dynamics.py`)
 
-### 19.1 Hypothesis
-
-Each cytokine's pseudo-tube distribution is a mixture:
-- Strong primary signal: direct transcriptional targets of that cytokine.
-- Weaker secondary signal: cytokines produced downstream in the cascade (because activated cells begin responding to downstream cytokines).
-
-If cascade A→B exists, A-tubes contain a weak B-like signal. A trained AB-MIL classifier will assign some softmax mass to class B when processing A-tubes, but not vice versa. This **asymmetric confusion** is the cascade direction signal.
-
-**Temporal profile** distinguishes:
-- Early-onset confusion → shared pathway (same TF, e.g. STAT3) — expected for IL-6/IL-10 (negative control)
-- Late-onset confusion → cascade signal (after direct signatures learned, residual B-signal becomes the next thing to fit)
-
-**Cell-type localization** of attention during confusion identifies the relay cell type (X in A→X→B).
-
-### 19.2 Confusion Trajectory Tensor
-
-At every logged epoch t, for each cytokine pair (A, B):
-```
-C(A, B, t) = mean over A-tubes of softmax_trajectory[B, t]
-```
-Yields a (K, K, T) tensor where K=91 (90 cytokines + PBS), T=n_logged_epochs.
-
-Stored in `records` as `softmax_trajectory`: shape (K, n_logged_epochs) per tube (added to `_build_records` in `training/train_mil.py`).
-
-### 19.3 Cascade Signal Extraction
-
-**Signal 1: Asymmetry Score (directionality)**
-```
-Asym(A→B) = mean_{t ∈ late 30%}[ C(A,B,t) ] − mean_{t ∈ late 30%}[ C(B,A,t) ]
-```
-Positive asymmetry = evidence for A→B direction. Computed in `compute_asymmetry_score`.
-
-**Signal 2: Temporal Profile (direct vs cascade)**
-For each pair (A,B), characterize C(A,B,t):
-- onset_epoch: first t where C > 0.05 * max(C)
-- peak_epoch: argmax C
-- profile_type: 'early' if peak < 30% of T, 'late' if peak > 70% of T, 'mid' otherwise
-
-**Signal 3: Cell-type localization**
-For pairs flagged as cascade candidates: extract per-cell attention weights from A-tubes, weighted by softmax[B], grouped by cell type. High attention in cell type X → X is the relay.
-
-### 19.4 `analysis/confusion_dynamics.py` Functions
-
-```python
-def compute_confusion_trajectory(records, label_encoder) -> np.ndarray
-# Groups records by true cytokine label.
-# C[A, B, t] = mean over A-tubes of softmax_trajectory[B, t].
-# Returns shape (K, K, T); row=true class, col=predicted class.
-
-def aggregate_confusion_to_donor_level(records, label_encoder) -> np.ndarray
-# For each (cytokine, donor): median across tubes → per-donor (K,T).
-# Returns array (n_donors, K, K, T) for statistical analysis.
-
-def compute_asymmetry_score(confusion_trajectory, late_epoch_fraction=0.3) -> np.ndarray
-# Asym[A,B] = mean(C[A,B,t_late]) - mean(C[B,A,t_late]).
-# Returns (K, K) matrix; positive = evidence for A→B.
-
-def compute_temporal_profile(confusion_trajectory, a_idx, b_idx) -> dict
-# Analyzes C[a_idx, b_idx, :] across epochs.
-# Returns dict with onset_epoch, peak_epoch, profile_type, trajectory.
-
-def extract_cell_type_attention_for_confusion(
-    model, dataset, label_encoder, true_cyt, confused_cyt, device) -> dict
-# For tubes labeled true_cyt, weight per-cell attention by softmax[confused_cyt_idx].
-# Groups by cell type from tube .obs["cell_type"].
-# Returns dict[cell_type -> mean_weighted_attention].
-
-def build_cascade_graph(asymmetry_matrix, label_encoder,
-    fdr_alpha=0.05, min_asymmetry=0.0) -> nx.DiGraph
-# FDR correction (Benjamini-Hochberg) across all K*(K-1) pairs.
-# Edge A→B if Asym[A,B] > 0 and FDR-significant.
-# Returns nx.DiGraph with edge weights = asymmetry score.
-```
-
-### 19.5 Validation Experiments
-
-All run before biological analysis. Sequential go/no-go gates.
-
-**Experiment 0: Synthetic Positive Control (GO/NO-GO gate)**
-- Construct synthetic A-tubes: replace alpha fraction (10–30%) of cells with B-tube cells.
-- Expected: synthetic A-tubes show elevated C(A,B,t) with late onset.
-- Script: `scripts/synthetic_cascade_control.py`. SLURM: `scripts/run_synthetic_cascade_control.slurm`.
-- If fails: method cannot detect cascade signals → reconsider approach.
-
-**Experiment 1: IL-12 → IFN-γ Biological Positive Control**
-- Pre-registered: C(IL-12, IFN-γ, t) > C(IFN-γ, IL-12, t) at late epochs; late-onset; localized to NK cells.
-- Documents recovery of best-documented PBMC cytokine cascade (Oesinghaus Fig. 4i).
-
-**Experiment 2: IL-6 / IL-10 Negative Control**
-- Shared STAT3 pathway but no documented cascade. Expect: symmetric confusion, early-onset, diffuse attention.
-- Validates temporal separation claim.
-
-**Experiment 3: Seed Stability**
-- Run seeds 42, 123, 7. Spearman rho of asymmetry scores across seeds.
-- Threshold: rho > 0.7 for reportable pairs. Unstable pairs excluded.
-
-**Experiment 4: Cytokine Family Clustering**
-- Cluster cytokines by confusion fingerprint. IFN family and IL-2/IL-15 should cluster.
-- Sanity check before claiming novel cascade discovery.
-
-**Experiment 5: 24h Kinetics Confound Check**
-- After unblinding: test if cascade-source cytokines correlate with fast-acting kinetics.
-- If yes → 24h timing is confound. If no → cascade-specific signal.
-
-### 19.6 Config Parameters
-
-Added to `configs/default.yaml` under `dynamics` (see Section 13):
-```yaml
-confusion_late_epoch_fraction: 0.3   # fraction of final epochs for asymmetry score
-confusion_fdr_alpha: 0.05            # FDR threshold for cascade graph edges
-cascade_graph_min_seed_rho: 0.7      # min Spearman rho across seeds for reportable pairs
-```
-
-### 19.7 Training
-
-Full 91-class training script: `scripts/train_oesinghaus_full.py`.
-SLURM: `scripts/run_oesinghaus_full.slurm` (array job, 3 seeds: 42, 123, 7).
-Memory: 128GB (full 91-class ~1200 tubes). Time: 24h.
-
-`softmax_trajectory` (shape K × n_logged_epochs) is stored in every record — added to `_build_records` in `training/train_mil.py`.
-
-### 19.8 Precise Output Labels
-
-```
-Confusion trajectory
-Metric: C(A,B,t) = mean over pseudo-tubes of true cytokine A of softmax[B] at logged epoch t
-        Shape: (K, K, n_logged_epochs)
-
-Asymmetry score
-Metric: mean(C(A,B,t_late)) - mean(C(B,A,t_late)), where t_late = last 30% of training
-        Positive = evidence for cascade direction A→B
-
-Temporal profile
-Metric: peak_epoch = argmax C(A,B,t); profile_type: early (<30% T), late (>70% T), mid
-```
+Asymmetric confusion between cytokine classes over training time reveals cascade
+direction. Builds a (K, K, T) confusion tensor; computes asymmetry scores and
+temporal profiles; outputs a directed cascade graph. Config params under `dynamics:`
+in `default.yaml`. See `/confusion-dynamics` skill for hypothesis, tensor math,
+function signatures, validation experiments (Exp 0–5), and precise output labels.
 
 ---
 
 ## 20. Latent Space Cytokine Geometry (`analysis/latent_geometry.py`)
 
-### 20.1 Core Idea
+Detects cascade relationships as per-cell-type directional bias of cell embeddings
+toward other cytokine centroids. Run on 20-cytokine subset first. GO/NO-GO gate:
+Exp 0 (cytokine alignment score vs null). Contingency path: AuxDecoder (Exp 3).
+See `/latent-geometry` skill for full experiment specs (Exp 0–3), math, function
+signatures, attention proxy check results (2/5 FAIL → uniform KL), and precise output labels.
 
-After MIL training the encoder maps each cell to `h_i ∈ R^128`. We hypothesize that cells in cytokine-A tubes that are responding to endogenously produced cytokine B (a cascade secondary signal) will have their embedding displaced toward B's centroid in the learned representation space.
+### 20.1 Refined readout (current default)
 
-Cascade relationships are detected as **per-cell-type directional bias** of a cell-type subpopulation's mean embedding toward another cytokine's centroid, within a given cytokine's tubes — without using attention weights.
+The legacy `bias(A,B,T) = (µ_{A,T} − µ_A) · û_{A→B}` followed by
+`ASYM(A→B) = max_T [bias(A,B,T) − bias(B,A,T)]` had two problems:
 
-**Run on a 20-cytokine subset first** (must include IL-12, IFN-γ, IL-18, TNF-α, IL-6 as known cascade pairs), not all 91.
+1. The subtraction injects a `µ_{B,T} · û_{A→B}` contamination term — a strong
+   direct B-responder cell type inflates the asymmetry score even when no
+   cascade exists.
+2. The score is antisymmetric by construction: it cannot distinguish a genuine
+   directional cascade from an algebraic sign flip.
 
-### 20.2 Experiment 0 — Does Cytokine Geometry Exist at the Cell Level? (GO/NO-GO Gate)
+The refined pipeline (in `cytokine_mil.analysis.pbs_rc` + `latent_geometry.py`):
 
-Everything in Sections 20.3–20.5 depends on this gate passing.
+1. **PBS-RC space first.** Compute `µ_{PBS, T}` per cell type from training donors
+   only via `pbs_rc.compute_pbs_centroids_per_cell_type`. Subtract per cell type:
+   `h̃_i = h_i − µ_{PBS, τ(i)}`. In PBS-RC space `µ_{A,T}` is T's deviation from
+   its own resting state (step 1 of the "oranges vs oranges" comparison).
+2. **Per-donor projection with centroid subtraction.** For each cytokine pair (A, B),
+   each cell type T, each training donor d:
+   `b_fwd^{(d)}(A→B, T) = (µ_{A,T}^{(d)} − µ_A) · û_{A→B}`
+   where `µ_A` is the pooled training-donor PBS-RC centroid of cytokine A (average
+   deviation from PBS across all cell types). The `µ_A` subtraction removes A's
+   generic cross-cell-type signal so that the score reflects T's *specific* cascade
+   component beyond A's direct effect on all cells.
+3. **Two independent one-sided Wilcoxon signed-rank tests** across donors —
+   no `b_fwd − b_rev` subtraction anywhere. The "reverse" of (A, B) is the forward
+   test for (B, A): `b_fwd^{(d)}(B→A, T) = (µ_{B,T}^{(d)} − µ_B) · û_{B→A}`.
+4. **Bonferroni** across cell types per ordered pair (relay search), then
+   **BH-FDR** across the K(K−1) ordered pairs.
+5. **Cascade decision per pair (A → B):**
+   `fwd_sig = ∃T : p_fwd_bonf(A→B, T) ≤ α`,
+   `rev_sig = ∃T : p_fwd_bonf(B→A, T) ≤ α`.
+   Calls: `'A->B'`, `'B->A'`, `'shared'`, `'none'`.
+   Relay: `T* = argmin_T p_fwd_bonf(A→B, T)`.
 
-**Cytokine centroid:**
-```
-μ_C = mean over all cells in all C-tubes of h_i    (training donors only: D1, D4–D12)
-```
+Direction modes (config `latent_geometry.direction_mode`): `'global'` uses
+`û_{A→B} = (µ_B − µ_A)/||µ_B − µ_A||`; `'cell_type'` uses `µ̂_{B,T}` as the
+direction (T-specific; safe because forward/reverse are no longer subtracted).
 
-**Cytokine affinity vector for cell i:**
-```
-f_i = softmax( -d(h_i, μ_C) for all C )    d = L2 distance
-```
+Public API in `cytokine_mil.analysis.latent_geometry`:
+- `compute_directional_bias_per_donor(cache, label_encoder, pbs_ct_means, train_donors, direction_mode)`
+- `test_directional_significance(bias_per_donor, label_encoder, alpha)`
+- `build_latent_cascade_graph_from_calls(significance, label_encoder)`
 
-**Cytokine alignment score for cytokine A:**
-```
-cytokine_alignment_score(A) = mean over cells in A-tubes of f_i[A]
-```
-
-**Null distribution:** permute cytokine tube labels, recompute alignment score. Permutation test (1000 permutations).
-
-**Gate criterion:** `cytokine_alignment_score` significantly above null (p < 0.05, permutation test) for the majority of cytokines.
-
-**Also compute:** Spearman correlation between `cytokine_alignment_score(C)` and learnability AUC(C). Expect positive correlation.
-
-**If gate fails:** encoder embeds in cell-type space only; cytokine geometry exists only at bag level. Proceed to Experiment 3 (auxiliary decoder — not yet implemented; see TODO in `analysis/latent_geometry.py`).
-
-### 20.3 Experiment 1 — Per-Cell-Type Directional Bias
-
-**Directional bias of cell type T in cytokine-A tubes toward cytokine B:**
-```
-bias(A, B, T) = (μ_{A,T} - μ_A) · (μ_B - μ_A) / ||μ_B - μ_A||_2
-```
-Where:
-- `μ_{A,T}` = mean embedding of cells of type T within A-tubes
-- `μ_A` = mean embedding of all cells within A-tubes
-- `(μ_B - μ_A) / ||μ_B - μ_A||_2` = unit vector from A's centroid to B's centroid
-
-Positive = cell type T is displaced toward B within A-tubes; negative = displaced away.
-
-**Null distribution:** permute cell-type labels within tubes 1000 times, recompute bias.
-```
-z(A, B, T) = (bias(A, B, T) - mean(bias_null)) / std(bias_null)
-```
-
-**Multiple testing:** Benjamini-Hochberg FDR across all (A, B, T) triples.
-
-**Positive control:** For IL-12→IFN-γ:
-```
-bias(IL-12, IFN-γ, NK)       > 0    # NK cells are primary IFN-γ responders
-bias(IL-12, IFN-γ, CD14_Mono) > 0   # secondary
-bias(IFN-γ, IL-12, NK)        ≈ 0   # asymmetry check
-```
-
-**Output:** Directed graph: edge A→B exists if `max_T z(A, B, T) > FDR threshold`, weighted by max z-score.
-
-### 20.4 Experiment 2 — Asymmetry Test (Cascade Direction)
-
-**Per-cell-type asymmetry:**
-```
-asym(A, B, T) = bias(A, B, T) - bias(B, A, T)
-```
-
-**Pair-level asymmetry (aggregate over cell types):**
-```
-ASYM(A, B) = max_T asym(A, B, T)
-```
-
-Positive `ASYM(A, B)` = evidence for cascade direction A→B.
-
-**Output:** (K, K) asymmetry matrix. Cluster it. IFN family and IL-2/IL-15 should cluster.
-
-**Seed stability:** run across seeds 42, 123, 7. Spearman rho of ASYM vectors across seeds. Threshold: rho > 0.7 for reportable pairs.
-
-**Precise output labels:**
-```
-Cytokine alignment score
-Metric: mean over cells in A-tubes of softmax(-||h_i - μ_C||_2 for all C)[A]
-        Aggregated to donor level (training donors D1, D4–D12 only for centroid computation)
-
-Directional bias
-Metric: scalar projection of (μ_{A,T} - μ_A) onto unit vector (μ_B - μ_A)/||μ_B - μ_A||
-
-Asymmetry score
-Metric: max_T [ bias(A,B,T) - bias(B,A,T) ]
-        Positive = evidence for cascade A→B
-```
-
-### 20.5 Experiment 3 — Auxiliary Decoder (Contingency)
-
-**Triggered when:** Experiment 0 gate fails (alignment ≈ null, encoder embeds cell-type space only).
-
-**Scientific claim (honest framing):** The decoder injects cytokine geometry into cell-level representations post-hoc, supervised by bag-level softmax. This is explicitly "decoder-injected cytokine geometry," not emergent encoder geometry. The goal is to enable Experiments 1 and 2 in a space where cytokine geometry exists by construction, then check whether the resulting directional bias structure matches known biology.
-
-**Architecture:** Small MLP on frozen encoder output:
-```
-h_i ∈ R^128  →  [Linear(128→64), ReLU]  →  g_i ∈ R^64  →  [Linear(64→91)]  →  cytokine_logits_i
-```
-- Encoder frozen, MIL model frozen — decoder weights only
-- g_i (64-dim intermediate) is the cell-level cytokine-aware embedding used in Exp 1/2
-- Implemented as `AuxDecoder` in `models/aux_decoder.py`
-
-**Supervision signal:** Sharpened bag-level softmax with temperature τ:
-```
-p_bag_τ(C | tube) = softmax(y_hat / τ)
-```
-- `y_hat` = logits from the trained MIL model (frozen), per tube
-- τ ∈ {0.3, 0.5, 1.0} — treat as hyperparameter, run all three
-- τ < 1 sharpens supervision for ambiguous cytokines; for already-peaked predictions it has minimal effect
-- Default: τ = 0.5
-
-**Loss function (uniform KL):**
-```
-L = (1/N) sum_i  KL( p_bag_τ || softmax(decoder(h_i)) )
-```
-- Uniform weighting across all N cells per tube — attention-weighted KL was considered but disqualified: the attention proxy check (Section 20.8) found only 2/5 cytokines matched expected primary responders in top-3 attention (threshold: 3/5). Attention tracks discriminativeness across 91 classes, not cytokine responsiveness.
-
-**Training details:**
-- Optimizer: Adam, lr=1e-3
-- Batch: one tube at a time (same as MIL training)
-- Epochs: 50 (tunable)
-- After training: re-run Experiments 0, 1, 2 replacing h_i with g_i (64-dim)
-
-**Config parameters** (add to `configs/default.yaml` under a new `aux_decoder` block):
-```yaml
-aux_decoder:
-  embed_dim: 64
-  tau_values: [0.3, 0.5, 1.0]
-  tau_default: 0.5
-  lr: 1e-3
-  epochs: 50
-```
-
-**Implementation file:** `models/aux_decoder.py` — class `AuxDecoder`.
-**Training script:** `scripts/train_aux_decoder.py` — loads trained MIL model, trains decoder, saves `aux_decoder_tau{τ}.pt` to the run directory.
-
-### 20.6 Implementation Notes
-
-- Compute centroids `μ_C` using **training donors only** (D1, D4–D12); validate directional bias on D2, D3
-- Cell-type labels reintroduced post-hoc from original h5ad metadata — never used during training
-- Aggregate all statistics to donor level before significance testing (effective N=12, not N=120)
-- All functions return a `metric_description` key per Section 14 convention
-- Implementation file: `analysis/latent_geometry.py`
-
-### 20.7 File
-
-Add `analysis/latent_geometry.py` to the project file structure (Section 11):
-```
-cytokine_mil/analysis/
-    dynamics.py
-    validation.py
-    confusion_dynamics.py
-    latent_geometry.py     <- Experiments 0–2; Experiment 3 (AuxDecoder contingency)
-```
-
----
-
-### 20.8 Attention Proxy Check (Pre-Decoder Validation)
-
-**Purpose:** Before using attention-weighted KL loss in Experiment 3, empirically verify that high-attention cell types match known primary responders. If yes, the attention-weighting is justified. If no, use uniform KL loss and treat the attention weighting as a caveat.
-
-**Script:** `scripts/check_attention_cell_types.py`
-
-**Method:** For each key cytokine, extract per-cell attention weights a_i from the frozen trained model, group by cell type (from h5ad obs["cell_type"]), aggregate to donor level (median per donor, mean across donors). Report top-3 dominant cell types by mean attention.
-
-**Known ground-truth for pass/fail:**
-
-| Cytokine | Expected dominant cell type(s) |
-|---|---|
-| IL-12 | NK, NK CD56bright |
-| IFN-γ | NK, CD14 Mono |
-| IL-4 | B cells, CD4 T cells |
-| IL-2 | CD4 T, CD8 T |
-| TNF-α | CD14 Mono |
-
-**Verdict rule:** If ≥ 60% of tested cytokines match expected dominant cell type in top-3 attention → proxy is empirically grounded → use attention-weighted KL. Otherwise → use uniform KL and report as caveat.
-
-**Run before implementing `train_aux_decoder.py`.**
-
-**Empirical result (seed 42, 9100 training tubes):**
-| Cytokine | Expected dominant | Top-3 observed | Match |
-|---|---|---|---|
-| IL-12 | NK, NK CD56bright | CD14 Mono, cDC, ILC | ❌ |
-| IFN-γ | NK, CD14 Mono | cDC, CD14 Mono, CD16 Mono | ✓ |
-| IL-4 | B cells, CD4 T | ILC, cDC, CD8 Naive | ❌ |
-| IL-2 | CD4 T, CD8 T | cDC, ILC, HSPC | ❌ |
-| TNF-α | CD14 Mono | ILC, CD16 Mono, CD14 Mono | ✓ |
-
-Result: 2/5 — **FAIL**. cDC and ILC dominate attention across most cytokines, consistent with those cell types being rare/discriminative rather than primary responders. Attention-weighted KL is disqualified; uniform KL used in `train_aux_decoder.py`.
+Deprecated (kept for backwards compatibility behind `--legacy-asymmetry`):
+- `compute_asymmetry_matrix`
+- `build_latent_cascade_graph`
