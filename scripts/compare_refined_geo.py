@@ -43,6 +43,7 @@ OFFSET1_SEEDS = {s: f"offset1_seed{s}" for s in range(11, 23)}
 
 STABLE_RHO_THRESHOLD = 0.70
 TOP_N = 50
+TOP_FRAC = 0.50   # fraction of pairs kept for filtered metrics
 
 PAIRS_OF_INTEREST = [
     ("IL-12",     "IFN-gamma", "pos ctrl (cascade)"),
@@ -291,6 +292,34 @@ def _analyze_batch(seed_map: dict, batch_name: str):
 # Cross-batch comparison
 # ---------------------------------------------------------------------------
 
+def _filtered_metrics(l0, l1, r0, r1, shared_pairs, label: str):
+    """
+    Compute cross-batch rho and top-N overlap restricted to a subset of pairs.
+
+    shared_pairs: list of (A, B) strings for the filtered subset (aligned to l0/r0).
+    """
+    n = len(l0)
+    rho_l, _ = spearmanr(l0, l1)
+    rho_r, _ = spearmanr(r0, r1)
+
+    # For top-N, use the same TOP_N threshold but count overlap out of the filtered set
+    top_l0 = set(shared_pairs[i] for i in np.argsort(-l0)[:TOP_N])
+    top_l1 = set(shared_pairs[i] for i in np.argsort(-l1)[:TOP_N])
+    top_r0 = set(shared_pairs[i] for i in np.argsort(-r0)[:TOP_N])
+    top_r1 = set(shared_pairs[i] for i in np.argsort(-r1)[:TOP_N])
+    overlap_l = len(top_l0 & top_l1)
+    overlap_r = len(top_r0 & top_r1)
+
+    print(f"\n  [{label}] n_pairs={n}")
+    print(f"    ρ legacy={rho_l:.3f}  refined={rho_r:.3f}")
+    print(f"    Top-{TOP_N} overlap: legacy={overlap_l}/{TOP_N}  refined={overlap_r}/{TOP_N}")
+    return {
+        "rho_legacy": float(rho_l), "rho_refined": float(rho_r),
+        "overlap_legacy": overlap_l, "overlap_refined": overlap_r,
+        "n_pairs": n,
+    }
+
+
 def _cross_batch(b0, b1):
     print(f"\n{'='*60}")
     print("Cross-batch reproducibility")
@@ -302,33 +331,57 @@ def _cross_batch(b0, b1):
     shared = [p for p in pairs0 if p in set(pairs1)]
     idx0   = [pairs0.index(p) for p in shared]
     idx1   = [pairs1.index(p) for p in shared]
+    shared_arr = np.array(shared, dtype=object)  # for fancy indexing
 
     l0 = b0["legacy_ensemble"][idx0]
     l1 = b1["legacy_ensemble"][idx1]
     r0 = b0["refined_ensemble"][idx0]
     r1 = b1["refined_ensemble"][idx1]
 
-    rho_l, _ = spearmanr(l0, l1)
-    rho_r, _ = spearmanr(r0, r1)
-
     print(f"\n  Shared pairs: {len(shared)}")
-    print(f"  Cross-batch Spearman rho — legacy : {rho_l:.3f}")
-    print(f"  Cross-batch Spearman rho — refined: {rho_r:.3f}")
 
-    # Top-N overlap
-    top_l0 = set(pairs0[i] for i in np.argsort(-b0["legacy_ensemble"])[:TOP_N])
-    top_l1 = set(pairs1[i] for i in np.argsort(-b1["legacy_ensemble"])[:TOP_N])
-    top_r0 = set(pairs0[i] for i in np.argsort(-b0["refined_ensemble"])[:TOP_N])
-    top_r1 = set(pairs1[i] for i in np.argsort(-b1["refined_ensemble"])[:TOP_N])
+    # ---- Full-set metrics ---------------------------------------------------
+    full = _filtered_metrics(l0, l1, r0, r1, shared, f"ALL {len(shared)} pairs")
 
-    overlap_l = len(top_l0 & top_l1)
-    overlap_r = len(top_r0 & top_r1)
-    print(f"\n  Top-{TOP_N} overlap (out of {TOP_N}) — legacy : {overlap_l} pairs")
-    print(f"  Top-{TOP_N} overlap (out of {TOP_N}) — refined: {overlap_r} pairs")
+    # ---- Filter 1: top-50% by refined score (B0) ----------------------------
+    k = max(1, int(len(shared) * TOP_FRAC))
+    ref_top_idx = np.argsort(-r0)[:k]
+    ref_top = _filtered_metrics(
+        l0[ref_top_idx], l1[ref_top_idx],
+        r0[ref_top_idx], r1[ref_top_idx],
+        [shared[i] for i in ref_top_idx],
+        f"top {int(TOP_FRAC*100)}% by refined score",
+    )
 
-    shared_top_r = sorted(top_r0 & top_r1, key=lambda p: -b0["refined_ensemble"][pairs0.index(p)])
+    # ---- Filter 2: top-50% by |legacy| score (B0) ---------------------------
+    leg_top_idx = np.argsort(-np.abs(l0))[:k]
+    leg_top = _filtered_metrics(
+        l0[leg_top_idx], l1[leg_top_idx],
+        r0[leg_top_idx], r1[leg_top_idx],
+        [shared[i] for i in leg_top_idx],
+        f"top {int(TOP_FRAC*100)}% by |legacy| score",
+    )
+
+    # ---- Filter 3: "active" pairs — refined score > 0 (any Wilcoxon signal) -
+    active_idx = np.where(r0 > 0)[0]
+    if len(active_idx) > 0:
+        active = _filtered_metrics(
+            l0[active_idx], l1[active_idx],
+            r0[active_idx], r1[active_idx],
+            [shared[i] for i in active_idx],
+            f"active pairs (refined score > 0,  n={len(active_idx)})",
+        )
+    else:
+        active = None
+        print("\n  [active pairs] none found — all refined scores are 0")
+
+    # ---- Top pairs in BOTH batches (refined, full set) ----------------------
+    top_r0_full = set(pairs0[i] for i in np.argsort(-b0["refined_ensemble"])[:TOP_N])
+    top_r1_full = set(pairs1[i] for i in np.argsort(-b1["refined_ensemble"])[:TOP_N])
+    shared_top_r = sorted(top_r0_full & top_r1_full,
+                          key=lambda p: -b0["refined_ensemble"][pairs0.index(p)])
     if shared_top_r:
-        print(f"\n  Top pairs stable in BOTH batches (refined, ranked by Batch-0 score):")
+        print(f"\n  Top pairs stable in BOTH batches (refined, full set, ranked by B0 score):")
         for p in shared_top_r[:20]:
             i0 = pairs0.index(p)
             i1 = pairs1.index(p)
@@ -336,11 +389,16 @@ def _cross_batch(b0, b1):
                   f"B0={b0['refined_ensemble'][i0]:.3f}  B1={b1['refined_ensemble'][i1]:.3f}")
 
     return {
-        "rho_legacy":    float(rho_l),
-        "rho_refined":   float(rho_r),
-        "overlap_legacy":  overlap_l,
-        "overlap_refined": overlap_r,
+        "full":    full,
+        "top_refined": ref_top,
+        "top_legacy":  leg_top,
+        "active":  active,
         "top_refined_both": [list(p) for p in shared_top_r],
+        # Keep raw vectors for plotting (full aligned set)
+        "rho_legacy":    full["rho_legacy"],
+        "rho_refined":   full["rho_refined"],
+        "overlap_legacy":  full["overlap_legacy"],
+        "overlap_refined": full["overlap_refined"],
         "l0": l0.tolist(), "l1": l1.tolist(),
         "r0": r0.tolist(), "r1": r1.tolist(),
         "pairs_aligned": [list(p) for p in shared],
@@ -382,26 +440,42 @@ def _plot_scatter(cross, out_dir: Path):
     l1 = np.array(cross["l1"])
     r0 = np.array(cross["r0"])
     r1 = np.array(cross["r1"])
+    n  = len(l0)
+    k  = max(1, int(n * TOP_FRAC))
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    # Four panels: full + filtered (top 50% by each method)
+    fig, axes = plt.subplots(2, 2, figsize=(13, 11))
+    fig.suptitle("Cross-batch reproducibility: Legacy vs Refined", fontsize=13)
 
-    for ax, x, y, rho, title, xlabel, ylabel in [
-        (axes[0], l0, l1, cross["rho_legacy"],
-         f"Legacy asymmetry — ρ={cross['rho_legacy']:.3f}",
-         "Batch 0 asymmetry score", "Batch 1 asymmetry score"),
-        (axes[1], r0, r1, cross["rho_refined"],
-         f"Refined Wilcoxon (−log₁₀ p_bonf) — ρ={cross['rho_refined']:.3f}",
-         "Batch 0  −log₁₀(p_bonf_fwd)", "Batch 1  −log₁₀(p_bonf_fwd)"),
-    ]:
-        ax.scatter(x, y, s=4, alpha=0.3, color="#4878d0")
+    ref_top_idx = np.argsort(-r0)[:k]
+    leg_top_idx = np.argsort(-np.abs(l0))[:k]
+
+    panels = [
+        # row 0: full set
+        (axes[0, 0], l0, l1,
+         f"Legacy — ALL pairs  ρ={cross['full']['rho_legacy']:.3f}",
+         "B0 legacy score", "B1 legacy score", None),
+        (axes[0, 1], r0, r1,
+         f"Refined — ALL pairs  ρ={cross['full']['rho_refined']:.3f}",
+         "B0 −log₁₀(p_bonf_fwd)", "B1 −log₁₀(p_bonf_fwd)", None),
+        # row 1: filtered
+        (axes[1, 0], l0[leg_top_idx], l1[leg_top_idx],
+         f"Legacy — top {int(TOP_FRAC*100)}% by |legacy|  ρ={cross['top_legacy']['rho_legacy']:.3f}",
+         "B0 legacy score", "B1 legacy score", leg_top_idx),
+        (axes[1, 1], r0[ref_top_idx], r1[ref_top_idx],
+         f"Refined — top {int(TOP_FRAC*100)}% by refined  ρ={cross['top_refined']['rho_refined']:.3f}",
+         "B0 −log₁₀(p_bonf_fwd)", "B1 −log₁₀(p_bonf_fwd)", ref_top_idx),
+    ]
+
+    for ax, x, y, title, xl, yl, _ in panels:
+        ax.scatter(x, y, s=3, alpha=0.25, color="#4878d0")
         mn, mx = min(x.min(), y.min()), max(x.max(), y.max())
         ax.plot([mn, mx], [mn, mx], "r--", lw=1, label="y=x")
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
+        ax.set_xlabel(xl, fontsize=9)
+        ax.set_ylabel(yl, fontsize=9)
+        ax.set_title(title, fontsize=10)
         ax.legend(fontsize=8)
 
-    fig.suptitle("Cross-batch reproducibility: Legacy vs Refined", fontsize=13)
     plt.tight_layout()
     plt.savefig(out_dir / "scatter_plot.png", dpi=150)
     plt.close()
@@ -443,10 +517,10 @@ def main():
             "refined_rhos":   {str(k): v for k, v in b1["refined_rhos"].items()},
         },
         "cross_batch": {
-            "rho_legacy":    cross["rho_legacy"],
-            "rho_refined":   cross["rho_refined"],
-            "overlap_legacy_top50":  cross["overlap_legacy"],
-            "overlap_refined_top50": cross["overlap_refined"],
+            "all_pairs":          cross["full"],
+            "top50pct_by_refined": cross["top_refined"],
+            "top50pct_by_legacy":  cross["top_legacy"],
+            "active_pairs":        cross["active"],
         },
     }
 
@@ -460,8 +534,20 @@ def main():
           f"   refined stable : {len(b0['stable_refined'])}/{len(b0['seeds'])}")
     print(f"  Batch 1 — legacy stable : {len(b1['stable_legacy'])}/{len(b1['seeds'])}"
           f"   refined stable : {len(b1['stable_refined'])}/{len(b1['seeds'])}")
-    print(f"  Cross-batch ρ — legacy  : {cross['rho_legacy']:.3f}")
-    print(f"  Cross-batch ρ — refined : {cross['rho_refined']:.3f}")
+    print(f"\n  Cross-batch ρ comparison:")
+    hdr = f"  {'Filter':<35} {'legacy ρ':>10}  {'refined ρ':>10}  {'overlap leg':>12}  {'overlap ref':>12}"
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for label, d in [
+        ("All pairs",                   cross["full"]),
+        (f"Top {int(TOP_FRAC*100)}% by refined score", cross["top_refined"]),
+        (f"Top {int(TOP_FRAC*100)}% by |legacy| score", cross["top_legacy"]),
+        ("Active (refined score > 0)",  cross["active"] or {}),
+    ]:
+        if d:
+            n = d.get("n_pairs", "?")
+            print(f"  {label:<35} {d['rho_legacy']:>10.3f}  {d['rho_refined']:>10.3f}"
+                  f"  {d['overlap_legacy']:>12}  {d['overlap_refined']:>12}  (n={n})")
     print(f"\n  Saved to: {OUT_DIR}")
 
 
