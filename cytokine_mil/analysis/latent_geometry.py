@@ -650,7 +650,7 @@ def test_directional_significance(
     p_fwd_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_fwd.items()}
     p_rev_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_rev.items()}
 
-    # Per-pair min p across cell types.
+    # Per-pair min Bonferroni p across cell types.
     pair_min_fwd: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
     pair_min_rev: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
     pair_argmin_fwd: Dict[Tuple[str, str], Optional[str]] = defaultdict(lambda: None)
@@ -662,7 +662,7 @@ def test_directional_significance(
         if p < pair_min_rev[(a, b)]:
             pair_min_rev[(a, b)] = p
 
-    # BH-FDR across ordered pairs.
+    # BH-FDR across ordered pairs (retained for reference / backwards-compat).
     pair_keys = sorted(pair_min_fwd.keys())
     if pair_keys:
         q_fwd_list = _bh_correction([pair_min_fwd[k] for k in pair_keys])
@@ -676,12 +676,14 @@ def test_directional_significance(
     else:
         q_pair_rev = {}
 
-    # Cascade calls.
+    # Cascade calls use Bonferroni-only threshold (no BH across pairs).
+    # BH is too conservative with n~10 donors; all pairs collapse to "none".
+    # The per-pair Bonferroni-corrected min p is the primary ranking score.
     cascade_call: Dict[Tuple[str, str], str] = {}
     relay_T: Dict[Tuple[str, str], Optional[str]] = {}
-    for (a, b) in q_pair_fwd:
-        fwd_sig = q_pair_fwd.get((a, b), 1.0) <= alpha
-        rev_sig = q_pair_rev.get((b, a), 1.0) <= alpha
+    for (a, b) in pair_min_fwd:
+        fwd_sig = pair_min_fwd[(a, b)] <= alpha
+        rev_sig = pair_min_rev.get((b, a), 1.0) <= alpha
         if fwd_sig and not rev_sig:
             cascade_call[(a, b)] = "A->B"
         elif rev_sig and not fwd_sig:
@@ -697,6 +699,8 @@ def test_directional_significance(
         "p_rev": p_rev,
         "p_fwd_bonf": p_fwd_bonf,
         "p_rev_bonf": p_rev_bonf,
+        "p_pair_fwd": dict(pair_min_fwd),
+        "p_pair_rev": dict(pair_min_rev),
         "q_pair_fwd": q_pair_fwd,
         "q_pair_rev": q_pair_rev,
         "b_fwd": b_fwd,
@@ -708,8 +712,9 @@ def test_directional_significance(
         "metric_description": (
             "Two independent one-sided Wilcoxon signed-rank tests on per-donor "
             "µ_{A,T}^{(d)} · û_{A→B} (forward) and µ_{B,T}^{(d)} · û_{B→A} (reverse) "
-            f"in PBS-RC space; Bonferroni across {n_cell_types} cell types, "
-            f"BH-FDR across ordered pairs at alpha={alpha}."
+            f"in PBS-RC space; Bonferroni across {n_cell_types} cell types per pair. "
+            f"Cascade call: Bonferroni p_pair <= alpha={alpha} (no BH across pairs). "
+            f"Continuous ranking score: -log10(p_pair_fwd)."
         ),
     }
 

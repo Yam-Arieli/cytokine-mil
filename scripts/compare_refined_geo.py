@@ -85,18 +85,30 @@ def _legacy_vector(data: dict, pbs_label="PBS"):
 
 def _refined_vector(data: dict, pbs_label="PBS"):
     """
-    -log10(q_pair_fwd) per ordered pair → (pairs, values).
-    Uses the same pair order as legacy so cross-method comparison is aligned.
+    -log10(min_T p_fwd_bonf) per ordered pair → (pairs, values).
+
+    Bonferroni-corrected per-cell-type p-values are already stored in the pkl;
+    we derive the per-pair min without rerunning the model or BH correction.
+    This avoids the over-correction that collapsed all q_pair_fwd values to 1.0.
     """
     if data.get("refined") is None:
         return None, None
-    sig      = data["refined"]["significance"]
-    q_fwd    = sig["q_pair_fwd"]   # {(A, B) -> BH-adjusted p}
+    sig = data["refined"]["significance"]
 
-    asym   = data["asymmetry"]
-    names  = asym["cytokine_names"]
-    K      = len(names)
-    pbs    = next((i for i, n in enumerate(names) if n == pbs_label), None)
+    asym  = data["asymmetry"]
+    names = asym["cytokine_names"]
+    K     = len(names)
+    pbs   = next((i for i, n in enumerate(names) if n == pbs_label), None)
+
+    # p_fwd_bonf is keyed by (A, B, ct); compute per-pair minimum.
+    # Also accept p_pair_fwd if already stored (new pkl format).
+    p_pair = sig.get("p_pair_fwd")
+    if p_pair is None:
+        p_fwd_bonf = sig.get("p_fwd_bonf", {})
+        p_pair = {}
+        for (a, b, ct), p in p_fwd_bonf.items():
+            if p < p_pair.get((a, b), 1.0):
+                p_pair[(a, b)] = p
 
     pairs, vals = [], []
     for a in range(K):
@@ -106,16 +118,47 @@ def _refined_vector(data: dict, pbs_label="PBS"):
             if pbs is not None and (a == pbs or b == pbs):
                 continue
             pair = (names[a], names[b])
-            q    = q_fwd.get(pair, 1.0)
+            p    = p_pair.get(pair, 1.0)
             pairs.append(pair)
-            vals.append(-np.log10(max(q, 1e-300)))
+            vals.append(-np.log10(max(p, 1e-300)))
     return pairs, np.array(vals)
 
 
-def _cascade_call(data: dict):
+def _refined_cascade_bonf(data: dict, alpha: float = 0.05):
+    """
+    Derive Bonferroni-only cascade calls from stored p_fwd_bonf/p_rev_bonf.
+    Does NOT apply BH across pairs — this is the corrected scoring.
+    """
     if data.get("refined") is None:
         return {}
-    return data["refined"]["significance"].get("cascade_call", {})
+    sig = data["refined"]["significance"]
+
+    p_fwd_bonf = sig.get("p_fwd_bonf", {})
+    p_rev_bonf = sig.get("p_rev_bonf", {})
+
+    pair_min_fwd: dict = {}
+    pair_min_rev: dict = {}
+    for (a, b, ct), p in p_fwd_bonf.items():
+        if p < pair_min_fwd.get((a, b), 1.0):
+            pair_min_fwd[(a, b)] = p
+    for (a, b, ct), p in p_rev_bonf.items():
+        if p < pair_min_rev.get((a, b), 1.0):
+            pair_min_rev[(a, b)] = p
+
+    cascade_call = {}
+    for (a, b) in pair_min_fwd:
+        fwd_sig = pair_min_fwd[(a, b)] <= alpha
+        rev_sig = pair_min_rev.get((b, a), 1.0) <= alpha
+        if fwd_sig and not rev_sig:
+            cascade_call[(a, b)] = "A->B"
+        elif rev_sig and not fwd_sig:
+            cascade_call[(a, b)] = "B->A"
+        elif fwd_sig and rev_sig:
+            cascade_call[(a, b)] = "shared"
+        else:
+            cascade_call[(a, b)] = "none"
+    return cascade_call
+
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +206,7 @@ def _analyze_batch(seed_map: dict, batch_name: str):
             pairs_ref = lpairs
         per_seed_legacy[seed]  = lvals
         per_seed_refined[seed] = rvals
-        per_seed_calls[seed]   = _cascade_call(data)
+        per_seed_calls[seed]   = _refined_cascade_bonf(data)
 
     if not per_seed_legacy:
         print(f"  No valid seeds found for {batch_name}")
@@ -347,8 +390,8 @@ def _plot_scatter(cross, out_dir: Path):
          f"Legacy asymmetry — ρ={cross['rho_legacy']:.3f}",
          "Batch 0 asymmetry score", "Batch 1 asymmetry score"),
         (axes[1], r0, r1, cross["rho_refined"],
-         f"Refined Wilcoxon (−log₁₀ q) — ρ={cross['rho_refined']:.3f}",
-         "Batch 0  −log₁₀(q_fwd)", "Batch 1  −log₁₀(q_fwd)"),
+         f"Refined Wilcoxon (−log₁₀ p_bonf) — ρ={cross['rho_refined']:.3f}",
+         "Batch 0  −log₁₀(p_bonf_fwd)", "Batch 1  −log₁₀(p_bonf_fwd)"),
     ]:
         ax.scatter(x, y, s=4, alpha=0.3, color="#4878d0")
         mn, mx = min(x.min(), y.min()), max(x.max(), y.max())
