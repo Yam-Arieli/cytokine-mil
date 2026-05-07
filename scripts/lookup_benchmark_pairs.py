@@ -34,7 +34,7 @@ BENCHMARK_PAIRS = [
     # New benchmark pairs
     ("IL-1beta",  "IL-6",      "monocyte cascade",          "HIGH",   "A->B"),
     ("TNF-alpha", "IL-6",      "monocyte cascade",          "HIGH",   "A->B"),
-    ("IL-32",     "TNF-alpha", "monocyte cascade",          "HIGH",   "A->B"),
+    ("IL-32-beta","TNF-alpha", "monocyte cascade",          "HIGH",   "A->B"),
     ("IL-15",     "IFN-gamma", "NK cascade",                "HIGH",   "A->B"),
     ("IL-18",     "IFN-gamma", "NK cascade (synergy)",      "HIGH",   "A->B"),
     ("IFN-gamma", "IL-12",     "positive feedback",         "HIGH",   "A->B"),
