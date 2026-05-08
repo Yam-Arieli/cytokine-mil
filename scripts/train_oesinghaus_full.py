@@ -28,6 +28,7 @@ import json
 import os
 import pickle
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -35,8 +36,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import scanpy as sc
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from cytokine_mil.data.dataset import CellDataset, PseudoTubeDataset
 from cytokine_mil.data.label_encoder import CytokineLabel
@@ -67,10 +70,13 @@ ATTENTION_HIDDEN_DIM = 64
 STAGE1_EPOCHS        = 50
 STAGE1_LR            = 0.01
 STAGE1_MOMENTUM      = 0.9
-STAGE2_EPOCHS        = 100
-STAGE2_LR            = 0.01
+# Stage 2 = short frozen-encoder warmup (Stage 2a in the cascade plan).
+# Use a small LR so the attention/FCN settle without disturbing the encoder.
+STAGE2_EPOCHS        = 20
+STAGE2_LR            = 0.001   # small LR — keeps centroid trajectories smooth
 STAGE2_MOMENTUM      = 0.9
 LOG_EVERY            = 1
+CENTROID_LOG_EVERY   = 10      # save centroid snapshots every N epochs
 SEED                 = 42
 
 
@@ -112,10 +118,15 @@ def _parse_args():
     p.add_argument("--embed_dim",      type=int,   default=EMBED_DIM)
     p.add_argument("--attention_hidden_dim", type=int, default=ATTENTION_HIDDEN_DIM)
     p.add_argument("--log_every",      type=int,   default=LOG_EVERY)
+    p.add_argument("--centroid_log_every", type=int, default=CENTROID_LOG_EVERY,
+                   help="Log centroid snapshots every N epochs during Stage 2/3 "
+                        "(for cascade trajectory analysis). Default: 10.")
     p.add_argument("--checkpoint_epochs", type=str, default=None,
                    help="Comma-separated Stage 2 checkpoint epochs, e.g. '25,50,75,100'")
     p.add_argument("--stage3_epochs",  type=int,   default=0,
-                   help="Stage 3 epochs (unfrozen encoder). 0 = skip Stage 3.")
+                   help="Stage 3 epochs (unfrozen encoder, full fine-tuning = Stage 2b "
+                        "in the cascade plan). 0 = skip. Recommend 100. "
+                        "Uses same --lr as Stage 2 (small LR = smooth centroid trajectories).")
     p.add_argument("--encoder_lr_factor", type=float, default=0.1,
                    help="Encoder LR multiplier for Stage 3 (default 0.1 = 10x lower than MIL head).")
     p.add_argument("--stage3_lr", type=float, default=None,
@@ -128,6 +139,74 @@ def _parse_args():
     p.add_argument("--stage3_only", action="store_true",
                    help="Skip Stage 1+2; load model_stage2.pt from --output_dir and run Stage 3 only.")
     return p.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Centroid precomputation helpers
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def _precompute_cell_type_obs_and_pbs_means(
+    train_entries, encoder, gene_names, device, log
+):
+    """
+    Preload cell-type labels for all training tubes and compute per-cell-type
+    PBS mean embeddings using the Stage 1 encoder.
+
+    Args:
+        train_entries: list of manifest entry dicts (train split).
+        encoder: Stage 1 InstanceEncoder (trained, eval mode).
+        gene_names: list of HVG names (used for gene subsetting).
+        device: torch.device.
+        log: logging function.
+
+    Returns:
+        cell_type_obs: Dict[int, List[str]] — tube index -> list of cell-type strings.
+        pbs_ct_means: Dict[str, np.ndarray] — cell_type -> mean PBS embedding (embed_dim,).
+    """
+    encoder.eval()
+    encoder.to(device)
+
+    cell_type_obs = {}
+    pbs_sums = defaultdict(lambda: None)  # will be initialized on first use
+    pbs_counts = defaultdict(float)
+
+    for idx, entry in enumerate(tqdm(train_entries, desc="Preloading cell_types + PBS means")):
+        adata = sc.read_h5ad(entry["path"])
+        if gene_names is not None:
+            try:
+                adata = adata[:, gene_names]
+            except Exception:
+                pass
+
+        ct_labels = (
+            adata.obs["cell_type"].values.tolist()
+            if "cell_type" in adata.obs.columns
+            else ["unknown"] * len(adata)
+        )
+        cell_type_obs[idx] = ct_labels
+
+        if entry["cytokine"] == "PBS":
+            X_np = adata.X
+            if hasattr(X_np, "toarray"):
+                X_np = X_np.toarray()
+            X_t = torch.FloatTensor(np.asarray(X_np, dtype=np.float32)).to(device)
+            H = encoder(X_t).cpu().numpy().astype(np.float64)  # (N_cells, D)
+            for i, ct in enumerate(ct_labels):
+                ct_str = str(ct)
+                if pbs_sums[ct_str] is None:
+                    pbs_sums[ct_str] = np.zeros(H.shape[1], dtype=np.float64)
+                pbs_sums[ct_str] += H[i]
+                pbs_counts[ct_str] += 1.0
+
+    pbs_ct_means = {
+        ct: pbs_sums[ct] / pbs_counts[ct]
+        for ct in pbs_sums
+        if pbs_sums[ct] is not None and pbs_counts[ct] > 0
+    }
+    log(f"  cell_type_obs: {len(cell_type_obs)} training tubes")
+    log(f"  pbs_ct_means: {len(pbs_ct_means)} cell types from PBS training tubes")
+    return cell_type_obs, pbs_ct_means
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +315,55 @@ def main():
         # dynamics is not re-computed for Stage 2 in this mode — use existing dynamics.pkl
         dynamics = None
 
+        # Load pbs_ct_means from prior run; recompute cell_type_obs from train manifest.
+        pbs_ct_means_path = out_dir / "pbs_ct_means.pkl"
+        if pbs_ct_means_path.exists():
+            with open(pbs_ct_means_path, "rb") as fh:
+                pbs_ct_means = pickle.load(fh)
+            log(f"  Loaded pbs_ct_means from {pbs_ct_means_path} "
+                f"({len(pbs_ct_means)} cell types)")
+        else:
+            log("  pbs_ct_means.pkl not found — computing from encoder and PBS training tubes.")
+            pbs_ct_means = {}
+
+        log("  Precomputing cell_type_obs from training manifest...")
+        cell_type_obs = {}
+        _pbs_sums: dict = {}
+        _pbs_counts: dict = {}
+        model.encoder.eval()
+        model.encoder.to(device)
+        for idx, entry in enumerate(tqdm(train_manifest, desc="Loading cell_types (stage3_only)")):
+            adata = sc.read_h5ad(entry["path"])
+            ct_labels = (
+                adata.obs["cell_type"].values.tolist()
+                if "cell_type" in adata.obs.columns
+                else ["unknown"] * len(adata)
+            )
+            cell_type_obs[idx] = ct_labels
+            if not pbs_ct_means and entry["cytokine"] == "PBS":
+                adata_g = adata[:, gene_names] if gene_names is not None else adata
+                X_np = adata_g.X
+                if hasattr(X_np, "toarray"):
+                    X_np = X_np.toarray()
+                with torch.no_grad():
+                    H = model.encoder(
+                        torch.FloatTensor(np.asarray(X_np, dtype=np.float32)).to(device)
+                    ).cpu().numpy().astype(np.float64)
+                for i, ct in enumerate(ct_labels):
+                    ct_str = str(ct)
+                    if ct_str not in _pbs_sums:
+                        _pbs_sums[ct_str] = np.zeros(H.shape[1], dtype=np.float64)
+                        _pbs_counts[ct_str] = 0
+                    _pbs_sums[ct_str] += H[i]
+                    _pbs_counts[ct_str] += 1
+        if not pbs_ct_means and _pbs_sums:
+            pbs_ct_means = {
+                ct: _pbs_sums[ct] / _pbs_counts[ct]
+                for ct in _pbs_sums if _pbs_counts[ct] > 0
+            }
+            log(f"  Recomputed pbs_ct_means: {len(pbs_ct_means)} cell types")
+        log(f"  cell_type_obs: {len(cell_type_obs)} tubes")
+
     else:
         # ------------------------------------------------------------------
         # Stage 1: Encoder pre-training
@@ -273,6 +401,22 @@ def main():
         log("  Saved: encoder_stage1.pt")
 
         # ------------------------------------------------------------------
+        # Precompute cell-type labels and PBS centroids for centroid logging
+        # ------------------------------------------------------------------
+        log("\nPrecomputing cell_type_obs and PBS centroids (Stage 2a→2b setup)...")
+        log("  Using Stage 1 encoder on training PBS tubes for PBS centroid means.")
+
+        # train_entries must match the ordering of train_dataset.get_entries().
+        # We build them here from the train_manifest before constructing the dataset.
+        _tmp_train_entries = train_manifest  # same list that PseudoTubeDataset will use
+        cell_type_obs, pbs_ct_means = _precompute_cell_type_obs_and_pbs_means(
+            _tmp_train_entries, encoder, gene_names, device, log
+        )
+        with open(out_dir / "pbs_ct_means.pkl", "wb") as fh:
+            pickle.dump(pbs_ct_means, fh)
+        log("  Saved: pbs_ct_means.pkl")
+
+        # ------------------------------------------------------------------
         # Stage 2: MIL training (frozen encoder)
         # ------------------------------------------------------------------
         log("\n" + "=" * 60)
@@ -295,7 +439,9 @@ def main():
         )
         log(f"  Model: embed_dim={args.embed_dim}, attn_hidden={args.attention_hidden_dim}, "
             f"n_classes={label_enc.n_classes()}")
-        log(f"  Stage 2: {args.stage2_epochs} epochs, lr={args.lr}, log_every={args.log_every}")
+        log(f"  Stage 2 (frozen warmup / Stage 2a): {args.stage2_epochs} epochs, "
+            f"lr={args.lr} (small LR — smooth centroid trajectories), log_every={args.log_every}")
+        log(f"  Centroid snapshots every {args.centroid_log_every} epochs")
 
         ckpt_epochs = None
         ckpt_dir    = None
@@ -303,7 +449,6 @@ def main():
             ckpt_epochs = [int(e) for e in args.checkpoint_epochs.split(",")]
             ckpt_dir    = str(out_dir / "checkpoints")
             log(f"  Checkpoints at epochs: {ckpt_epochs}  → {ckpt_dir}")
-
         dynamics = train_mil(
             model,
             train_dataset,
@@ -317,6 +462,9 @@ def main():
             val_dataset=val_dataset,
             checkpoint_dir=ckpt_dir,
             checkpoint_epochs=ckpt_epochs,
+            cell_type_obs=cell_type_obs,
+            pbs_ct_means=pbs_ct_means,
+            centroid_log_every_n_epochs=args.centroid_log_every,
         )
 
         torch.save(model.state_dict(), out_dir / "model_stage2.pt")
@@ -341,8 +489,11 @@ def main():
             log(f"  Checkpoints at {len(s3_ckpt_epochs)} epochs → {s3_ckpt_dir}")
 
         s3_lr = args.stage3_lr if args.stage3_lr is not None else args.lr
+        log(f"  Stage 3 (full fine-tuning / Stage 2b): {args.stage3_epochs} epochs")
         log(f"  Stage 3 LR: head={s3_lr:.4f}, encoder={s3_lr * args.encoder_lr_factor:.5f}")
         log(f"  LR warmup: {args.stage3_warmup} epochs, grad clip max_norm=5.0")
+        log(f"  Centroid snapshots every {args.centroid_log_every} epochs "
+            f"→ centroid trajectory for cascade detection")
 
         dynamics_s3 = train_mil(
             model,
@@ -359,6 +510,9 @@ def main():
             val_dataset=val_dataset,
             checkpoint_dir=s3_ckpt_dir,
             checkpoint_epochs=s3_ckpt_epochs,
+            cell_type_obs=cell_type_obs,
+            pbs_ct_means=pbs_ct_means,
+            centroid_log_every_n_epochs=args.centroid_log_every,
         )
 
         torch.save(model.state_dict(), out_dir / "model_stage3.pt")
@@ -371,6 +525,8 @@ def main():
             "confusion_entropy_trajectory":     dynamics_s3["confusion_entropy_trajectory"],
             "val_confusion_entropy_trajectory": dynamics_s3["val_confusion_entropy_trajectory"],
             "loss_components":                  dynamics_s3["loss_components"],
+            "centroid_trajectory":              dynamics_s3["centroid_trajectory"],
+            "centroid_logged_epochs":           dynamics_s3["centroid_logged_epochs"],
             "label_encoder_cytokines":          list(label_enc.cytokines),
             "seed":                             args.seed,
             "val_donors":                       VAL_DONORS,
@@ -381,6 +537,9 @@ def main():
         with open(out_dir / "dynamics_stage3.pkl", "wb") as fh:
             pickle.dump(s3_payload, fh)
         log("  Saved: dynamics_stage3.pkl")
+        n_snaps = len(dynamics_s3["centroid_trajectory"])
+        log(f"  centroid_trajectory: {n_snaps} snapshots at epochs "
+            f"{dynamics_s3['centroid_logged_epochs']}")
 
         _plot_loss_curve(
             dynamics_s3["loss_components"], dynamics_s3["logged_epochs"],
@@ -401,6 +560,8 @@ def main():
             "confusion_entropy_trajectory": dynamics["confusion_entropy_trajectory"],
             "val_confusion_entropy_trajectory": dynamics["val_confusion_entropy_trajectory"],
             "loss_components":              dynamics["loss_components"],
+            "centroid_trajectory":          dynamics["centroid_trajectory"],
+            "centroid_logged_epochs":       dynamics["centroid_logged_epochs"],
             "label_encoder_cytokines":      list(label_enc.cytokines),
             "seed":                         args.seed,
             "val_donors":                   VAL_DONORS,

@@ -42,6 +42,9 @@ def train_mil(
     aux_loss_weight: float = 0.0,
     checkpoint_dir: Optional[str] = None,
     checkpoint_epochs: Optional[List[int]] = None,
+    cell_type_obs: Optional[Dict[int, List[str]]] = None,
+    pbs_ct_means: Optional[Dict[str, np.ndarray]] = None,
+    centroid_log_every_n_epochs: int = 10,
 ) -> Dict:
     """
     Train the CytokineABMIL model and record dynamics trajectories.
@@ -66,6 +69,17 @@ def train_mil(
         val_dataset: Optional held-out donor dataset for validation logging.
         kl_lambda: Weight for KL(a_CA || a_SA) regularization term (v2 only).
         aux_loss_weight: Weight for auxiliary SA and CA classification losses (v2 only).
+        cell_type_obs: Optional dict mapping tube-index (same ordering as
+            dataset.get_entries()) to a list of cell-type strings (one per
+            cell). When provided together with pbs_ct_means, centroid
+            snapshots are computed in PBS-RC space at every
+            centroid_log_every_n_epochs step.
+        pbs_ct_means: Optional dict mapping cell-type name to the per-cell-
+            type PBS mean embedding (np.ndarray, shape (embed_dim,)).
+            Used to compute h̃_i = h_i - µ_{PBS,τ(i)} before centroid
+            accumulation.
+        centroid_log_every_n_epochs: Centroid snapshots are added at every
+            Nth dynamics-log step. Must be >= log_every_n_epochs. Default 10.
     Returns:
         dynamics: dict with keys:
             'logged_epochs': list of epoch indices where dynamics were recorded.
@@ -90,6 +104,13 @@ def train_mil(
                 'sa_aux': SA auxiliary classification loss (v2 only, else []).
                 'ca_aux': CA auxiliary classification loss (v2 only, else []).
                 'kl': KL(a_CA || a_SA) loss (v2 only, else []).
+            'centroid_trajectory': list of centroid snapshots, one per centroid
+                log step. Each snapshot is a dict mapping
+                (cytokine, cell_type, donor) -> np.ndarray of shape (embed_dim,)
+                representing the mean PBS-RC embedding of that cell-type
+                subpopulation. Empty list if cell_type_obs or pbs_ct_means is None.
+            'centroid_logged_epochs': list of epoch indices at which centroid
+                snapshots were recorded. Empty list if not logging centroids.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -122,6 +143,10 @@ def train_mil(
         "total": [], "main": [], "sa_aux": [], "ca_aux": [], "kl": []
     }
 
+    _do_centroids = cell_type_obs is not None and pbs_ct_means is not None
+    centroid_trajectory: List[Dict] = []
+    centroid_logged_epochs: List[int] = []
+
     for epoch in range(1, n_epochs + 1):
         # Apply LR warmup BEFORE training each epoch so epoch 1 starts
         # at a small LR (scale = 1/warmup_epochs), not the full LR.
@@ -144,9 +169,14 @@ def train_mil(
             scheduler.step()
 
         if epoch % log_every_n_epochs == 0 or epoch == n_epochs:
-            _log_dynamics(
+            snap_centroids_now = _do_centroids and (
+                epoch % centroid_log_every_n_epochs == 0 or epoch == n_epochs
+            )
+            centroid_snap = _log_dynamics(
                 model, dataset, entries, tube_trajectories,
                 cytokine_confusion_epochs, dataset.label_encoder, device,
+                cell_type_obs=cell_type_obs if snap_centroids_now else None,
+                pbs_ct_means=pbs_ct_means if snap_centroids_now else None,
             )
             if val_dataset is not None:
                 _log_dynamics(
@@ -154,6 +184,9 @@ def train_mil(
                     val_cytokine_confusion_epochs, val_dataset.label_encoder, device,
                 )
             logged_epochs.append(epoch)
+            if centroid_snap is not None:
+                centroid_trajectory.append(centroid_snap)
+                centroid_logged_epochs.append(epoch)
 
         # Save checkpoint if requested
         if _ckpt_dir is not None and epoch in _ckpt_epochs:
@@ -183,6 +216,8 @@ def train_mil(
         "val_records": val_records,
         "val_confusion_entropy_trajectory": val_confusion_traj,
         "loss_components": loss_components,
+        "centroid_trajectory": centroid_trajectory,
+        "centroid_logged_epochs": centroid_logged_epochs,
     }
 
 
@@ -349,7 +384,9 @@ def _log_dynamics(
     cytokine_confusion_epochs: Dict[str, List[float]],
     label_encoder,
     device: torch.device,
-) -> None:
+    cell_type_obs: Optional[Dict[int, List[str]]] = None,
+    pbs_ct_means: Optional[Dict[str, np.ndarray]] = None,
+) -> Optional[Dict]:
     """
     Evaluate all tubes and append one snapshot to each tube's trajectory.
 
@@ -367,17 +404,24 @@ def _log_dynamics(
       - confusion_entropy_trajectory: H_confusion computed from mean off-diagonal
         softmax across all tubes of that cytokine.
 
+    When cell_type_obs and pbs_ct_means are provided, also accumulates per-
+    (cytokine, cell_type, donor) mean embeddings in PBS-RC space and returns
+    them as a centroid snapshot dict. Returns None otherwise.
+
     Runs in eval mode with no_grad to avoid memory accumulation.
     """
     model.eval()
     is_v2 = isinstance(model, CytokineABMIL_V2)
+    do_centroids = cell_type_obs is not None and pbs_ct_means is not None
+    ct_sums: Dict = {}
+    ct_counts: Dict = {}
 
     for idx, entry in enumerate(entries):
         X, label, _donor, _cyt_name = dataset[idx]
         X = X.to(device)
 
         if is_v2:
-            y_hat, a_SA, a_CA, _H = model(X)
+            y_hat, a_SA, a_CA, H = model(X)
             probs = F.softmax(y_hat, dim=0)
             p_correct = probs[label].item()
             # SA entropy and CA entropy tracked independently.
@@ -387,7 +431,7 @@ def _log_dynamics(
             instance_conf_sa = instance_conf  # same as above; explicit for clarity
             instance_conf_ca = (a_CA * p_correct).cpu().numpy()
         else:
-            y_hat, a, _H = model(X)
+            y_hat, a, H = model(X)
             probs = F.softmax(y_hat, dim=0)
             p_correct = probs[label].item()
             entropy = _compute_entropy(a)
@@ -404,9 +448,33 @@ def _log_dynamics(
             traj["instance_confidence_sa_epochs"].append(instance_conf_sa)
             traj["instance_confidence_ca_epochs"].append(instance_conf_ca)
 
+        if do_centroids:
+            ct_labels = cell_type_obs.get(idx, [])
+            if ct_labels:
+                H_np = H.cpu().numpy().astype(np.float64)  # (N_cells, embed_dim)
+                cytokine = entry["cytokine"]
+                donor = entry["donor"]
+                for i, ct in enumerate(ct_labels):
+                    ct_str = str(ct)
+                    pbs_mean = pbs_ct_means.get(ct_str)
+                    h_tilde = H_np[i] - pbs_mean if pbs_mean is not None else H_np[i]
+                    key = (cytokine, ct_str, donor)
+                    if key not in ct_sums:
+                        ct_sums[key] = np.zeros(H_np.shape[1], dtype=np.float64)
+                        ct_counts[key] = 0
+                    ct_sums[key] += h_tilde
+                    ct_counts[key] += 1
+
     _compute_confusion_entropy_snapshot(
         entries, tube_trajectories, label_encoder, cytokine_confusion_epochs
     )
+
+    if do_centroids:
+        return {
+            key: ct_sums[key] / ct_counts[key]
+            for key in ct_sums if ct_counts[key] > 0
+        }
+    return None
 
 
 def _compute_confusion_entropy_snapshot(

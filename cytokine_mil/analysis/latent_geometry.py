@@ -1374,3 +1374,323 @@ def _bh_correction(p_values: List[float]) -> List[float]:
     q_values = np.empty(m)
     q_values[order] = bh_vals
     return list(q_values)
+
+
+# ---------------------------------------------------------------------------
+# Centroid trajectory analysis (encoder fine-tuning dynamics)
+# ---------------------------------------------------------------------------
+
+def compute_trajectory_bias_per_donor(
+    centroid_trajectory: List[Dict],
+    centroid_logged_epochs: List[int],
+    label_encoder,
+    pbs_ct_means: Dict[str, np.ndarray],
+    train_donors: Optional[List[str]] = None,
+    direction_mode: str = "global",
+) -> Dict:
+    """
+    Compute per-donor directional bias trajectory from centroid snapshots.
+
+    For each ordered pair (A, B), cell type T, and training donor d, at each
+    logged epoch t, computes:
+
+        b_fwd^{(d)}(A→B, T, t) = (µ̃_{A,T}^{(d)}(t) − µ̃_A(t)) · û_{A→B}(t)
+
+    where µ̃ denotes a mean embedding in PBS-RC space, µ̃_A(t) is the pooled
+    training-donor centroid of cytokine A at epoch t, and û_{A→B}(t) is the
+    unit direction from A to B at epoch t.
+
+    Args:
+        centroid_trajectory: List of centroid snapshots (one per logged epoch).
+            Each snapshot is a dict mapping (cytokine, cell_type, donor) ->
+            np.ndarray of shape (embed_dim,), as returned by train_mil().
+        centroid_logged_epochs: List of epoch indices matching centroid_trajectory.
+        label_encoder: CytokineLabel with .cytokines.
+        pbs_ct_means: Not used in computation (kept for API consistency). The
+            PBS-RC transform is already applied inside the centroid snapshots.
+        train_donors: If provided, only include these donors in the analysis.
+        direction_mode: 'global' uses per-epoch global direction û_{A→B};
+            'cell_type' uses per-cell-type direction µ̂_{B,T} at each epoch.
+
+    Returns:
+        dict with keys:
+            'b_fwd_trajectory': {(A, B, T, d) -> np.ndarray shape (n_epochs,)}
+                forward bias per ordered pair, cell type, donor over epochs.
+            'centroids_trajectory': {(cyt, epoch_idx) -> np.ndarray (embed_dim,)}
+                pooled-donor PBS-RC centroids per cytokine at each logged epoch.
+            'logged_epochs': list of epoch indices.
+            'donors': list of training donor names seen in data.
+            'cytokine_names': list of cytokine names from label_encoder.
+            'cell_types': sorted list of cell types seen across all snapshots.
+            'metric_description': str.
+    """
+    cytokine_names = list(label_encoder.cytokines)
+    n_epochs = len(centroid_trajectory)
+    if n_epochs == 0:
+        return {
+            "b_fwd_trajectory": {},
+            "centroids_trajectory": {},
+            "logged_epochs": [],
+            "donors": [],
+            "cytokine_names": cytokine_names,
+            "cell_types": [],
+            "metric_description": "Empty centroid_trajectory.",
+        }
+
+    # Collect all donors and cell types across all snapshots.
+    all_donors: set = set()
+    all_cell_types: set = set()
+    for snap in centroid_trajectory:
+        for (cyt, ct, donor) in snap:
+            all_donors.add(donor)
+            all_cell_types.add(ct)
+
+    if train_donors is not None:
+        donors = [d for d in sorted(all_donors) if d in set(train_donors)]
+    else:
+        donors = sorted(all_donors)
+
+    cell_types = sorted(all_cell_types)
+
+    # Per-epoch pooled cytokine centroids: µ̃_C(t) = mean over donors and cell types.
+    # Key: (cytokine, epoch_idx)
+    centroids_traj: Dict[Tuple[str, int], np.ndarray] = {}
+    for t_idx, snap in enumerate(centroid_trajectory):
+        cyt_sums: Dict[str, np.ndarray] = {}
+        cyt_counts: Dict[str, int] = {}
+        for (cyt, ct, donor), vec in snap.items():
+            if donor not in set(donors):
+                continue
+            if cyt not in cyt_sums:
+                cyt_sums[cyt] = np.zeros_like(vec, dtype=np.float64)
+                cyt_counts[cyt] = 0
+            cyt_sums[cyt] += vec.astype(np.float64)
+            cyt_counts[cyt] += 1
+        for cyt, s in cyt_sums.items():
+            centroids_traj[(cyt, t_idx)] = s / cyt_counts[cyt]
+
+    # Per-epoch per-donor per-cell-type centroids: µ̃_{A,T}^{(d)}(t)
+    # Directly from snapshot — already PBS-RC transformed.
+    # Compute b_fwd for all (A, B, T, d) combos across epochs.
+    # b_fwd_trajectory[(A, B, T, d)] = list of bias values (length n_epochs)
+    b_fwd_partial: Dict[Tuple[str, str, str, str], List[float]] = defaultdict(list)
+
+    for t_idx, snap in enumerate(centroid_trajectory):
+        # Build unit direction vectors for this epoch.
+        if direction_mode == "global":
+            unit_dirs_t_epoch: Dict[Tuple[str, str], Optional[np.ndarray]] = {}
+            for a in cytokine_names:
+                mu_a_t = centroids_traj.get((a, t_idx))
+                for b in cytokine_names:
+                    if a == b:
+                        continue
+                    mu_b_t = centroids_traj.get((b, t_idx))
+                    if mu_a_t is None or mu_b_t is None:
+                        unit_dirs_t_epoch[(a, b)] = None
+                        continue
+                    diff = mu_b_t - mu_a_t
+                    norm = np.linalg.norm(diff)
+                    unit_dirs_t_epoch[(a, b)] = diff / norm if norm > 1e-12 else None
+        else:
+            # cell_type mode: direction for (B, T) = normalised µ̃_{B,T}^{(d)} averaged over donors
+            ct_dirs: Dict[Tuple[str, str], Optional[np.ndarray]] = {}
+            for b in cytokine_names:
+                for ct in cell_types:
+                    vecs = [
+                        snap[(b, ct, d)].astype(np.float64)
+                        for d in donors
+                        if (b, ct, d) in snap
+                    ]
+                    if not vecs:
+                        ct_dirs[(b, ct)] = None
+                        continue
+                    mean_v = np.mean(vecs, axis=0)
+                    norm = np.linalg.norm(mean_v)
+                    ct_dirs[(b, ct)] = mean_v / norm if norm > 1e-12 else None
+
+        for a in cytokine_names:
+            mu_a_t = centroids_traj.get((a, t_idx))
+            for b in cytokine_names:
+                if a == b:
+                    continue
+                for ct in cell_types:
+                    if direction_mode == "global":
+                        u_ab = unit_dirs_t_epoch.get((a, b))
+                    else:
+                        u_ab = ct_dirs.get((b, ct))
+                    if u_ab is None:
+                        continue
+                    for d in donors:
+                        mu_at_d = snap.get((a, ct, d))
+                        if mu_at_d is None:
+                            continue
+                        vec = mu_at_d.astype(np.float64)
+                        if mu_a_t is not None:
+                            vec = vec - mu_a_t
+                        b_fwd_partial[(a, b, ct, d)].append(float(np.dot(vec, u_ab)))
+
+    # Convert to arrays, keeping only keys with a value at every epoch.
+    b_fwd_trajectory: Dict[Tuple[str, str, str, str], np.ndarray] = {
+        key: np.array(vals, dtype=np.float64)
+        for key, vals in b_fwd_partial.items()
+        if len(vals) == n_epochs
+    }
+
+    return {
+        "b_fwd_trajectory": b_fwd_trajectory,
+        "centroids_trajectory": centroids_traj,
+        "logged_epochs": list(centroid_logged_epochs),
+        "donors": donors,
+        "cytokine_names": cytokine_names,
+        "cell_types": cell_types,
+        "metric_description": (
+            "Directional bias trajectory: b_fwd^{(d)}(A→B,T,t) = "
+            "(µ̃_{A,T}^{(d)}(t) − µ̃_A(t)) · û_{A→B}(t) in PBS-RC space. "
+            f"Direction mode: {direction_mode}. "
+            f"n_epochs={n_epochs}, n_donors={len(donors)}, "
+            f"n_cell_types={len(cell_types)}."
+        ),
+    }
+
+
+def compute_trajectory_slope_per_donor(
+    b_fwd_trajectory: Dict[Tuple[str, str, str, str], np.ndarray],
+) -> Dict[Tuple[str, str, str], Dict[str, float]]:
+    """
+    Fit a linear slope to each per-donor bias trajectory.
+
+    For each (A, B, T, d), fits:
+        b_fwd^{(d)}(A→B, T, t) ~ slope_d * t + intercept
+
+    using ordinary least squares over the logged epoch indices (treated as
+    integer steps 0, 1, 2, ... regardless of actual epoch numbers).
+
+    Args:
+        b_fwd_trajectory: output of compute_trajectory_bias_per_donor()
+            ['b_fwd_trajectory']. Keys: (A, B, T, d), values: np.ndarray (n_epochs,).
+
+    Returns:
+        slopes: dict mapping (A, B, T) -> {donor -> slope (float)}.
+            Only donors present in b_fwd_trajectory for that (A,B,T) triple
+            are included. Donors with fewer than 2 epoch points are skipped.
+    """
+    slopes: Dict[Tuple[str, str, str], Dict[str, float]] = defaultdict(dict)
+
+    for (a, b, ct, d), vals in b_fwd_trajectory.items():
+        n = len(vals)
+        if n < 2:
+            continue
+        x = np.arange(n, dtype=np.float64)
+        # OLS slope: cov(x, y) / var(x)
+        x_mean = x.mean()
+        y_mean = vals.mean()
+        slope = float(np.dot(x - x_mean, vals - y_mean) / np.dot(x - x_mean, x - x_mean))
+        slopes[(a, b, ct)][d] = slope
+
+    return dict(slopes)
+
+
+def test_trajectory_slope_significance(
+    slopes: Dict[Tuple[str, str, str], Dict[str, float]],
+    label_encoder,
+    alpha: float = 0.05,
+) -> Dict:
+    """
+    Test whether the per-donor bias trajectory slope is significantly positive.
+
+    For each (A, B, T): one-sided Wilcoxon signed-rank test H1: median(slope) > 0
+    across training donors. Then Bonferroni correction across cell types per ordered
+    pair (relay identification), and BH-FDR across K(K-1) ordered pairs.
+
+    Args:
+        slopes: output of compute_trajectory_slope_per_donor().
+            Keys: (A, B, T), values: {donor -> slope}.
+        label_encoder: CytokineLabel with .cytokines.
+        alpha: significance threshold applied to Bonferroni-corrected p-values.
+
+    Returns:
+        dict with keys:
+            'p_slope': {(A, B, T) -> raw p-value}.
+            'p_slope_bonf': {(A, B, T) -> Bonferroni-corrected p-value}.
+            'p_pair_slope': {(A, B) -> min Bonferroni p across cell types}.
+            'q_pair_slope': {(A, B) -> BH-FDR corrected q-value}.
+            'relay_T_slope': {(A, B) -> cell type with min p (relay candidate)}.
+            'cascade_call_slope': {(A, B) -> 'A->B', 'B->A', 'shared', or 'none'}.
+            'slope_arrays': {(A, B, T) -> np.ndarray of donor slopes}.
+            'alpha': alpha used.
+            'metric_description': str.
+    """
+    try:
+        from scipy.stats import wilcoxon as scipy_wilcoxon
+        wilcoxon = scipy_wilcoxon
+    except ImportError:
+        raise ImportError("scipy is required for test_trajectory_slope_significance.")
+
+    cytokine_names = list(label_encoder.cytokines)
+    cell_types = sorted({ct for (_, _, ct) in slopes})
+    n_cell_types = max(len(cell_types), 1)
+
+    p_slope: Dict[Tuple[str, str, str], float] = {}
+    slope_arrays: Dict[Tuple[str, str, str], np.ndarray] = {}
+
+    for (a, b, ct), donor_slopes in slopes.items():
+        arr = np.array(list(donor_slopes.values()), dtype=np.float64)
+        if len(arr) < 2:
+            continue
+        slope_arrays[(a, b, ct)] = arr
+        p_slope[(a, b, ct)] = _one_sided_wilcoxon_greater(arr, wilcoxon)
+
+    # Bonferroni across cell types per ordered pair.
+    p_slope_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_slope.items()}
+
+    # Min Bonferroni p per ordered pair.
+    pair_min: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
+    pair_argmin: Dict[Tuple[str, str], Optional[str]] = defaultdict(lambda: None)
+    for (a, b, ct), p in p_slope_bonf.items():
+        if p < pair_min[(a, b)]:
+            pair_min[(a, b)] = p
+            pair_argmin[(a, b)] = ct
+
+    # BH-FDR across ordered pairs.
+    pair_keys = sorted(pair_min.keys())
+    if pair_keys:
+        q_list = _bh_correction([pair_min[k] for k in pair_keys])
+        q_pair_slope = {k: q for k, q in zip(pair_keys, q_list)}
+    else:
+        q_pair_slope = {}
+
+    # Cascade calls based on slope significance.
+    cascade_call_slope: Dict[Tuple[str, str], str] = {}
+    relay_T_slope: Dict[Tuple[str, str], Optional[str]] = {}
+    all_pairs = set(pair_min.keys())
+    for (a, b) in all_pairs:
+        fwd_sig = pair_min[(a, b)] <= alpha
+        rev_sig = pair_min.get((b, a), 1.0) <= alpha
+        if fwd_sig and not rev_sig:
+            cascade_call_slope[(a, b)] = "A->B"
+        elif rev_sig and not fwd_sig:
+            cascade_call_slope[(a, b)] = "B->A"
+        elif fwd_sig and rev_sig:
+            cascade_call_slope[(a, b)] = "shared"
+        else:
+            cascade_call_slope[(a, b)] = "none"
+        relay_T_slope[(a, b)] = pair_argmin.get((a, b))
+
+    return {
+        "p_slope": p_slope,
+        "p_slope_bonf": p_slope_bonf,
+        "p_pair_slope": dict(pair_min),
+        "q_pair_slope": q_pair_slope,
+        "relay_T_slope": relay_T_slope,
+        "cascade_call_slope": cascade_call_slope,
+        "slope_arrays": slope_arrays,
+        "alpha": alpha,
+        "metric_description": (
+            "Trajectory slope significance: one-sided Wilcoxon signed-rank "
+            "H1: median(slope_d(A→B,T)) > 0 across training donors. "
+            f"Bonferroni across {n_cell_types} cell types per ordered pair. "
+            f"BH-FDR across K(K-1) ordered pairs. "
+            f"Slope = OLS trend of b_fwd^{{(d)}}(A→B,T,t) over training epochs. "
+            f"alpha={alpha}."
+        ),
+    }
