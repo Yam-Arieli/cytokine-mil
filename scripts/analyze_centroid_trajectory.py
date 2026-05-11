@@ -29,13 +29,15 @@ from cytokine_mil.data.label_encoder import CytokineLabel
 
 # Ground-truth benchmark pairs (from CLAUDE.md — 11 curated pairs)
 # Format: (upstream, downstream)
+# Names must match the label encoder exactly (e.g. IFN-alpha1 not IFN-alpha;
+# IL-17E not IL-25 — these are the same cytokine, the dataset uses IL-17E).
 BENCHMARK_PAIRS = [
     ("IL-12", "IFN-gamma"),
     ("IL-1-beta", "IL-6"),
     ("IL-18", "IFN-gamma"),
-    ("IFN-alpha", "IFN-gamma"),
+    ("IFN-alpha1", "IFN-gamma"),   # IFN-alpha1 in this dataset
     ("IL-33", "IL-13"),
-    ("IL-25", "IL-13"),
+    ("IL-17E", "IL-13"),           # IL-17E == IL-25
     ("TSLP", "IL-13"),
     ("IL-2", "IFN-gamma"),
     ("IL-15", "IFN-gamma"),
@@ -174,7 +176,7 @@ def main():
 
         print(f"  Computing trajectory bias per donor (mode={args.direction_mode})...")
         try:
-            b_fwd_trajectory = compute_trajectory_bias_per_donor(
+            b_fwd_result = compute_trajectory_bias_per_donor(
                 centroid_trajectory=ct,
                 centroid_logged_epochs=cle,
                 label_encoder=label_encoder,
@@ -187,18 +189,23 @@ def main():
             import traceback; traceback.print_exc()
             continue
 
-        print(f"  b_fwd_trajectory keys count: {len(b_fwd_trajectory)}")
+        # Extract the flat (A, B, T, d) -> np.ndarray trajectory dict
+        flat_traj = b_fwd_result["b_fwd_trajectory"]
+        print(f"  b_fwd_trajectory keys count: {len(flat_traj)}")
+        print(f"  Donors seen: {b_fwd_result['donors']}")
+        print(f"  Cell types: {b_fwd_result['cell_types']}")
+        print(f"  Logged epochs: {b_fwd_result['logged_epochs']}")
 
         # Go/no-go: IL-12 → IFN-gamma NK-cell slope per donor
-        il12_ifng_nk_keys = [k for k in b_fwd_trajectory if k[0] == "IL-12" and k[1] == "IFN-gamma" and "NK" in k[2]]
+        il12_ifng_nk_keys = [k for k in flat_traj if k[0] == "IL-12" and k[1] == "IFN-gamma" and "NK" in k[2]]
         if il12_ifng_nk_keys:
             k = il12_ifng_nk_keys[0]
-            traj = b_fwd_trajectory[k]
+            traj = flat_traj[k]
             print(f"\n  GO/NO-GO: IL-12->IFN-gamma, cell type={k[2]}, donor={k[3]}")
             print(f"    trajectory (n={len(traj)}): {np.round(traj, 4)}")
 
         print(f"  Computing trajectory slopes...")
-        slopes = compute_trajectory_slope_per_donor(b_fwd_trajectory)
+        slopes = compute_trajectory_slope_per_donor(flat_traj)
         print(f"  slopes keys count: {len(slopes)}")
 
         # Show IL-12 → IFN-gamma NK slopes
