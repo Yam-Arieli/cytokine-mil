@@ -121,8 +121,9 @@ def main():
             d_start = np.linalg.norm(p_src_s - p_tgt_s)
             d_end   = np.linalg.norm(p_src_e - p_tgt_e)
 
-            # Relative convergence: +1 = fully converged, 0 = unchanged, -1 = doubled distance
-            delta = (d_start - d_end) / (d_start + 1e-10)
+            # Relative convergence, clipped to [-3, 3] to avoid blow-up when d_start ≈ 0
+            raw_delta = (d_start - d_end) / (d_start + 1e-10)
+            delta = float(np.clip(raw_delta, -3.0, 3.0))
 
             results.setdefault(ct, {})[s_idx] = delta
 
@@ -145,13 +146,14 @@ def main():
     cts_s     = [cell_types[i] for i in order]
 
     # ── Heatmap ───────────────────────────────────────────────────────────────
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7),
-                             gridspec_kw={'width_ratios': [n_seeds, 1.5]})
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7),
+                             gridspec_kw={'width_ratios': [n_seeds, 1.5, 1.5]})
 
     ax_heat = axes[0]
     ax_bar  = axes[1]
+    ax_frac = axes[2]
 
-    vmax = max(0.4, np.nanmax(np.abs(mat_s)))
+    vmax = 3.0  # clipped to ±3
     im = ax_heat.imshow(mat_s, aspect='auto', cmap='RdYlGn',
                         vmin=-vmax, vmax=vmax)
 
@@ -196,16 +198,34 @@ def main():
     ax_bar.set_title("Mean\nacross seeds", fontsize=9, fontweight='bold')
     ax_bar.grid(axis='x', alpha=0.3)
 
+    # Fraction of seeds showing convergence (sign test)
+    frac_converge = np.array([
+        np.sum(mat_s[i, :] > 0) / np.sum(~np.isnan(mat_s[i, :]))
+        for i in range(len(cts_s))
+    ])
+    ax_frac.barh(range(len(cts_s)), frac_converge, color=colors,
+                 alpha=0.85, edgecolor='white')
+    ax_frac.axvline(0.5, color='black', lw=0.8, ls='--')
+    ax_frac.set_xlim(0, 1)
+    ax_frac.set_xticks([0, 0.5, 1.0])
+    ax_frac.set_xticklabels(['0', '5/10', '10/10'], fontsize=8)
+    ax_frac.set_yticks(range(len(cts_s)))
+    ax_frac.set_yticklabels([])
+    ax_frac.set_xlabel("Fraction of seeds\nconverging", fontsize=9)
+    ax_frac.set_title("Sign test\n(robust)", fontsize=9, fontweight='bold')
+    ax_frac.grid(axis='x', alpha=0.3)
+
     from matplotlib.patches import Patch
-    ax_bar.legend(handles=[
+    ax_frac.legend(handles=[
         Patch(facecolor='#2ecc71', label='★ Known relay'),
         Patch(facecolor='#95a5a6', label='Non-relay'),
     ], fontsize=8, loc='lower right')
 
     fig.suptitle(
         f"Centroid Convergence Heatmap  |  {source} → {target}  |  {n_seeds} seeds\n"
-        f"Metric: (d_start − d_end) / d_start  in per-seed cascade-relevant PCA 2D subspace",
-        fontsize=11, fontweight='bold'
+        f"Metric: (d_start − d_end) / d_start  in per-seed cascade-relevant PCA 2D subspace  "
+        f"[clipped to ±3 to prevent blow-up when d_start≈0]",
+        fontsize=10, fontweight='bold'
     )
 
     plt.tight_layout()
