@@ -195,19 +195,23 @@ def main():
     for j in range(n_ct, len(axes_flat)):
         axes_flat[j].set_visible(False)
 
-    seed_label = f"{n_seeds} seeds" if n_seeds > 1 else f"Seed {seed_dirs[0].name.split('_')[-1]}"
+    if n_seeds == 1:
+        seed_label = f"Seed {seed_dirs[0].name.split('_')[-1]}"
+        suffix     = f"_{seed_dirs[0].name}"   # e.g. _seed_123
+    else:
+        seed_label = f"{n_seeds} seeds"
+        suffix     = f"_{n_seeds}seeds"
+
     fig.suptitle(
-        f"Attn-Weighted Centroid Trajectories in Shared PCA Space  |  "
+        f"Attn-Weighted Centroid Trajectories in PCA Space  |  "
         f"{source} (source)  →  {target} (target)\n"
-        f"Bold = cross-seed mean  |  Thin lines = individual seeds ({n_seeds} seeds)\n"
         f"Open circle = epoch {epochs[0]}  |  Star = epoch {epochs[-1]}  |  "
         f"Colour darkness encodes training time\n"
-        f"Shared PCA fitted on pooled vectors from all seeds  |  {seed_label}",
+        f"PCA fitted on both cytokines, all cell types  |  {seed_label}",
         fontsize=10, fontweight='bold', y=1.01
     )
 
     plt.tight_layout()
-    suffix = f"_{n_seeds}seeds" if n_seeds > 1 else ""
     fname  = out_dir / f"centroid_pca_traj_{source.replace('-','_')}_{target.replace('-','_')}{suffix}.png"
     plt.savefig(fname, dpi=150, bbox_inches='tight')
     print(f"\nSaved: {fname}")
