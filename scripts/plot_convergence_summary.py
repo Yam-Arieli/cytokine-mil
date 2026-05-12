@@ -102,11 +102,16 @@ def main():
             if any(v is None for v in [c_src_start, c_tgt_start, c_src_end, c_tgt_end]):
                 continue
 
-            d_start = np.linalg.norm(c_src_start - c_tgt_start)
-            d_end   = np.linalg.norm(c_src_end   - c_tgt_end)
-            delta   = d_start - d_end   # positive = converged
+            # Directional score: did IL-12 centroid MOVE TOWARD IFN-γ centroid?
+            # dot(Δc_src, direction_toward_target) / ||direction||
+            direction = c_tgt_start - c_src_start   # (128,) vector toward IFN-γ
+            norm = np.linalg.norm(direction)
+            if norm < 1e-10:
+                continue
+            movement  = c_src_end - c_src_start     # how IL-12 centroid moved
+            dir_score = np.dot(movement, direction) / norm   # positive = moved toward IFN-γ
 
-            all_delta.setdefault(ct, []).append(delta)
+            all_delta.setdefault(ct, []).append(dir_score)
 
     print(f"Loaded {len(seed_dirs)} seeds  |  epochs {epochs_ref[0]}→{epochs_ref[-1]}")
     print(f"Cell types: {cell_types_ref}")
@@ -135,11 +140,12 @@ def main():
     ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
     ax.set_xticks(range(len(cts_s)))
     ax.set_xticklabels(cts_s, rotation=45, ha='right', fontsize=9)
-    ax.set_ylabel("Δ dist = dist(ep10) − dist(ep100)   [L2, 128D]", fontsize=10)
+    ax.set_ylabel("Directional score  =  dot(Δc_src, c_tgt−c_src) / ‖c_tgt−c_src‖   [128D]",
+                  fontsize=10)
     ax.set_title(
-        f"Centroid Convergence: {source} → {target}  |  {len(seed_dirs)} seeds\n"
-        f"Positive = {source} centroid moved closer to {target} centroid over training\n"
-        f"Green = known relay cell types  |  Gray = non-relay / producers",
+        f"Directional Convergence: {source} → {target}  |  {len(seed_dirs)} seeds\n"
+        f"Positive = {source} centroid moved TOWARD {target} centroid over training (ep10→ep100)\n"
+        f"Decoupled from global encoder drift  |  Green = known relay  |  Gray = non-relay / producers",
         fontsize=11, fontweight='bold'
     )
     ax.grid(axis='y', alpha=0.3)
@@ -159,7 +165,7 @@ def main():
     plt.close()
 
     # Print table
-    print(f"\n{'Cell type':<25}  {'Mean Δdist':>12}  {'SEM':>8}  {'n':>3}  {'relay?':>8}")
+    print(f"\n{'Cell type':<25}  {'Mean dir_score':>14}  {'SEM':>8}  {'n':>3}  {'relay?':>8}")
     print("-" * 65)
     for ct, m, s, n in zip(cts_s, means_s, sems_s, [n_per[list(cts).index(c)] for c in cts_s]):
         tag = "RELAY" if ct in KNOWN_RELAYS else ""
