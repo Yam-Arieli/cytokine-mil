@@ -21,6 +21,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 from pathlib import Path
 
 
@@ -90,6 +91,20 @@ def main():
             print(f"WARNING: pair not found in {sd.name}, skipping")
             continue
 
+        # ── Fit per-seed PCA on this seed's relevant subspace ──────────────────
+        # PCA fitted on all centroids (source + target, all cell types, all epochs)
+        # → captures the cascade-relevant variance; filters out noise dimensions.
+        pool_vecs = []
+        for ct in cell_types:
+            for cyto in [source, target]:
+                for snap in traj:
+                    v = mean_centroid(snap, cyto, ct, train_donors)
+                    if v is not None:
+                        pool_vecs.append(v)
+        pool_arr = np.vstack(pool_vecs)
+        pca = PCA(n_components=2)
+        pca.fit(pool_arr)
+
         snap_start = traj[0]    # epoch 10
         snap_end   = traj[-1]   # epoch 100
 
@@ -97,19 +112,22 @@ def main():
             c_src_start = mean_centroid(snap_start, source, ct, train_donors)
             c_tgt_start = mean_centroid(snap_start, target, ct, train_donors)
             c_src_end   = mean_centroid(snap_end,   source, ct, train_donors)
-            c_tgt_end   = mean_centroid(snap_end,   target, ct, train_donors)
 
-            if any(v is None for v in [c_src_start, c_tgt_start, c_src_end, c_tgt_end]):
+            if any(v is None for v in [c_src_start, c_tgt_start, c_src_end]):
                 continue
 
-            # Directional score: did IL-12 centroid MOVE TOWARD IFN-γ centroid?
-            # dot(Δc_src, direction_toward_target) / ||direction||
-            direction = c_tgt_start - c_src_start   # (128,) vector toward IFN-γ
+            # Project into the cascade-relevant 2D PCA subspace
+            p_src_start = pca.transform(c_src_start[None])[0]
+            p_tgt_start = pca.transform(c_tgt_start[None])[0]
+            p_src_end   = pca.transform(c_src_end[None])[0]
+
+            # Directional score in PCA space: did source move toward target?
+            direction = p_tgt_start - p_src_start   # 2D vector toward target
             norm = np.linalg.norm(direction)
             if norm < 1e-10:
                 continue
-            movement  = c_src_end - c_src_start     # how IL-12 centroid moved
-            dir_score = np.dot(movement, direction) / norm   # positive = moved toward IFN-γ
+            movement  = p_src_end - p_src_start     # how source centroid moved in 2D
+            dir_score = np.dot(movement, direction) / norm
 
             all_delta.setdefault(ct, []).append(dir_score)
 
@@ -140,12 +158,13 @@ def main():
     ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
     ax.set_xticks(range(len(cts_s)))
     ax.set_xticklabels(cts_s, rotation=45, ha='right', fontsize=9)
-    ax.set_ylabel("Directional score  =  dot(Δc_src, c_tgt−c_src) / ‖c_tgt−c_src‖   [128D]",
+    ax.set_ylabel("Directional score  =  dot(Δc_src, c_tgt−c_src) / ‖c_tgt−c_src‖   [per-seed PCA 2D]",
                   fontsize=10)
     ax.set_title(
-        f"Directional Convergence: {source} → {target}  |  {len(seed_dirs)} seeds\n"
-        f"Positive = {source} centroid moved TOWARD {target} centroid over training (ep10→ep100)\n"
-        f"Decoupled from global encoder drift  |  Green = known relay  |  Gray = non-relay / producers",
+        f"Directional Convergence in PCA Subspace: {source} → {target}  |  {len(seed_dirs)} seeds\n"
+        f"Positive = {source} centroid moved TOWARD {target} in cascade-relevant 2D subspace (ep10→ep100)\n"
+        f"Per-seed PCA fitted on source+target centroids — filters noise, retains cascade signal\n"
+        f"Green = known relay  |  Gray = non-relay / producers",
         fontsize=11, fontweight='bold'
     )
     ax.grid(axis='y', alpha=0.3)
