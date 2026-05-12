@@ -15,6 +15,5 @@ mkdir -p /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/centroid_trajectory/
     --seed_dir /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/centroid_trajectory/seed_42 \
     --source "IL-12" \
     --target "IFN-gamma" \
-    --cell_type "NK" \
     --trajectory_type attn_weighted \
     --output_dir /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/centroid_trajectory/figures
