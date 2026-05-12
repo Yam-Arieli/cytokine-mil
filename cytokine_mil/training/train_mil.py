@@ -145,6 +145,7 @@ def train_mil(
 
     _do_centroids = cell_type_obs is not None and pbs_ct_means is not None
     centroid_trajectory: List[Dict] = []
+    attn_centroid_trajectory: List[Dict] = []
     centroid_logged_epochs: List[int] = []
 
     for epoch in range(1, n_epochs + 1):
@@ -185,7 +186,8 @@ def train_mil(
                 )
             logged_epochs.append(epoch)
             if centroid_snap is not None:
-                centroid_trajectory.append(centroid_snap)
+                centroid_trajectory.append(centroid_snap["encoder"])
+                attn_centroid_trajectory.append(centroid_snap["attn_weighted"])
                 centroid_logged_epochs.append(epoch)
 
         # Save checkpoint if requested
@@ -217,6 +219,7 @@ def train_mil(
         "val_confusion_entropy_trajectory": val_confusion_traj,
         "loss_components": loss_components,
         "centroid_trajectory": centroid_trajectory,
+        "attn_centroid_trajectory": attn_centroid_trajectory,
         "centroid_logged_epochs": centroid_logged_epochs,
     }
 
@@ -415,6 +418,8 @@ def _log_dynamics(
     do_centroids = cell_type_obs is not None and pbs_ct_means is not None
     ct_sums: Dict = {}
     ct_counts: Dict = {}
+    at_sums: Dict = {}   # attention-weighted: sum of a_i * h_tilde_i per (cyto, ct, donor)
+    at_counts: Dict = {}
 
     for idx, entry in enumerate(entries):
         X, label, _donor, _cyt_name = dataset[idx]
@@ -430,12 +435,14 @@ def _log_dynamics(
             instance_conf = (a_SA * p_correct).cpu().numpy()
             instance_conf_sa = instance_conf  # same as above; explicit for clarity
             instance_conf_ca = (a_CA * p_correct).cpu().numpy()
+            a_for_centroids = a_SA  # use SA attention for centroid weighting
         else:
             y_hat, a, H = model(X)
             probs = F.softmax(y_hat, dim=0)
             p_correct = probs[label].item()
             entropy = _compute_entropy(a)
             instance_conf = (a * p_correct).cpu().numpy()
+            a_for_centroids = a
 
         traj = tube_trajectories[idx]
         traj["p_correct"].append(p_correct)
@@ -451,7 +458,8 @@ def _log_dynamics(
         if do_centroids:
             ct_labels = cell_type_obs.get(idx, [])
             if ct_labels:
-                H_np = H.cpu().numpy().astype(np.float64)  # (N_cells, embed_dim)
+                H_np = H.cpu().numpy().astype(np.float64)       # (N_cells, embed_dim)
+                a_np = a_for_centroids.cpu().numpy().astype(np.float64)  # (N_cells,)
                 cytokine = entry["cytokine"]
                 donor = entry["donor"]
                 for i, ct in enumerate(ct_labels):
@@ -462,18 +470,28 @@ def _log_dynamics(
                     if key not in ct_sums:
                         ct_sums[key] = np.zeros(H_np.shape[1], dtype=np.float64)
                         ct_counts[key] = 0
+                        at_sums[key] = np.zeros(H_np.shape[1], dtype=np.float64)
+                        at_counts[key] = 0
                     ct_sums[key] += h_tilde
                     ct_counts[key] += 1
+                    # Attention-weighted: a_i * h_tilde_i (PBS-RC space, attention-scaled)
+                    at_sums[key] += a_np[i] * h_tilde
+                    at_counts[key] += 1
 
     _compute_confusion_entropy_snapshot(
         entries, tube_trajectories, label_encoder, cytokine_confusion_epochs
     )
 
     if do_centroids:
-        return {
+        encoder_snap = {
             key: ct_sums[key] / ct_counts[key]
             for key in ct_sums if ct_counts[key] > 0
         }
+        attn_snap = {
+            key: at_sums[key] / at_counts[key]
+            for key in at_sums if at_counts[key] > 0
+        }
+        return {"encoder": encoder_snap, "attn_weighted": attn_snap}
     return None
 
 

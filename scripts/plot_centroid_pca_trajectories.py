@@ -28,32 +28,42 @@ def parse_args():
     p.add_argument("--source", default="IL-12")
     p.add_argument("--target", default="IFN-gamma")
     p.add_argument("--output_dir", default="/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/centroid_trajectory/figures")
+    p.add_argument("--cell_type", default=None, help="If set, plot only this cell type (large single panel)")
+    p.add_argument("--trajectory_type", default="encoder", choices=["encoder", "attn_weighted"],
+                   help="Which centroid trajectory to plot: 'encoder' (h_i) or 'attn_weighted' (a_i*h_i)")
     return p.parse_args()
 
 
-def load_data(seed_dir):
+def load_data(seed_dir, trajectory_type="encoder"):
     pkl_path = Path(seed_dir) / "dynamics_stage3.pkl"
     with open(pkl_path, "rb") as f:
         dynamics = pickle.load(f)
-    traj = dynamics["centroid_trajectory"]       # list of dicts: {(cyto, ct): vec}
+    traj_key = "attn_centroid_trajectory" if trajectory_type == "attn_weighted" else "centroid_trajectory"
+    traj = dynamics[traj_key]                    # list of dicts: {(cyto, ct, donor): vec}
     epochs = dynamics["centroid_logged_epochs"]  # list of int
-    print(f"Loaded: {len(traj)} snapshots, epochs: {epochs}")
+    print(f"Loaded [{traj_key}]: {len(traj)} snapshots, epochs: {epochs}")
     return traj, epochs
 
 
 def get_cell_types_and_cytokines(traj):
+    # Keys are 3-tuples: (cytokine, cell_type, donor)
     keys = list(traj[0].keys())
-    cell_types = sorted(set(ct for (_, ct) in keys))
-    cytokines  = sorted(set(cy for (cy, _) in keys))
-    return cell_types, cytokines
+    cell_types = sorted(set(ct for (_, ct, _) in keys))
+    cytokines  = sorted(set(cy for (cy, _, _) in keys))
+    donors     = sorted(set(d  for (_, _, d)  in keys))
+    return cell_types, cytokines, donors
 
 
-def collect_trajectory(traj, cyto, ct):
-    """Return array (n_epochs, dim) for given (cyto, ct)."""
+def collect_trajectory(traj, cyto, ct, donors):
+    """Return array (n_epochs, dim): mean across donors for (cyto, ct)."""
     vecs = []
+    dummy = np.zeros(list(traj[0].values())[0].shape)
     for snap in traj:
-        v = snap.get((cyto, ct))
-        vecs.append(v if v is not None else np.zeros_like(list(snap.values())[0]))
+        donor_vecs = [snap[(cyto, ct, d)] for d in donors if (cyto, ct, d) in snap]
+        if donor_vecs:
+            vecs.append(np.mean(donor_vecs, axis=0))
+        else:
+            vecs.append(dummy)
     return np.array(vecs)   # (n_epochs, dim)
 
 
@@ -62,8 +72,14 @@ def main():
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    traj, epochs = load_data(args.seed_dir)
-    cell_types, cytokines = get_cell_types_and_cytokines(traj)
+    traj, epochs = load_data(args.seed_dir, args.trajectory_type)
+    cell_types, cytokines, all_donors = get_cell_types_and_cytokines(traj)
+
+    # Use only training donors (exclude val donors D2, D3)
+    val_donors = {"Donor2", "Donor3"}
+    train_donors = [d for d in all_donors if d not in val_donors]
+    print(f"All donors: {all_donors}")
+    print(f"Train donors used for averaging: {train_donors}")
 
     source, target = args.source, args.target
 
@@ -82,7 +98,7 @@ def main():
     all_vecs = []
     for ct in cell_types:
         for cyto in [source, target]:
-            traj_mat = collect_trajectory(traj, cyto, ct)
+            traj_mat = collect_trajectory(traj, cyto, ct, train_donors)
             all_vecs.append(traj_mat)
     all_vecs = np.vstack(all_vecs)   # (2 * n_ct * n_epochs, dim)
 
@@ -93,12 +109,22 @@ def main():
     print(f"Explained variance: PC1={ev[0]*100:.1f}%  PC2={ev[1]*100:.1f}%")
 
     # ── Plot ──────────────────────────────────────────────────────────────────
-    n_ct   = len(cell_types)
-    ncols  = 4
-    nrows  = (n_ct + ncols - 1) // ncols
+    # If a single cell type is requested via --cell_type, plot only that one large
+    focus_ct = getattr(args, 'cell_type', None)
+    if focus_ct:
+        cell_types = [ct for ct in cell_types if ct == focus_ct]
+        if not cell_types:
+            print(f"ERROR: cell_type '{focus_ct}' not found")
+            return
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows))
-    axes_flat = axes.flatten() if nrows > 1 else axes
+    n_ct   = len(cell_types)
+    ncols  = min(4, n_ct)
+    nrows  = (n_ct + ncols - 1) // ncols
+    fw     = 10 if n_ct == 1 else 5 * ncols
+    fh     = 8  if n_ct == 1 else 4 * nrows
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(fw, fh))
+    axes_flat = [axes] if n_ct == 1 else (axes.flatten() if nrows > 1 else list(axes))
 
     # Color maps: source = reds, target = blues — darker = later epoch
     n_ep = len(epochs)
@@ -112,7 +138,7 @@ def main():
             (source, src_colors, f"{source}  [source →]", "o"),
             (target, tgt_colors, f"{target}  [← target]", "s"),
         ]:
-            traj_mat = collect_trajectory(traj, cyto, ct)   # (n_ep, dim)
+            traj_mat = collect_trajectory(traj, cyto, ct, train_donors)   # (n_ep, dim)
             pts = pca.transform(traj_mat)                    # (n_ep, 2)
 
             # Trajectory line (thin, semi-transparent)
