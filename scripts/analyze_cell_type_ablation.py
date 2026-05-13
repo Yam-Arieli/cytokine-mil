@@ -34,17 +34,17 @@ from cytokine_mil.data.label_encoder import CytokineLabel
 
 
 KNOWN_CASCADES = [
-    ("IL-12",     "IFN-gamma"),
-    ("IL-1beta",  "IL-6"),
-    ("IL-2",      "IL-15"),
-    ("IL-33",     "IL-13"),
-    ("IL-18",     "IFN-gamma"),
-    ("IL-21",     "IL-10"),
-    ("TNF",       "IL-6"),
-    ("IFN-alpha", "IFN-gamma"),
-    ("IL-10",     "IL-6"),
-    ("IL-4",      "IL-13"),
-    ("IL-27",     "IFN-gamma"),
+    ("IL-12",      "IFN-gamma"),
+    ("IL-1-beta",  "IL-6"),
+    ("IL-2",       "IL-15"),
+    ("IL-33",      "IL-13"),
+    ("IL-18",      "IFN-gamma"),
+    ("IL-21",      "IL-10"),
+    ("TNF-alpha",  "IL-6"),
+    ("IFN-alpha1", "IFN-gamma"),
+    ("IL-10",      "IL-6"),
+    ("IL-4",       "IL-13"),
+    ("IL-27",      "IFN-gamma"),
 ]
 
 VAL_DONORS = {"Donor2", "Donor3"}
@@ -77,7 +77,14 @@ def load_model(seed_dir, n_genes, embed_dim, attn_dim, n_classes, device):
 
 
 def load_label_encoder(seed_dir):
-    return CytokineLabel.load(str(seed_dir / "label_encoder.json"))
+    """Load from {"cytokines": [...]} JSON format saved by train_oesinghaus_full."""
+    with open(seed_dir / "label_encoder.json") as f:
+        data = json.load(f)
+    cytos = data["cytokines"]
+    le = CytokineLabel()
+    le._label_to_idx = {c: i for i, c in enumerate(cytos)}
+    le._idx_to_label = {i: c for i, c in enumerate(cytos)}
+    return le
 
 
 def load_manifest(seed_dir):

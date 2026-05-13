@@ -36,17 +36,17 @@ from pathlib import Path
 
 
 KNOWN_CASCADES = [
-    ("IL-12",     "IFN-gamma"),
-    ("IL-1beta",  "IL-6"),
-    ("IL-2",      "IL-15"),
-    ("IL-33",     "IL-13"),
-    ("IL-18",     "IFN-gamma"),
-    ("IL-21",     "IL-10"),
-    ("TNF",       "IL-6"),
-    ("IFN-alpha", "IFN-gamma"),
-    ("IL-10",     "IL-6"),
-    ("IL-4",      "IL-13"),
-    ("IL-27",     "IFN-gamma"),
+    ("IL-12",      "IFN-gamma"),
+    ("IL-1-beta",  "IL-6"),
+    ("IL-2",       "IL-15"),
+    ("IL-33",      "IL-13"),
+    ("IL-18",      "IFN-gamma"),
+    ("IL-21",      "IL-10"),
+    ("TNF-alpha",  "IL-6"),
+    ("IFN-alpha1", "IFN-gamma"),
+    ("IL-10",      "IL-6"),
+    ("IL-4",       "IL-13"),
+    ("IL-27",      "IFN-gamma"),
 ]
 
 VAL_DONORS = {"Donor2", "Donor3"}
