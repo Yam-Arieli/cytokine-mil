@@ -19,6 +19,8 @@ import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
+
 from cytokine_mil.data.label_encoder import BinaryLabel
 from cytokine_mil.models.attention import AttentionModule
 from cytokine_mil.models.bag_classifier import BagClassifier
@@ -62,6 +64,51 @@ def build_stage1_manifest(
     for i, cyt in enumerate(sorted(cyt_to_entries)):
         entries = sorted(cyt_to_entries[cyt], key=lambda e: e["donor"])
         stage1_manifest.append(entries[(i + donor_offset) % len(entries)])
+
+    if save_path is not None:
+        with open(save_path, "w") as f:
+            json.dump(stage1_manifest, f)
+
+    return stage1_manifest
+
+
+def build_stage1_manifest_full_donors(
+    manifest: List[dict],
+    val_donors: List[str],
+    rng_seed: int = 0,
+    save_path: Optional[str] = None,
+) -> List[dict]:
+    """
+    Select one randomly chosen tube per (cytokine, training_donor) pair.
+
+    For each cytokine and each training donor (excluding val_donors), randomly
+    select one pseudo-tube. This gives ~91 cytokines × 10 training donors ≈ 910
+    entries, vs the default 91 from build_stage1_manifest.
+
+    The random selection is reproducible given rng_seed — pass the experiment
+    seed so different runs sample different tubes.
+
+    Args:
+        manifest: Full manifest list loaded from manifest.json.
+        val_donors: Donor names to exclude (held out for validation).
+        rng_seed: Seed for numpy default_rng controlling tube selection.
+        save_path: If provided, writes the result to this path as JSON.
+    Returns:
+        List of manifest entries — one per (cytokine, training_donor) pair.
+    """
+    val_set = set(val_donors)
+    rng = np.random.default_rng(rng_seed)
+
+    cyt_donor_entries: Dict[Tuple[str, str], List[dict]] = defaultdict(list)
+    for entry in manifest:
+        if entry["donor"] not in val_set:
+            cyt_donor_entries[(entry["cytokine"], entry["donor"])].append(entry)
+
+    stage1_manifest = []
+    for (cyt, donor) in sorted(cyt_donor_entries.keys()):
+        entries = sorted(cyt_donor_entries[(cyt, donor)], key=lambda e: e["tube_idx"])
+        chosen_idx = int(rng.integers(len(entries)))
+        stage1_manifest.append(entries[chosen_idx])
 
     if save_path is not None:
         with open(save_path, "w") as f:

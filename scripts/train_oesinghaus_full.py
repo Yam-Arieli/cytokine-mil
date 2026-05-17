@@ -48,6 +48,7 @@ from cytokine_mil.experiment_setup import (
     build_encoder,
     build_mil_model,
     build_stage1_manifest,
+    build_stage1_manifest_full_donors,
     split_manifest_by_donor,
 )
 from cytokine_mil.training.train_encoder import train_encoder
@@ -138,6 +139,10 @@ def _parse_args():
                    help="Comma-separated Stage 3 checkpoint epochs, e.g. '5,10,15,...,150'")
     p.add_argument("--stage3_only", action="store_true",
                    help="Skip Stage 1+2; load model_stage2.pt from --output_dir and run Stage 3 only.")
+    p.add_argument("--stage1_full_donors", action="store_true",
+                   help="Stage 1: pick one random tube per (cytokine, training_donor) pair "
+                        "across all training donors (~910 tubes, seed-controlled) instead of "
+                        "the default 1 tube per cytokine (~91 tubes).")
     return p.parse_args()
 
 
@@ -264,12 +269,22 @@ def main():
     # ------------------------------------------------------------------
     log("\nBuilding Stage 1 manifest...")
     stage1_manifest_path = out_dir / "manifest_stage1.json"
-    stage1_manifest = build_stage1_manifest(
-        manifest,
-        save_path=str(stage1_manifest_path),
-        donor_offset=args.donor_offset,
-    )
-    log(f"  {len(stage1_manifest)} tubes (one per cytokine, donor_offset={args.donor_offset})")
+    if args.stage1_full_donors:
+        stage1_manifest = build_stage1_manifest_full_donors(
+            manifest,
+            val_donors=VAL_DONORS,
+            rng_seed=args.seed,
+            save_path=str(stage1_manifest_path),
+        )
+        log(f"  {len(stage1_manifest)} tubes (full donor coverage: 1 per cytokine×donor, "
+            f"seed={args.seed})")
+    else:
+        stage1_manifest = build_stage1_manifest(
+            manifest,
+            save_path=str(stage1_manifest_path),
+            donor_offset=args.donor_offset,
+        )
+        log(f"  {len(stage1_manifest)} tubes (one per cytokine, donor_offset={args.donor_offset})")
 
     # ------------------------------------------------------------------
     # Train/val split

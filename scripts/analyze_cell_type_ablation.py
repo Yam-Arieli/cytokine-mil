@@ -61,6 +61,14 @@ def parse_args():
     p.add_argument("--pairs", nargs="*", default=None,
                    help="Restrict to specific pairs, e.g. 'IL-12:IFN-gamma'. "
                         "Default: all known cascade pairs.")
+    p.add_argument("--pairs_file",  type=str, default=None,
+                   help="Path to top_pairs.json from run_geo_extract.py. "
+                        "If provided, overrides --pairs and KNOWN_CASCADES.")
+    p.add_argument("--shard_idx",   type=int, default=0,
+                   help="0-based shard index for parallel execution (default: 0).")
+    p.add_argument("--n_shards",    type=int, default=1,
+                   help="Total number of shards. This task processes "
+                        "pairs[shard_idx::n_shards] (default: 1 = no sharding).")
     return p.parse_args()
 
 
@@ -139,9 +147,29 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     device  = torch.device("cpu")
 
-    pairs = KNOWN_CASCADES
-    if args.pairs:
+    # ── Pair selection: pairs_file > --pairs > KNOWN_CASCADES ────────────
+    if args.pairs_file:
+        with open(args.pairs_file) as f:
+            pairs_data = json.load(f)
+        # Deduplicate ordered pairs preserving order
+        seen: set = set()
+        pairs = []
+        for entry in pairs_data:
+            pair = (entry["A"], entry["B"])
+            if pair not in seen:
+                seen.add(pair)
+                pairs.append(pair)
+        print(f"Pairs from --pairs_file: {len(pairs)} unique ordered pairs", flush=True)
+    elif args.pairs:
         pairs = [tuple(p.split(":")) for p in args.pairs]
+    else:
+        pairs = KNOWN_CASCADES
+
+    # ── Sharding: this task processes pairs[shard_idx::n_shards] ─────────
+    if args.n_shards > 1:
+        pairs = [p for i, p in enumerate(pairs) if i % args.n_shards == args.shard_idx]
+        print(f"Shard {args.shard_idx}/{args.n_shards}: {len(pairs)} pairs assigned",
+              flush=True)
 
     seed_dirs = [Path(d) for d in args.seed_dirs]
 
@@ -211,11 +239,18 @@ def main():
         print("No results — check that pair cytokines exist in label set.")
         return
 
-    df.to_csv(out_dir / "ablation_scores.csv", index=False)
+    # ── Shard-aware output filenames ──────────────────────────────────────────
+    shard_suffix = f"_shard_{args.shard_idx}" if args.n_shards > 1 else ""
+    csv_name = f"ablation_scores{shard_suffix}.csv"
+    pkl_name = f"ablation_scores{shard_suffix}.pkl"
+
+    df.to_csv(out_dir / csv_name, index=False)
 
     # ── Save pkl ──────────────────────────────────────────────────────────────
-    with open(out_dir / "ablation_scores.pkl", "wb") as f:
-        pickle.dump({"all_scores": all_scores, "pooled": dict(pooled)}, f)
+    with open(out_dir / pkl_name, "wb") as f:
+        pickle.dump({"all_scores": all_scores, "pooled": dict(pooled),
+                     "shard_idx": args.shard_idx, "n_shards": args.n_shards,
+                     "pairs": pairs}, f)
 
     # ── Direction calls ───────────────────────────────────────────────────────
     print(f"\n{'Pair':<35}  {'Best relay T':<22}  {'Fwd score':>10}  {'Rev score':>10}  {'Call':>8}")
@@ -241,7 +276,9 @@ def main():
                           "score_A_to_B": score_fwd, "score_B_to_A": score_rev,
                           "call": call})
 
-    pd.DataFrame(dir_rows).to_csv(out_dir / "ablation_directionality.csv", index=False)
+    pd.DataFrame(dir_rows).to_csv(
+        out_dir / f"ablation_directionality{shard_suffix}.csv", index=False
+    )
 
     # ── Plot known pairs ──────────────────────────────────────────────────────
     n_pairs = len(dir_rows)
@@ -281,7 +318,8 @@ def main():
         fontsize=11, fontweight="bold",
     )
     plt.tight_layout()
-    plt.savefig(out_dir / "ablation_known_pairs.png", dpi=130, bbox_inches="tight")
+    plt.savefig(out_dir / f"ablation_known_pairs{shard_suffix}.png",
+                dpi=130, bbox_inches="tight")
     plt.close()
     print(f"\nSaved to {out_dir}")
 
