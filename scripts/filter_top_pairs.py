@@ -1,14 +1,17 @@
 """
 Post-processing: load existing latent_geo_results.pkl and produce a new
-top_pairs.json using per-source top-K filtering instead of global top-X%.
+top_pairs.json using per-source top-K filtering.
 
-This avoids re-running the expensive geo computation (embedding cache +
-Wilcoxon tests). Useful after the initial geo run has completed.
+Ranking metric: **mean W-stat across cell types** (not max-W). With n=10 donors
+and 18 cell types, the max-across-cell-types W saturates at 55 for ~14% of
+pairs, making ranking uninformative. Mean-W is a continuous score that reflects
+consistency of directional signal across ALL cell types, not just the single
+best relay candidate.
 
 Filtering logic:
   For each source cytokine A (excluding PBS), collect all (A, B) pairs with
-  W_stat >= --min_w_stat, sort by W descending, keep top --top_k_per_source.
-  Final list is globally re-ranked by W descending.
+  mean_W >= --min_w_stat, sort by mean_W descending, keep top --top_k_per_source.
+  Final list is globally re-ranked by mean_W descending.
 
 This ensures every cytokine gets its best cascade candidates tested, preventing
 high-signal cytokines (e.g. IFN-gamma) from dominating the ablation budget.
@@ -30,6 +33,8 @@ import json
 import pickle
 from collections import defaultdict
 from pathlib import Path
+
+import numpy as np
 
 
 def parse_args():
@@ -65,9 +70,16 @@ def main():
     sig_result = geo["sig_result"]
     p_pair_fwd = sig_result["p_pair_fwd"]   # {(A, B) -> min Bonferroni p across cell types}
     W_pair_fwd = sig_result["W_pair_fwd"]   # {(A, B) -> max W across cell types}
+    W_fwd      = sig_result["W_fwd"]        # {(A, B, cell_type) -> W per cell type}
     relay_T    = sig_result["relay_T"]       # {(A, B) -> relay cell type (argmax W)}
 
     n_total_pairs = len(p_pair_fwd)
+
+    # Compute mean-W across cell types for each ordered pair
+    pair_ct_ws: dict = defaultdict(list)
+    for (a, b, ct), w in W_fwd.items():
+        pair_ct_ws[(a, b)].append(w)
+    mean_W = {pair: float(np.mean(ws)) for pair, ws in pair_ct_ws.items()}
 
     # Group by source cytokine, excluding PBS on either side
     by_source: dict = defaultdict(list)
@@ -75,29 +87,30 @@ def main():
     for (a, b), p in p_pair_fwd.items():
         if a == "PBS" or b == "PBS":
             continue
-        w = float(W_pair_fwd.get((a, b), 0.0))
-        if w < args.min_w_stat:
+        mw = mean_W.get((a, b), 0.0)
+        if mw < args.min_w_stat:
             n_below_floor += 1
             continue
         by_source[a].append({
             "A": a, "B": b,
             "relay_cell_type": relay_T.get((a, b)),
             "p_bonf": float(p),
-            "W_stat": w,
+            "W_stat": float(W_pair_fwd.get((a, b), 0.0)),  # max-W (kept for reference)
+            "mean_W": round(mw, 2),                          # ranking metric
         })
 
-    # Per-source top-K by W descending, p ascending as tiebreak
+    # Per-source top-K by mean_W descending, p ascending as tiebreak
     top_pairs = []
     sources_with_no_pairs = []
     for a in sorted(by_source):
-        candidates = sorted(by_source[a], key=lambda x: (-x["W_stat"], x["p_bonf"]))
+        candidates = sorted(by_source[a], key=lambda x: (-x["mean_W"], x["p_bonf"]))
         selected   = candidates[:args.top_k_per_source]
         top_pairs.extend(selected)
         if not selected:
             sources_with_no_pairs.append(a)
 
-    # Global re-rank by W descending
-    top_pairs.sort(key=lambda x: (-x["W_stat"], x["p_bonf"]))
+    # Global re-rank by mean_W descending
+    top_pairs.sort(key=lambda x: (-x["mean_W"], x["p_bonf"]))
     for rank, entry in enumerate(top_pairs, 1):
         entry["rank"] = rank
 
@@ -107,8 +120,9 @@ def main():
     # Summary
     n_sources = len(by_source)
     print(f"Experiment  : {exp_dir.name}", flush=True)
+    print(f"Ranking by  : mean W-stat across cell types", flush=True)
     print(f"Total ordered pairs in geo : {n_total_pairs}", flush=True)
-    print(f"Pairs below W floor (<{args.min_w_stat:.0f}) : {n_below_floor}", flush=True)
+    print(f"Pairs below mean-W floor (<{args.min_w_stat:.0f}) : {n_below_floor}", flush=True)
     print(f"Sources with ≥1 candidate  : {n_sources}", flush=True)
     print(f"Per-source top-{args.top_k_per_source} selected  : {len(top_pairs)} pairs", flush=True)
     print(f"Saved to    : {out_dir / 'top_pairs.json'}", flush=True)
@@ -119,13 +133,14 @@ def main():
 
     # Print top-25 table
     header = (f"{'Rank':>4}  {'A':<18}  {'B':<18}  "
-              f"{'relay_T':<22}  {'W_stat':>7}  {'p_bonf':>10}")
+              f"{'relay_T':<22}  {'mean_W':>7}  {'max_W':>7}  {'p_bonf':>10}")
     print(f"\n{header}")
     print("-" * len(header))
     for entry in top_pairs[:25]:
         rt = str(entry["relay_cell_type"] or "?")
         print(f"{entry['rank']:>4}  {entry['A']:<18}  {entry['B']:<18}  "
-              f"{rt:<22}  {entry['W_stat']:>7.1f}  {entry['p_bonf']:>10.4f}",
+              f"{rt:<22}  {entry['mean_W']:>7.1f}  {entry['W_stat']:>7.1f}  "
+              f"{entry['p_bonf']:>10.4f}",
               flush=True)
     if len(top_pairs) > 25:
         print(f"  ... ({len(top_pairs) - 25} more pairs not shown)")
