@@ -190,7 +190,13 @@ def main():
     print("\nSaved: latent_geo_results.pkl", flush=True)
 
     # ── Extract top top_pct% ordered pairs (exclude PBS) ─────────────────
+    # Rank by W statistic (max Wilcoxon W across cell types), NOT p-value.
+    # With n=10 donors the minimum achievable Bonferroni p saturates at ~0.018,
+    # making all top-5% pairs look statistically identical when ranked by p.
+    # W is a continuous score in [0, n*(n+1)/2] (= [0, 55] for n=10) that
+    # reflects how consistently all donors point in the forward direction.
     p_pair_fwd = sig_result["p_pair_fwd"]   # {(A, B) -> min Bonferroni p}
+    W_pair_fwd = sig_result["W_pair_fwd"]   # {(A, B) -> max W across cell types}
     relay_T    = sig_result["relay_T"]       # {(A, B) -> best relay cell type}
 
     scored = []
@@ -201,9 +207,12 @@ def main():
             "A": a, "B": b,
             "relay_cell_type": relay_T.get((a, b)),
             "p_bonf":          float(p),
+            "W_stat":          float(W_pair_fwd.get((a, b), 0.0)),
         })
 
-    scored.sort(key=lambda x: x["p_bonf"])
+    # Sort by W descending (higher W = more consistent signal across donors).
+    # Secondary sort by p ascending for ties in W.
+    scored.sort(key=lambda x: (-x["W_stat"], x["p_bonf"]))
 
     n_total = len(scored)
     n_top   = max(1, int(round(n_total * args.top_pct)))
@@ -216,15 +225,16 @@ def main():
 
     print(f"\nTotal scored pairs  : {n_total}", flush=True)
     print(f"Top {args.top_pct*100:.1f}%           : {n_top} pairs → top_pairs.json", flush=True)
+    print(f"Ranking             : W_stat descending (not p-value)", flush=True)
 
     # Print summary table
-    header = f"{'Rank':>4}  {'A':<18}  {'B':<18}  {'relay_T':<22}  {'p_bonf':>10}"
+    header = f"{'Rank':>4}  {'A':<18}  {'B':<18}  {'relay_T':<22}  {'W_stat':>7}  {'p_bonf':>10}"
     print(f"\n{header}")
     print("-" * len(header))
     for entry in top_pairs[:25]:
         rt = str(entry["relay_cell_type"] or "?")
         print(f"{entry['rank']:>4}  {entry['A']:<18}  {entry['B']:<18}  "
-              f"{rt:<22}  {entry['p_bonf']:>10.4f}", flush=True)
+              f"{rt:<22}  {entry['W_stat']:>7.1f}  {entry['p_bonf']:>10.4f}", flush=True)
     if n_top > 25:
         print(f"  ... ({n_top - 25} more pairs not shown)")
 

@@ -600,6 +600,8 @@ def test_directional_significance(
     b_rev: Dict[Tuple[str, str, str], np.ndarray] = {}
     p_fwd: Dict[Tuple[str, str, str], float] = {}
     p_rev: Dict[Tuple[str, str, str], float] = {}
+    W_fwd: Dict[Tuple[str, str, str], float] = {}
+    W_rev: Dict[Tuple[str, str, str], float] = {}
 
     for a in cytokine_names:
         for b in cytokine_names:
@@ -640,27 +642,39 @@ def test_directional_significance(
                 if len(fwd_per_donor) >= 2:
                     arr = np.array(fwd_per_donor)
                     b_fwd[(a, b, ct)] = arr
-                    p_fwd[(a, b, ct)] = _one_sided_wilcoxon_greater(arr, wilcoxon)
+                    p, W = _one_sided_wilcoxon_greater(arr, wilcoxon)
+                    p_fwd[(a, b, ct)] = p
+                    W_fwd[(a, b, ct)] = W
                 if len(rev_per_donor) >= 2:
                     arr = np.array(rev_per_donor)
                     b_rev[(b, a, ct)] = arr
-                    p_rev[(b, a, ct)] = _one_sided_wilcoxon_greater(arr, wilcoxon)
+                    p, W = _one_sided_wilcoxon_greater(arr, wilcoxon)
+                    p_rev[(b, a, ct)] = p
+                    W_rev[(b, a, ct)] = W
 
     # Bonferroni across cell types (relay search) — per ordered pair.
     p_fwd_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_fwd.items()}
     p_rev_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_rev.items()}
 
-    # Per-pair min Bonferroni p across cell types.
+    # Per-pair min Bonferroni p and max W across cell types.
     pair_min_fwd: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
     pair_min_rev: Dict[Tuple[str, str], float] = defaultdict(lambda: 1.0)
     pair_argmin_fwd: Dict[Tuple[str, str], Optional[str]] = defaultdict(lambda: None)
+    pair_max_W_fwd: Dict[Tuple[str, str], float] = defaultdict(float)
+    pair_max_W_rev: Dict[Tuple[str, str], float] = defaultdict(float)
     for (a, b, ct), p in p_fwd_bonf.items():
         if p < pair_min_fwd[(a, b)]:
             pair_min_fwd[(a, b)] = p
             pair_argmin_fwd[(a, b)] = ct
+        w = W_fwd.get((a, b, ct), 0.0)
+        if w > pair_max_W_fwd[(a, b)]:
+            pair_max_W_fwd[(a, b)] = w
     for (a, b, ct), p in p_rev_bonf.items():
         if p < pair_min_rev[(a, b)]:
             pair_min_rev[(a, b)] = p
+        w = W_rev.get((a, b, ct), 0.0)
+        if w > pair_max_W_rev[(a, b)]:
+            pair_max_W_rev[(a, b)] = w
 
     # BH-FDR across ordered pairs (retained for reference / backwards-compat).
     pair_keys = sorted(pair_min_fwd.keys())
@@ -699,8 +713,12 @@ def test_directional_significance(
         "p_rev": p_rev,
         "p_fwd_bonf": p_fwd_bonf,
         "p_rev_bonf": p_rev_bonf,
+        "W_fwd": W_fwd,
+        "W_rev": W_rev,
         "p_pair_fwd": dict(pair_min_fwd),
         "p_pair_rev": dict(pair_min_rev),
+        "W_pair_fwd": dict(pair_max_W_fwd),
+        "W_pair_rev": dict(pair_max_W_rev),
         "q_pair_fwd": q_pair_fwd,
         "q_pair_rev": q_pair_rev,
         "b_fwd": b_fwd,
@@ -714,23 +732,23 @@ def test_directional_significance(
             "µ_{A,T}^{(d)} · û_{A→B} (forward) and µ_{B,T}^{(d)} · û_{B→A} (reverse) "
             f"in PBS-RC space; Bonferroni across {n_cell_types} cell types per pair. "
             f"Cascade call: Bonferroni p_pair <= alpha={alpha} (no BH across pairs). "
-            f"Continuous ranking score: -log10(p_pair_fwd)."
+            f"Ranking: W_pair_fwd (max Wilcoxon W across cell types) — breaks p-value saturation."
         ),
     }
 
 
-def _one_sided_wilcoxon_greater(x: np.ndarray, wilcoxon_fn) -> float:
-    """One-sided Wilcoxon signed-rank H1: median(x) > 0. Robust to all-zero / tied."""
+def _one_sided_wilcoxon_greater(x: np.ndarray, wilcoxon_fn) -> tuple:
+    """One-sided Wilcoxon signed-rank H1: median(x) > 0. Returns (p_value, W_statistic)."""
     x = np.asarray(x, dtype=np.float64)
     if x.size < 2:
-        return 1.0
+        return 1.0, 0.0
     if np.allclose(x, 0):
-        return 1.0
+        return 1.0, 0.0
     try:
         res = wilcoxon_fn(x, alternative="greater", zero_method="wilcox")
-        return float(res.pvalue)
+        return float(res.pvalue), float(res.statistic)
     except ValueError:
-        return 1.0
+        return 1.0, 0.0
 
 
 def compute_asymmetry_matrix(
@@ -1638,7 +1656,7 @@ def test_trajectory_slope_significance(
         if len(arr) < 2:
             continue
         slope_arrays[(a, b, ct)] = arr
-        p_slope[(a, b, ct)] = _one_sided_wilcoxon_greater(arr, wilcoxon)
+        p_slope[(a, b, ct)], _ = _one_sided_wilcoxon_greater(arr, wilcoxon)
 
     # Bonferroni across cell types per ordered pair.
     p_slope_bonf = {k: min(1.0, p * n_cell_types) for k, p in p_slope.items()}

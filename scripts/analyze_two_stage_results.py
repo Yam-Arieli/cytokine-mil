@@ -241,20 +241,33 @@ def main():
     print(df_dir[["A","B","n_exps_detected","majority_call","direction_correct"]].to_string(), flush=True)
 
     # ── Threshold sweep: recall & precision vs KNOWN_CASCADES ─────────────
-    # For each experiment, rank pairs by p_bonf (stored in top_pairs.json);
-    # sweep threshold to get recall/precision curves.
-    # "Detected" = pair appears in top_pairs; "Correct direction" = A→B call.
+    # Rank pairs by W_stat (max Wilcoxon W across cell types), NOT p_bonf.
+    # p_bonf saturates at ~0.018 with n=10 donors (floor = 1/2^10 * n_cell_types),
+    # making all top-5% pairs look statistically identical. W is a continuous
+    # score in [0, n*(n+1)/2] = [0, 55] for n=10 that is not floored.
+    # Aggregate by max W_stat across exps (higher W = stronger consistent signal).
+    # Falls back to min p_bonf if W_stat is absent (old top_pairs.json format).
     thresholds = np.arange(0.01, 0.51, 0.01)
 
-    # Aggregate p_bonf scores: for each (A, B), take the min p_bonf across exps
+    pair_max_W: dict = {}
     pair_min_p: dict = {}
     for exp_pairs in geo_pairs_per_exp:
         for entry in exp_pairs:
             key = (entry["A"], entry["B"])
             p   = float(entry["p_bonf"])
+            W   = float(entry.get("W_stat", 0.0))
             pair_min_p[key] = min(pair_min_p.get(key, 1.0), p)
+            pair_max_W[key] = max(pair_max_W.get(key, 0.0), W)
 
-    ranked = sorted(pair_min_p.items(), key=lambda x: x[1])   # ascending p = most significant
+    use_W = any(v > 0 for v in pair_max_W.values())
+    if use_W:
+        # Sort by W descending; secondary by p ascending for ties.
+        ranked = sorted(pair_max_W.items(), key=lambda x: -x[1])
+        rank_label = "max W_stat (Wilcoxon W, higher = stronger)"
+    else:
+        ranked = sorted(pair_min_p.items(), key=lambda x: x[1])
+        rank_label = "min p_bonf (fallback — W_stat not found in top_pairs.json)"
+    print(f"  Threshold sweep ranking: {rank_label}", flush=True)
 
     recall_rows = []
     for frac in thresholds:
@@ -282,7 +295,7 @@ def main():
     ax = axes[0]
     ax.plot(df_rc.top_pct * 100, df_rc.recall * 100, "-o", ms=3, color="steelblue")
     ax.axvline(5, color="gray", ls="--", lw=0.8, label="5% threshold")
-    ax.set_xlabel("Top X% ordered pairs (by min p_bonf)")
+    ax.set_xlabel("Top X% ordered pairs (by max W_stat)")
     ax.set_ylabel("Recall of KNOWN_CASCADES (%)")
     ax.set_title("Geo detection recall\n(aggregated across experiments)")
     ax.legend(); ax.grid(alpha=0.3)
