@@ -1,10 +1,11 @@
 """
-PBS-RC geometric detection: run on a trained stage1 encoder and extract
+PBS-RC geometric detection: run on a MIL-finetuned encoder and extract
 top top_pct% ordered cytokine pairs as cascade candidates.
 
-Uses `encoder_stage1.pt` (pure cell-type embedding, before MIL objective
-distorts the geometry) and `pbs_ct_means.pkl` (PBS centroids computed with
-the same encoder during training).
+Uses the encoder from model_stage3.pt (after MIL fine-tuning), which embeds
+cells in a cytokine-discriminative space.  PBS cell-type centroids are
+recomputed on the fly from PBS tubes in the training manifest using the
+same encoder, ensuring centroid/embedding consistency.
 
 Outputs (to --output_dir, default: --exp_dir):
   latent_geo_results.pkl  - full bias + Wilcoxon significance output
@@ -13,11 +14,13 @@ Outputs (to --output_dir, default: --exp_dir):
 Usage:
     python scripts/run_geo_extract.py --exp_dir results/two_stage_pipeline/exp_0_seed42
     python scripts/run_geo_extract.py --exp_dir ... --top_pct 0.05 --direction_mode global
+    python scripts/run_geo_extract.py --exp_dir ... --model_file model_stage2.pt
 """
 
 import argparse
 import json
 import pickle
+from collections import defaultdict
 from pathlib import Path
 
 import anndata
@@ -26,7 +29,7 @@ import torch
 from tqdm import tqdm
 
 from cytokine_mil.data.label_encoder import CytokineLabel
-from cytokine_mil.experiment_setup import build_encoder
+from cytokine_mil.experiment_setup import build_encoder, build_mil_model
 from cytokine_mil.analysis.latent_geometry import (
     compute_directional_bias_per_donor,
     test_directional_significance,
@@ -39,16 +42,20 @@ N_CELL_TYPES = 18   # Oesinghaus dataset constant
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="PBS-RC geo detection on a trained stage1 encoder.")
+    p = argparse.ArgumentParser(description="PBS-RC geo detection on a MIL-finetuned encoder.")
     p.add_argument("--exp_dir",   required=True,
-                   help="Experiment output directory containing encoder_stage1.pt, "
-                        "manifest_train.json, label_encoder.json, pbs_ct_means.pkl.")
+                   help="Experiment output directory containing model_stage3.pt (or "
+                        "--model_file), manifest_train.json, label_encoder.json.")
     p.add_argument("--output_dir", default=None,
                    help="Where to save results (default: same as --exp_dir).")
+    p.add_argument("--model_file", default="model_stage3.pt",
+                   help="Model checkpoint file within --exp_dir (default: model_stage3.pt). "
+                        "Must be a CytokineABMIL state dict.")
     p.add_argument("--top_pct",  type=float, default=0.05,
                    help="Fraction of ordered (A,B) pairs to include in top_pairs.json.")
     p.add_argument("--n_genes",  type=int,   default=4000)
     p.add_argument("--embed_dim", type=int,  default=128)
+    p.add_argument("--attn_dim", type=int,   default=64)
     p.add_argument("--direction_mode", default="global",
                    choices=["global", "cell_type"],
                    help="Direction vector for PBS-RC projection.")
@@ -68,8 +75,20 @@ def _load_label_encoder(exp_dir: Path) -> CytokineLabel:
 
 
 @torch.no_grad()
+def _embed_tube(encoder, adata, gene_names, device):
+    """Run encoder on a single tube's expression matrix → (N, embed_dim) tensor."""
+    if gene_names is not None:
+        adata = adata[:, gene_names]
+    X = adata.X
+    if hasattr(X, "toarray"):
+        X = X.toarray()
+    X_t = torch.FloatTensor(np.asarray(X, dtype=np.float32)).to(device)
+    return encoder(X_t).cpu()
+
+
+@torch.no_grad()
 def build_cache(encoder, train_manifest, gene_names, label_encoder, device):
-    """Run encoder_stage1 on every training tube; return list of embedding dicts."""
+    """Run encoder on every training tube; return list of embedding dicts."""
     encoder.eval()
     encoder.to(device)
     cache = []
@@ -80,13 +99,7 @@ def build_cache(encoder, train_manifest, gene_names, label_encoder, device):
             continue
         try:
             adata = anndata.read_h5ad(entry["path"])
-            if gene_names is not None:
-                adata = adata[:, gene_names]
-            X = adata.X
-            if hasattr(X, "toarray"):
-                X = X.toarray()
-            X_t = torch.FloatTensor(np.asarray(X, dtype=np.float32)).to(device)
-            H = encoder(X_t).cpu()          # (N, embed_dim)
+            H = _embed_tube(encoder, adata, gene_names, device)
             ct_labels = (
                 adata.obs["cell_type"].values.tolist()
                 if "cell_type" in adata.obs.columns
@@ -103,6 +116,50 @@ def build_cache(encoder, train_manifest, gene_names, label_encoder, device):
             print(f"  WARN: skipping {Path(entry['path']).name}: {e}", flush=True)
 
     return cache
+
+
+@torch.no_grad()
+def compute_pbs_centroids(encoder, train_manifest, gene_names, device):
+    """Compute per-cell-type PBS centroids using the given encoder.
+
+    Returns dict: {cell_type_str: np.ndarray of shape (embed_dim,)}.
+    Only uses PBS tubes from training donors (excludes VAL_DONORS).
+    """
+    encoder.eval()
+    encoder.to(device)
+
+    # Accumulate embeddings per cell type
+    ct_sums: dict = defaultdict(lambda: None)
+    ct_counts: dict = defaultdict(int)
+
+    pbs_tubes = [e for e in train_manifest
+                 if e["cytokine"] == "PBS" and e.get("donor", "") not in VAL_DONORS]
+    print(f"  Computing PBS centroids from {len(pbs_tubes)} PBS tubes...", flush=True)
+
+    for entry in pbs_tubes:
+        try:
+            adata = anndata.read_h5ad(entry["path"])
+            H = _embed_tube(encoder, adata, gene_names, device).numpy()
+            ct_labels = (
+                adata.obs["cell_type"].values
+                if "cell_type" in adata.obs.columns
+                else np.array(["unknown"] * len(adata))
+            )
+            for ct in np.unique(ct_labels):
+                mask = ct_labels == ct
+                ct_H = H[mask]
+                if ct_sums[ct] is None:
+                    ct_sums[ct] = ct_H.sum(axis=0)
+                else:
+                    ct_sums[ct] += ct_H.sum(axis=0)
+                ct_counts[ct] += mask.sum()
+        except Exception as e:
+            print(f"  WARN: PBS tube {Path(entry['path']).name}: {e}", flush=True)
+
+    pbs_ct_means = {ct: ct_sums[ct] / ct_counts[ct] for ct in ct_sums}
+    print(f"  PBS centroids: {len(pbs_ct_means)} cell types, "
+          f"{sum(ct_counts.values())} total cells", flush=True)
+    return pbs_ct_means
 
 
 def main():
@@ -136,22 +193,33 @@ def main():
     print(f"Training donors: {train_donors}  ({len(train_donors)} total)", flush=True)
     print(f"Training tubes : {len(train_manifest)}", flush=True)
 
-    # ── PBS cell-type centroids (computed with stage1 encoder during training) ─
-    pbs_path = exp_dir / "pbs_ct_means.pkl"
-    with open(pbs_path, "rb") as f:
-        pbs_ct_means = pickle.load(f)
-    print(f"pbs_ct_means: {len(pbs_ct_means)} cell types", flush=True)
+    # ── Load MIL-finetuned model and extract encoder ─────────────────────
+    model_path = exp_dir / args.model_file
+    print(f"Loading model: {model_path.name}", flush=True)
 
-    # ── Stage 1 encoder ────────────────────────────────────────────────────
     encoder = build_encoder(
         n_input_genes=args.n_genes,
         n_cell_types=N_CELL_TYPES,
         embed_dim=args.embed_dim,
     )
-    state = torch.load(exp_dir / "encoder_stage1.pt", map_location="cpu")
-    encoder.load_state_dict(state)
+    model = build_mil_model(
+        encoder,
+        embed_dim=args.embed_dim,
+        attention_hidden_dim=args.attn_dim,
+        n_classes=le.n_classes(),
+        encoder_frozen=False,
+    )
+    state = torch.load(model_path, map_location="cpu")
+    model.load_state_dict(state)
+    model.eval()
+    # Extract the encoder from the full MIL model
+    encoder = model.encoder
     encoder.eval()
-    print("Loaded encoder_stage1.pt", flush=True)
+    print(f"  Encoder extracted from {args.model_file}", flush=True)
+
+    # ── Compute PBS cell-type centroids with this encoder ─────────────────
+    print("\nComputing PBS centroids with MIL-finetuned encoder...", flush=True)
+    pbs_ct_means = compute_pbs_centroids(encoder, train_manifest, gene_names, device)
 
     # ── Build embedding cache ─────────────────────────────────────────────
     print("\nBuilding inference cache...", flush=True)
@@ -183,9 +251,11 @@ def main():
     # ── Save full results ──────────────────────────────────────────────────
     with open(out_dir / "latent_geo_results.pkl", "wb") as f:
         pickle.dump({
-            "bias_result": bias_result,
-            "sig_result":  sig_result,
-            "args":        vars(args),
+            "bias_result":   bias_result,
+            "sig_result":    sig_result,
+            "pbs_ct_means":  pbs_ct_means,
+            "model_file":    args.model_file,
+            "args":          vars(args),
         }, f)
     print("\nSaved: latent_geo_results.pkl", flush=True)
 
