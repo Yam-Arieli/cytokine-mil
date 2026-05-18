@@ -4,7 +4,7 @@
 #SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/two_stage/ablation_%A_%a.err
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=1
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --partition=short
 #SBATCH --array=0-31
 
