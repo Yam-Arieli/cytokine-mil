@@ -76,15 +76,15 @@ def _geo_significant_T(
 # Ablation loading
 # ---------------------------------------------------------------------------
 
-def _load_ablation_pooled(exp_dir: Path) -> Dict[Tuple[str, str, str], list]:
-    """Combine all ablation_scores_shard_*.pkl in exp_dir into one pooled dict.
+def _load_ablation_pooled(ablation_dir: Path) -> Dict[Tuple[str, str, str], list]:
+    """Combine all ablation_scores_shard_*.pkl in ablation_dir into one pooled dict.
 
     Falls back to ablation_scores.pkl (n_shards=1) if no shards present.
     """
     pooled: Dict[Tuple[str, str, str], list] = defaultdict(list)
-    shard_paths = sorted(exp_dir.glob("ablation_scores_shard_*.pkl"))
+    shard_paths = sorted(ablation_dir.glob("ablation_scores_shard_*.pkl"))
     if not shard_paths:
-        single = exp_dir / "ablation_scores.pkl"
+        single = ablation_dir / "ablation_scores.pkl"
         if single.exists():
             shard_paths = [single]
     for p in shard_paths:
@@ -133,8 +133,12 @@ def _ablation_call(
 def _seed_triples(
     exp_dir: Path,
     alpha: float,
+    ablation_subdir: str = ".",
 ) -> List[dict]:
     """Apply the geo ∧ ablation conjunction within one seed.
+
+    Geo result is read from exp_dir/latent_geo_results.pkl.
+    Ablation shards are read from exp_dir/<ablation_subdir>/.
 
     Returns a list of {A, B, T, p_fwd_bonf, ablation_relay,
                       geo_cascade_call, ablation_direction_call, seed}.
@@ -142,7 +146,7 @@ def _seed_triples(
     sig = _load_geo_sig(exp_dir / "latent_geo_results.pkl")
     if sig is None:
         return []
-    pooled = _load_ablation_pooled(exp_dir)
+    pooled = _load_ablation_pooled(exp_dir / ablation_subdir)
     if not pooled:
         return []
 
@@ -237,6 +241,11 @@ def parse_args():
                    help="Geo p_fwd_bonf threshold (default 0.05).")
     p.add_argument("--min_seeds", type=int, default=5,
                    help="Minimum seeds in which a triple must appear (default 5 of 8).")
+    p.add_argument("--ablation_subdir", type=str, default=".",
+                   help="Subdirectory of each exp_dir holding "
+                        "ablation_scores_shard_*.pkl (default '.': same dir as "
+                        "latent_geo_results.pkl). Use 'ablation_union' for "
+                        "union-pair-list ablations.")
     p.add_argument("--per_seed_dump", type=str, default=None,
                    help="Optional path to dump the raw per-seed triple list as JSON.")
     return p.parse_args()
@@ -246,7 +255,8 @@ def main():
     args = parse_args()
     all_seed_triples: List[dict] = []
     for d in args.exp_dirs:
-        seed_rows = _seed_triples(Path(d), alpha=args.alpha)
+        seed_rows = _seed_triples(Path(d), alpha=args.alpha,
+                                  ablation_subdir=args.ablation_subdir)
         print(f"  {Path(d).name:<30s} {len(seed_rows):>4d} triples (seed-level)",
               flush=True)
         all_seed_triples.extend(seed_rows)
