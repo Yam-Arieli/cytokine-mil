@@ -20,24 +20,26 @@ Usage:
 import argparse
 import json
 import pickle
-from collections import defaultdict
 from pathlib import Path
 
-import anndata
 import numpy as np
 import torch
-from tqdm import tqdm
 
-from cytokine_mil.data.label_encoder import CytokineLabel
 from cytokine_mil.experiment_setup import build_encoder, build_mil_model
 from cytokine_mil.analysis.latent_geometry import (
     compute_directional_bias_per_donor,
     test_directional_significance,
 )
+from cytokine_mil.analysis.encoder_cache import (
+    VAL_DONORS,
+    _load_label_encoder,
+    _embed_tube,
+    build_cache,
+    compute_pbs_centroids,
+)
 
 
 HVG_PATH    = "/cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/hvg_list.json"
-VAL_DONORS  = {"Donor2", "Donor3"}
 N_CELL_TYPES = 18   # Oesinghaus dataset constant
 
 
@@ -62,104 +64,6 @@ def parse_args():
     p.add_argument("--alpha",    type=float, default=0.05,
                    help="Significance threshold for cascade calls (Bonferroni per pair).")
     return p.parse_args()
-
-
-def _load_label_encoder(exp_dir: Path) -> CytokineLabel:
-    with open(exp_dir / "label_encoder.json") as f:
-        data = json.load(f)
-    cytos = data["cytokines"]
-    le = CytokineLabel()
-    le._label_to_idx = {c: i for i, c in enumerate(cytos)}
-    le._idx_to_label = {i: c for i, c in enumerate(cytos)}
-    return le
-
-
-@torch.no_grad()
-def _embed_tube(encoder, adata, gene_names, device):
-    """Run encoder on a single tube's expression matrix → (N, embed_dim) tensor."""
-    if gene_names is not None:
-        adata = adata[:, gene_names]
-    X = adata.X
-    if hasattr(X, "toarray"):
-        X = X.toarray()
-    X_t = torch.FloatTensor(np.asarray(X, dtype=np.float32)).to(device)
-    return encoder(X_t).cpu()
-
-
-@torch.no_grad()
-def build_cache(encoder, train_manifest, gene_names, label_encoder, device):
-    """Run encoder on every training tube; return list of embedding dicts."""
-    encoder.eval()
-    encoder.to(device)
-    cache = []
-
-    for entry in tqdm(train_manifest, desc="Embedding training tubes"):
-        donor = entry.get("donor", "unknown")
-        if donor in VAL_DONORS:
-            continue
-        try:
-            adata = anndata.read_h5ad(entry["path"])
-            H = _embed_tube(encoder, adata, gene_names, device)
-            ct_labels = (
-                adata.obs["cell_type"].values.tolist()
-                if "cell_type" in adata.obs.columns
-                else ["unknown"] * len(adata)
-            )
-            label = label_encoder.encode(entry["cytokine"])
-            cache.append({
-                "H":          H,
-                "label":      label,
-                "cell_types": ct_labels,
-                "donor":      donor,
-            })
-        except Exception as e:
-            print(f"  WARN: skipping {Path(entry['path']).name}: {e}", flush=True)
-
-    return cache
-
-
-@torch.no_grad()
-def compute_pbs_centroids(encoder, train_manifest, gene_names, device):
-    """Compute per-cell-type PBS centroids using the given encoder.
-
-    Returns dict: {cell_type_str: np.ndarray of shape (embed_dim,)}.
-    Only uses PBS tubes from training donors (excludes VAL_DONORS).
-    """
-    encoder.eval()
-    encoder.to(device)
-
-    # Accumulate embeddings per cell type
-    ct_sums: dict = defaultdict(lambda: None)
-    ct_counts: dict = defaultdict(int)
-
-    pbs_tubes = [e for e in train_manifest
-                 if e["cytokine"] == "PBS" and e.get("donor", "") not in VAL_DONORS]
-    print(f"  Computing PBS centroids from {len(pbs_tubes)} PBS tubes...", flush=True)
-
-    for entry in pbs_tubes:
-        try:
-            adata = anndata.read_h5ad(entry["path"])
-            H = _embed_tube(encoder, adata, gene_names, device).numpy()
-            ct_labels = (
-                adata.obs["cell_type"].values
-                if "cell_type" in adata.obs.columns
-                else np.array(["unknown"] * len(adata))
-            )
-            for ct in np.unique(ct_labels):
-                mask = ct_labels == ct
-                ct_H = H[mask]
-                if ct_sums[ct] is None:
-                    ct_sums[ct] = ct_H.sum(axis=0)
-                else:
-                    ct_sums[ct] += ct_H.sum(axis=0)
-                ct_counts[ct] += mask.sum()
-        except Exception as e:
-            print(f"  WARN: PBS tube {Path(entry['path']).name}: {e}", flush=True)
-
-    pbs_ct_means = {ct: ct_sums[ct] / ct_counts[ct] for ct in ct_sums}
-    print(f"  PBS centroids: {len(pbs_ct_means)} cell types, "
-          f"{sum(ct_counts.values())} total cells", flush=True)
-    return pbs_ct_means
 
 
 def main():
