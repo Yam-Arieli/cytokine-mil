@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ip_meta
-#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/inner_product/meta_%j.out
-#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/inner_product/meta_%j.err
+#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/two_stage/ip_meta_%j.out
+#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/logs/two_stage/ip_meta_%j.err
 #SBATCH --mem=1G
 #SBATCH --cpus-per-task=1
 #SBATCH --time=00:05:00
