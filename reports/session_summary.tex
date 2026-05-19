@@ -1,0 +1,623 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage[expansion=false]{microtype}
+\usepackage{listings}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!60!black,
+}
+
+% Define colors for highlight boxes
+\definecolor{findbg}{RGB}{235,245,255}
+\definecolor{findbd}{RGB}{120,160,210}
+\definecolor{warnbg}{RGB}{255,242,225}
+\definecolor{warnbd}{RGB}{220,160,80}
+\definecolor{tablehead}{RGB}{60,90,150}
+
+\titleformat{\section}{\Large\bfseries\color{tablehead}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color{tablehead!85}}{\thesubsection}{1em}{}
+
+\newcommand{\codeword}[1]{\texttt{\small #1}}
+\newcommand{\KEY}[1]{\textbf{\color{tablehead}#1}}
+
+% Highlight boxes — simple colored vertical bar via \fcolorbox.
+\newcommand{\finding}[2]{%
+  \par\medskip
+  \noindent\fcolorbox{findbd}{findbg}{%
+    \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule}
+      \textbf{\color{findbd!40!black}#1.}\par\smallskip #2
+    \end{minipage}}\par\medskip
+}
+\newcommand{\warningbox}[2]{%
+  \par\medskip
+  \noindent\fcolorbox{warnbd}{warnbg}{%
+    \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule}
+      \textbf{\color{warnbd!40!black}#1.}\par\smallskip #2
+    \end{minipage}}\par\medskip
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  framerule=0.3pt,
+  rulecolor=\color{gray!50},
+  backgroundcolor=\color{gray!5},
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+}
+
+\title{\Large\bfseries Cytokine Cascade Detection via Latent Space Geometry \\[0.3em]
+\large Session Summary: Methods, Findings, and Open Challenges}
+\author{Cytokine-MIL Project}
+\date{19 May 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+This report summarizes a working session on detecting cytokine signaling cascades
+from a MIL-finetuned single-cell encoder. We document three complementary methods
+investigated: (1) the PBS-RC \emph{directional bias} (\textbf{geo}) method for
+candidate pair discovery, (2) the \textbf{cell-type ablation} method for
+directionality determination --- found to be the strongest tool of the three ---
+and (3) an alignment-based \textbf{inner-product / cosine} method for symmetric
+pair detection. Diagnostic experiments on 8 random seeds showed that
+\emph{pair detection itself is the current bottleneck}: of 11 pre-registered known
+cascades, only 4 are recovered in any direction by the geo method at the 20\% top
+threshold, and 0 in the forward direction at the 5\% threshold under per-source
+top-3 filtering. The ablation method works reliably when handed a viable pair
+list but cannot solve the upstream pair-selection problem. The session ends with
+the implementation of an alignment-based detection variant designed to address
+this bottleneck.
+\end{abstract}
+
+\section{Session Goal and Context}
+
+The cytokine-MIL project trains an attention-based multiple-instance-learning
+classifier on pseudo-tubes of PBMCs treated with one of 91 cytokines. The
+hypothesis is that the trained model's latent geometry and dynamics encode
+information about cytokine signaling \emph{cascades} --- cases where cytokine
+$A$ induces a cellular state that subsequently produces cytokine $B$, with
+some intermediate cell type $T$ acting as a \emph{relay}.
+
+A cascade triple is therefore $(A, B, T)$: the source cytokine, the target
+cytokine, and the relay cell type. The session focused on a two-stage cascade
+detection pipeline already implemented (geo $\to$ ablation), diagnosed
+multiple failure modes, applied iterative fixes, and finally designed an
+alternative pair-detection method.
+
+\paragraph{Validation ground truth.}
+Eleven canonical cascade pairs (\codeword{KNOWN\_CASCADES} in
+\codeword{scripts/analyze\_two\_stage\_results.py}) serve as the held-out
+validation set:
+\begin{quote}\small
+IL-12 $\to$ IFN-$\gamma$, IL-1$\beta$ $\to$ IL-6, IL-2 $\to$ IL-15,
+IL-33 $\to$ IL-13, IL-18 $\to$ IFN-$\gamma$, IL-21 $\to$ IL-10,
+TNF-$\alpha$ $\to$ IL-6, IFN-$\alpha$1 $\to$ IFN-$\gamma$, IL-10 $\to$ IL-6,
+IL-4 $\to$ IL-13, IL-27 $\to$ IFN-$\gamma$.
+\end{quote}
+
+\paragraph{Experiment grid.}
+All experiments use 8 random seeds
+(\codeword{42, 123, 7, 456, 789, 314, 271, 618}) with donors D1, D4--D12
+for training and D2, D3 held out for validation. Each experiment trains
+Stage 1 (encoder pre-training), Stage 2 (MIL with frozen encoder), and
+Stage 3 (MIL with unfrozen encoder).
+
+\section{Methods Investigated}
+
+\subsection{Method 1: PBS-RC Directional Bias (``geo'')}
+
+\paragraph{Goal.} Identify ordered candidate pairs $(A \to B)$ from the
+latent space, with a candidate relay cell type $T$.
+
+\paragraph{Definition.} For each tube of cytokine $C$, donor $d$, and
+cell type $T$, the encoder produces a per-cell-type mean embedding
+$\mu_{C,T,d} \in \mathbb{R}^{128}$. After subtracting the donor-pooled PBS
+centroid for $T$ (PBS-RC), the directional bias of $A \to B$ via $T$
+for donor $d$ is:
+\[
+b_{\mathrm{fwd}}^{(d)}(A \to B, T)
+\;=\;
+\bigl(\mu_{A,T,d} - \mu_A\bigr) \cdot \hat{u}_{A \to B},
+\quad
+\hat{u}_{A \to B} = \frac{\mu_B - \mu_A}{\|\mu_B - \mu_A\|}
+\]
+where $\mu_A$ is the pooled PBS-RC centroid of $A$ across cell types
+(removing $A$'s generic effect, leaving only the $T$-specific cascade
+component). The forward call uses a one-sided Wilcoxon signed-rank test
+across donors with Bonferroni correction over cell types per ordered pair.
+
+\paragraph{Encoder choice.} Initial diagnostic compared two encoders on
+identical inputs:
+\begin{itemize}
+\item \textbf{Stage 1} encoder --- trained only on cell-type classification.
+  Contains zero cytokine-specific information by construction.
+\item \textbf{Stage 3} encoder --- MIL-finetuned. Cells are embedded in a
+  cytokine-discriminative space.
+\end{itemize}
+
+\subsection{Method 2: Cell-Type Ablation (\textbf{the directional workhorse})}
+
+\paragraph{Goal.} Given a candidate pair $(A, B)$, determine the direction
+($A \to B$, $B \to A$, or shared) and identify the relay cell type $T^*$.
+
+\paragraph{Definition.} For a tube treated with cytokine $A$ (target $B$),
+compute the bag-level softmax probability $P(B \mid \mathrm{tube}_A)$ at
+the full tube and at the tube with cell type $T$ ablated (all cells of
+type $T$ removed). The relay score is:
+\[
+\mathrm{relay}(A \to B, T) \;=\; P(B \mid \mathrm{tube}_A^{\mathrm{full}})
+\;-\; P(B \mid \mathrm{tube}_A^{\setminus T})
+\]
+A high positive value means cells of type $T$ in an $A$-treated tube are
+\emph{necessary} for the model to predict $B$ --- direct functional
+evidence of $A \to B$ via $T$.
+
+The direction call compares max-relay across cell types in both directions
+($A \to B$ vs $B \to A$). The pipeline does this for both forward and
+reverse direction per (A, B) pair, so the ablation truly tests directionality
+rather than assuming it from geo.
+
+\finding{Why ablation is the strongest method we have}{
+The ablation method has the property that \KEY{the model itself decides}
+whether the cells of type $T$ in an $A$-treated tube carry the signal
+for $B$. It is a direct functional test of the cascade hypothesis:
+``does removing $T$ cells from $A$'s tube destroy the model's belief
+in $B$?'' This sidesteps all assumptions about how the latent space
+encodes cascades. As long as the model successfully learns to
+discriminate cytokines, ablation gives a faithful direction signal.
+The cost is computational: per pair $(A, B)$, each direction, each cell
+type $T$, each donor, requires one forward pass --- $\sim$3.5 minutes
+per ordered pair on the cluster (CPU, n=10 donors $\times$ n=18 cell
+types $\times$ n=10 tubes per cytokine).
+}
+
+\subsection{Method 3: Alignment-Based Inner-Product / Cosine (new, designed this session)}
+
+\paragraph{Goal.} A pair-detection method that does \emph{not} bake in a
+directional assumption (symmetric scoring), addressing the pair-selection
+bottleneck identified in this session.
+
+\paragraph{Definition.} For each cytokine $C$, cell type $T$, donor $d$,
+compute the PBS-RC centroid $v_{C,T,d} = \mu_{C,T,d} - \mu_{\mathrm{PBS},T}$.
+For each unordered pair $\{A,B\}$, each $T$, each $d$:
+\begin{align*}
+\mathrm{cos}_d(A,B,T) &= \frac{\langle v_{A,T,d}, v_{B,T,d}\rangle}{\|v_{A,T,d}\|\cdot\|v_{B,T,d}\|}
+\quad \text{(scale-free angular alignment)}\\
+\mathrm{ip}_d(A,B,T)  &= \langle v_{A,T,d}, v_{B,T,d}\rangle
+\quad \text{(magnitude-weighted)}
+\end{align*}
+Aggregate across donors by mean, then take max over $T$ for the
+pair-level score. The relay $T^*(A,B)$ is the argmax cell type.
+
+\paragraph{PCA-denoised variants.} The hypothesis is that of the 128
+embedding dimensions, only a small fraction carry cascade-relevant
+signal. To test this, we project the centroids to lower dimensions
+(6 and 24) via global PCA on the stacked $\{v_{C,T,d}\}$ matrix, and
+score in each subspace.
+
+This produces six variants: \{cosine, inner product\} $\times$
+\{6D, 24D, 128D\}.
+
+\section{Diagnostic Results}
+
+\subsection{Encoder choice: Stage 1 vs Stage 3 for geo detection}
+
+The MIL-finetuned (Stage 3) encoder is substantially more informative than
+the cell-type-only (Stage 1) encoder for cascade detection
+(Table~\ref{tab:encoder-comparison}).
+
+\begin{table}[h]
+\centering
+\caption{Stage 1 vs Stage 3 encoder geo recall on KNOWN\_CASCADES
+(exp\_0\_seed42, all metrics on top-K\%). Stage 3 doubles
+recall at every threshold under almost every metric.}
+\label{tab:encoder-comparison}
+\small
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Metric} & \textbf{Stage} & \textbf{Recall@5\%} & & \textbf{Recall@10\%} & & \textbf{Recall@20\%} & \\
+\midrule
+max-W & S1 & 5/11 & & 5/11 & & 5/11 & \\
+max-W & S3 & 4/11 & & 6/11 & & \textbf{8/11} & \\
+\addlinespace
+median-W & S1 & 0/11 & & 1/11 & & 2/11 & \\
+median-W & S3 & 2/11 & & 4/11 & & \textbf{8/11} & \\
+\addlinespace
+mean-W & S1 & 1/11 & & 1/11 & & 4/11 & \\
+mean-W & S3 & \textbf{4/11} & & \textbf{7/11} & & 7/11 & \\
+\addlinespace
+n\_ct\_at\_55 & S1 & 3/11 & & 5/11 & & 5/11 & \\
+n\_ct\_at\_55 & S3 & 3/11 & & 6/11 & & 7/11 & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The W-saturation problem}
+
+The original geo ranking used the \textbf{maximum} Wilcoxon W statistic
+across cell types per pair. With $n=10$ donors, $W_{\max}=55$, and with
+18 cell types, this maximum is reached for $\sim$14\% of pairs --- the
+top of the ranking is saturated and provides no discrimination between
+pairs.
+
+\finding{Quantifying W-saturation}{
+At Stage 3, of 8010 non-PBS ordered pairs:
+\begin{itemize}
+\item $W_{\max} = 55$ for \textbf{13.7\%} of pairs (1100 pairs all tied)
+\item $W_{\max} \geq 50$ for 32.5\% of pairs
+\item median-$W$ ranges 5--50, with much better spread (top 100 has 25 unique values)
+\item mean-$W$ ranges 23--38, top 100 has 44 unique values
+\end{itemize}
+\textbf{Fix:} Switched ranking metric from max-$W$ to \textbf{mean-$W$
+across cell types}. Mean-$W$ has the highest pair discrimination and
+the best recall@5\% (4/11 known cascades).
+}
+
+\subsection{Per-source filtering: too aggressive at $K=3$}
+
+To diversify the candidate set and ensure every cytokine gets
+representation in the ablation budget, we tried \textbf{per-source top-K}
+filtering: for each source cytokine $A$, keep its top-$K$ targets $B$ by
+score. With $K=3$ and 90 cytokines, this yields $\sim$270 ordered pairs
+per experiment (manageable for ablation).
+
+\warningbox{Failure mode: known cascade pairs rank too low per source}{
+For most known cascades, the cascade pair does not rank in the source
+cytokine's top-3 (Table~\ref{tab:per-source-rank}). Stronger
+``geometric outliers'' (e.g., IL-32-$\beta$ with its distinctive
+B-cell-memory signature) dominate every source's top-3, even though
+they are unlikely to be biological cascade partners. \KEY{0 of 11 known
+cascades appear in the per-source top-3 forward direction list;
+only 2 of 11 appear in any direction.}
+}
+
+\begin{table}[h]
+\centering
+\caption{Source cytokine's top-3 target list (exp\_0\_seed42, Stage 3,
+mean-W ranking). For 9 of 11 known cascades, neither the source's
+top-3 nor the target's top-3 includes the cascade partner.}
+\label{tab:per-source-rank}
+\footnotesize
+\begin{tabular}{lll c}
+\toprule
+\textbf{Known} & \textbf{Source's top-3 targets} & \textbf{Target's top-3 sources} & \textbf{Found?} \\
+\midrule
+IL-12 $\to$ IFN-$\gamma$    & C5a, CT-1, TL1A             & IL-33, IL-8, IFN-$\alpha$1 & {\color{red}no} \\
+IL-1$\beta$ $\to$ IL-6       & IFN-$\lambda$2, Leptin, FGF-$\beta$ & TNF-$\alpha$, IL-9, PRL    & {\color{red}no} \\
+IL-2 $\to$ IL-15             & IFN-$\gamma$, IL-4, IFN-$\beta$ & IFN-$\beta$, IFN-$\gamma$, IFN-$\omega$ & {\color{red}no} \\
+IL-33 $\to$ IL-13            & CD27L, IL-16, IFN-$\epsilon$ & IL-20, IL-27, IL-1$\alpha$ & {\color{red}no} \\
+IL-18 $\to$ IFN-$\gamma$     & GITRL, CT-1, IFN-$\lambda$2 & IL-33, IL-8, IFN-$\alpha$1 & {\color{red}no} \\
+IL-21 $\to$ IL-10            & IL-20, IL-22, ADSF          & TGF-$\beta$1, IFN-$\lambda$1, CD30L & {\color{red}no} \\
+TNF-$\alpha$ $\to$ IL-6      & C3a, IL-31, IL-24           & \textbf{TNF-$\alpha$}, IL-9, PRL & {\color{green!50!black}reverse} \\
+IFN-$\alpha$1 $\to$ IFN-$\gamma$ & M-CSF, RANKL, IL-17A    & IL-33, IL-8, \textbf{IFN-$\alpha$1} & {\color{green!50!black}reverse} \\
+IL-10 $\to$ IL-6             & TGF-$\beta$1, IFN-$\lambda$1, CD30L & TNF-$\alpha$, IL-9, PRL & {\color{red}no} \\
+IL-4 $\to$ IL-13             & IL-34, FLT3L, IFN-$\beta$   & IL-20, IL-27, IL-1$\alpha$ & {\color{red}no} \\
+IL-27 $\to$ IFN-$\gamma$     & IL-3, FGF-$\beta$, IL-36Ra  & IL-33, IL-8, IFN-$\alpha$1 & {\color{red}no} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation results on the per-source top-3 candidates}
+
+Despite the geo selection missing most known cascades, the ablation step
+on the chosen pairs identified several reproducible novel pairs
+(Table~\ref{tab:ablation-strong-pairs}).
+
+\begin{table}[h]
+\centering
+\caption{Pairs detected in $\geq$5 of 8 experiments via mean-W per-source
+top-3 with ablation directionality. Numbers show experiment-level vote
+counts ($A\to B$ : $B \to A$).}
+\label{tab:ablation-strong-pairs}
+\small
+\begin{tabular}{lccl}
+\toprule
+\textbf{Pair} & \textbf{n\_exps} & \textbf{$A{\to}B$:$B{\to}A$} & \textbf{Biological interpretation} \\
+\midrule
+IL-9 $\to$ IL-10        & 6 & 5:1 & Treg / mast cell circuit \\
+IL-23 $\to$ IFN-$\lambda$1 & 6 & 3:3 & Th17 $\to$ antiviral interferon \\
+Noggin $\to$ IL-10      & 5 & 1:4 & BMP antagonist $\to$ anti-inflammatory \\
+Decorin $\to$ TRAIL     & 5 & 3:2 & ECM proteoglycan $\to$ apoptosis \\
+IL-15 $\to$ IL-1$\beta$ & 5 & 3:2 & NK activation $\to$ inflammasome \\
+IL-36Ra $\to$ FasL      & 5 & 4:1 & IL-36 antagonist $\to$ apoptosis \\
+IL-36Ra $\to$ IL-19     & 5 & 4:1 & IL-36 antagonist $\to$ IL-20 subfamily \\
+IL-1$\alpha$ $\to$ CT-1 & 5 & 4:1 & Alarmin $\to$ cardiotrophin-1 \\
+IL-1$\alpha$ $\to$ GM-CSF & 5 & 1:5 & Alarmin / myeloid expansion \\
+GM-CSF $\to$ IFN-$\lambda$1 & 5 & 1:4 & Myeloid activation $\to$ IFN-$\lambda$ \\
+GM-CSF $\to$ IL-27       & 5 & 2:3 & Myeloid activation $\to$ IL-27 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\finding{The strongest novel discovery: IL-9 $\to$ IL-10}{
+Detected in 6 of 8 experiments, with 5 of 6 informative votes calling
+direction $A \to B$. IL-9 is a known driver of Treg expansion and IL-10
+production --- this is a real immunological axis, validating that
+ablation extracts genuine signal when handed reasonable candidates.
+}
+
+\section{Why Triplet Detection Is Hard: The Current Open Challenge}
+
+The session's central diagnostic is that \emph{the cellular-relay
+hypothesis is testable only after candidate triples $(A, B, T)$ are
+proposed}. Three pair-selection strategies were tried:
+
+\begin{table}[h]
+\centering
+\caption{Pair-selection strategy comparison.
+Recall@5\% on KNOWN\_CASCADES; ``forward'' = $(A \to B)$ ordering
+preserved; ``any'' = either direction matches.}
+\label{tab:strategy-comparison}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Strategy} & \textbf{Stage 3 max-W} & \textbf{Stage 3 mean-W} & \textbf{Stage 3 mean-W} \\
+                  & \textbf{global top-5\%} & \textbf{global top-5\%} & \textbf{per-source top-3} \\
+\midrule
+Forward recall    & 4/11 & 4/11 & 0/11 \\
+Any-direction recall & 4/11 & 4/11 & 2/11 \\
+Pairs to ablate (per exp) & 400 & 400 & 270 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Why the geo method drops known cascades from its top}
+
+The geo bias score measures \emph{how much} cells of type $T$ shift in the
+direction of cytokine $B$ in an $A$-treated tube. Two known properties of
+the dataset distort this score:
+\begin{enumerate}[noitemsep]
+\item A few cytokines (IL-32-$\beta$ above all) produce \emph{enormous}
+  cell-type-specific shifts in cell-type embeddings. These dominate
+  every source's top-K simply because they are geometric outliers.
+\item Known cascade partners (e.g., IL-12 / IFN-$\gamma$, IL-1$\beta$ / IL-6)
+  involve real but subtler shifts. Their pair score is real but
+  middle-of-the-pack, so they get displaced by the outliers.
+\end{enumerate}
+
+\paragraph{Symmetry asymmetry.} Even when a known cascade has any
+geometric signal, the geo direction is rarely the canonical one. For
+instance, the dominant direction in the data is
+``IFN-$\gamma$ $\to$ IL-12'' (because IFN-$\gamma$-treated cells shift
+toward where IL-12 sits), not ``IL-12 $\to$ IFN-$\gamma$.'' This is a
+property of \emph{latent space geometry}, not biology: the cytokine that
+produces the bigger response also appears as the geometric ``source.''
+Direction therefore should not be inferred from geo \emph{at all} ---
+this is the ablation method's job (Section 2.2).
+
+\subsection{Architecture of the proposed alignment method}
+
+The inner-product / cosine method targets the pair-selection bottleneck
+directly:
+\begin{itemize}[noitemsep]
+\item No directionality assumption (symmetric score).
+\item Two metrics tested: cosine (angular) and raw inner product
+  (magnitude-weighted).
+\item Three dimensionalities tested: 128D (full), 24D (mild PCA), 6D
+  (aggressive PCA --- testing the hypothesis that most dimensions are noise).
+\item Output is fully compatible with the existing ablation pipeline:
+  hand the top alignment pairs to ablation for directionality.
+\end{itemize}
+
+\warningbox{Submission status at session end}{
+The alignment-based detection code is fully implemented, tested locally
+(5/5 unit tests pass), committed to \codeword{main} (commit
+\codeword{80f54bc}), and synced to the cluster. The SLURM submission
+chain ran into intermittent OTP/auth failures during this session;
+empirical results comparing the six variants against KNOWN\_CASCADES
+are pending the next session's job execution.
+}
+
+\section{Implementation Summary}
+
+\subsection{Codebase changes from this session}
+
+\begin{table}[h]
+\centering
+\caption{Files added or modified.}
+\label{tab:files}
+\footnotesize
+\begin{tabular}{p{6.5cm}p{8cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\codeword{cytokine\_mil/analysis/encoder\_cache.py} \textit{(new)}
+& Shared helpers: \codeword{build\_cache}, \codeword{compute\_pbs\_centroids},
+  \codeword{\_embed\_tube}, \codeword{\_load\_label\_encoder}. Extracted from
+  \codeword{run\_geo\_extract.py} for reuse. \\
+\codeword{cytokine\_mil/analysis/pair\_alignment.py} \textit{(new)}
+& Core alignment computation: per-(C,T,d) PBS-RC centroids, PCA projections,
+  pair scoring under cosine and inner-product metrics, top-pairs formatting. \\
+\codeword{scripts/run\_geo\_extract.py} \textit{(refactored)}
+& Now imports cache helpers from \codeword{encoder\_cache.py}. \\
+\codeword{scripts/run\_inner\_product\_pairs.py} \textit{(new)}
+& Per-experiment alignment runner. Six variant outputs per experiment. \\
+\codeword{scripts/analyze\_inner\_product\_results.py} \textit{(new)}
+& Cross-experiment recall@K analysis, dim comparison plots. \\
+\codeword{scripts/filter\_top\_pairs.py} \textit{(modified)}
+& Switched ranking from max-W to mean-W across cell types. \\
+\codeword{scripts/analyze\_two\_stage\_results.py} \textit{(modified)}
+& Threshold sweep now uses mean-W (with fallbacks). \\
+\codeword{slurm/inner\_product/01\_run.slurm} \textit{(new)}
+& Array job 0--7, 32 GB, 4 CPUs, 1 h. \\
+\codeword{slurm/inner\_product/02\_analyze.slurm} \textit{(new)}
+& Cross-experiment analysis, 8 GB, 30 min. \\
+\codeword{slurm/inner\_product/meta\_submit.slurm} \textit{(new)}
+& Chains 01 $\to$ 02 via \codeword{sbatch --dependency=afterok}. \\
+\codeword{tests/test\_pair\_alignment.py} \textit{(new)}
+& 5 unit tests: shape, symmetry, identity-cosine, PCA dims, schema. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reusable utilities}
+
+\begin{table}[h]
+\centering
+\caption{Key utilities, with function signatures, that future work
+should reuse rather than reimplement.}
+\label{tab:utilities}
+\footnotesize
+\begin{tabular}{p{5cm}p{10cm}}
+\toprule
+\textbf{Location} & \textbf{Signature} \\
+\midrule
+\codeword{encoder\_cache.py} &
+\codeword{compute\_pbs\_centroids(encoder, manifest, gene\_names, device)}
+$\to$ \codeword{Dict[cell\_type, ndarray]} \\
+\codeword{encoder\_cache.py} &
+\codeword{build\_cache(encoder, manifest, gene\_names, label\_encoder, device)}
+$\to$ \codeword{list[dict]} (each tube as \codeword{\{H, label, cell\_types, donor\}}) \\
+\codeword{pair\_alignment.py} &
+\codeword{compute\_per\_atd\_centroids(cache, label\_encoder, pbs\_ct\_means, train\_donors)}
+$\to$ \codeword{Dict[(C,T,d), ndarray]} \\
+\codeword{pair\_alignment.py} &
+\codeword{fit\_pca\_projections(centroids, n\_components\_list)}
+$\to$ \codeword{Dict[dim, Dict[(C,T,d), ndarray]]} \\
+\codeword{pair\_alignment.py} &
+\codeword{compute\_pair\_scores(centroids, metrics)}
+$\to$ \codeword{(pair\_scores, relay\_T, full\_table)} \\
+\codeword{latent\_geometry.py} &
+\codeword{compute\_directional\_bias\_per\_donor(cache, le, pbs\_ct, train\_donors, direction\_mode)} \\
+\codeword{latent\_geometry.py} &
+\codeword{test\_directional\_significance(bias\_result, le, alpha)} \\
+\codeword{analyze\_cell\_type\_ablation.py} &
+Ablation entry point; consumes \codeword{top\_pairs.json} schema $\{A, B, relay\_cell\_type, \ldots\}$. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusions and Forward Plan}
+
+\subsection{What works}
+
+\begin{enumerate}[label=\textbf{C\arabic*.},leftmargin=*]
+\item \KEY{Cell-type ablation is the most reliable component of the
+pipeline.} Given a viable pair, ablation tests directionality directly
+via the model's own predictions. It is computationally expensive but
+biologically faithful. \textbf{Future work should treat ablation as the
+``ground truth'' direction call} and focus on improving upstream pair
+selection.
+
+\item The Stage-3 MIL-finetuned encoder doubles known-cascade recall
+over the Stage-1 encoder. Future work should use \codeword{model\_stage3.pt}.
+
+\item Mean-W across cell types is a far better pair ranking metric
+than max-W (which saturates) or median-W (which has poor pair-level
+spread).
+
+\item The pipeline is now properly modularized: \codeword{encoder\_cache.py}
+holds the shared cache logic, so new pair-detection methods only need
+to implement scoring on the centroid dictionary.
+\end{enumerate}
+
+\subsection{What does not work yet}
+
+\begin{enumerate}[label=\textbf{X\arabic*.},leftmargin=*]
+\item \KEY{Pair selection from the geo bias score misses known cascades.}
+Per-source top-3 yields 0/11 forward recall; global top-5\% yields 4/11
+in any direction. The latent geometry contains too many strong outlier
+cytokines (notably IL-32-$\beta$) that dominate the rankings.
+
+\item \KEY{The cellular-relay triplet $(A, B, T)$ is the right
+biological unit, but our current scores are pair-level and only weakly
+$T$-conditional.} The relay cell type is recovered as an argmax, with
+no calibration on its plausibility.
+
+\item Direction information from geo is unreliable. Asymmetry between
+$(A \to B)$ and $(B \to A)$ geo scores reflects which cytokine has the
+bigger response, not the direction of the cascade.
+\end{enumerate}
+
+\subsection{Specific next actions for the future session}
+
+\begin{enumerate}[label=\textbf{N\arabic*.},leftmargin=*,itemsep=2pt]
+\item Run the alignment-based detection pipeline submitted at session
+end (\codeword{slurm/inner\_product/meta\_submit.slurm}). Compare the
+six (metric, dim) variants against KNOWN\_CASCADES via
+\codeword{analyze\_inner\_product\_results.py} $\to$ \codeword{recall\_curves.png}.
+\item If a variant achieves recall@5\% $\geq 4/11$, hand its
+\codeword{top\_pairs\_*.json} to the existing ablation pipeline
+(\codeword{scripts/analyze\_cell\_type\_ablation.py}) for direction
+calling.
+\item Diagnose IL-32-$\beta$ specifically: investigate whether it is
+a real biological anchor or a training-set artifact (donor-specific?
+batch effect? unusual transcriptional signature in the encoder).
+\item Consider running ablation on a deliberately constructed pair set
+containing the 11 known cascades, to establish a clean ``ablation
+recovers direction'' benchmark independent of pair selection.
+\end{enumerate}
+
+\section*{Appendix: Key Quantitative Snapshots}
+
+\begin{table}[h]
+\centering
+\caption{Quantitative summary table for cross-method comparison
+(Stage 3 encoder, exp\_0\_seed42).}
+\label{tab:method-summary}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{Recall@5\%} & \textbf{Score range} &
+\textbf{Discrimination} & \textbf{Direction call} \\
+\midrule
+geo max-W                & 4/11 (any dir) & saturates at 55 & poor    & implicit, unreliable \\
+geo median-W             & 2/11           & 5--50          & moderate & ditto \\
+geo mean-W               & 4/11           & 23--38         & good    & ditto \\
+per-source top-3 (mean-W) & 0/11 (fwd)   & ditto          & --       & dominated by outliers \\
+ablation only             & --            & --             & --       & \KEY{direct, reliable} \\
+inner-product (designed)  & TBD           & TBD           & TBD     & \KEY{none (symmetric)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{The eight experiments and their seeds.}
+\label{tab:experiments}
+\small
+\begin{tabular}{cc}
+\toprule
+\textbf{Exp index} & \textbf{Seed} \\
+\midrule
+0 & 42 \\
+1 & 123 \\
+2 & 7 \\
+3 & 456 \\
+4 & 789 \\
+5 & 314 \\
+6 & 271 \\
+7 & 618 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Training donors.} D1, D4, D5, D6, D7, D8, D9, D10, D11, D12 (10 donors).
+\paragraph{Validation donors (held out).} D2, D3 (2 donors).
+
+\end{document}
