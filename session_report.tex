@@ -1,0 +1,485 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{colortbl}
+
+\definecolor{correct}{RGB}{39,174,96}
+\definecolor{wrong}{RGB}{192,57,43}
+\definecolor{marginal}{RGB}{230,126,34}
+\definecolor{sectionblue}{RGB}{41,128,185}
+
+\titleformat{\section}{\large\bfseries\color{sectionblue}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+
+\hypersetup{colorlinks=true, linkcolor=sectionblue, urlcolor=sectionblue}
+
+\title{
+    \textbf{Cascade Directionality Detection via MIL Training Dynamics}\\[0.5em]
+    \large Session Experiment Report
+}
+\author{Cytokine-MIL Project}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Background and Motivation}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Setting}
+
+An AB-MIL model was trained to classify which cytokine was applied to a
+pseudo-tube of PBMCs (91 classes: 90 cytokines + PBS). Each pseudo-tube
+contains $\approx$480 cells stratified by 18 cell types across 12 donors
+(Donor2 and Donor3 held out for validation).
+
+Training proceeds in three stages:
+\begin{enumerate}[noitemsep]
+    \item \textbf{Stage 1}: Encoder pre-training with cell-type classification supervision.
+    \item \textbf{Stage 2}: MIL fine-tuning with frozen encoder (20 epochs, LR $= 10^{-3}$).
+    \item \textbf{Stage 3}: Full fine-tuning, encoder unfrozen (100 epochs).
+\end{enumerate}
+During Stage 3, per-cell-type centroids were logged at every epoch for all
+cytokines and training donors. Experiments across \textbf{10 random seeds} were
+run to assess robustness.
+
+\subsection{Known Cascade Pairs (Benchmark)}
+
+The PBS-RC static geometry method (preceding this session) recovers all 11 known
+cascade pairs with high sensitivity, but calls \emph{every} pair as
+``shared'' (both $A \to B$ and $B \to A$ significant). The open problem that
+this session addresses is \textbf{directionality}: which cytokine is upstream?
+
+\begin{table}[H]
+\centering
+\caption{Known cytokine cascade pairs used as benchmark throughout this session.}
+\begin{tabular}{lll}
+\toprule
+\textbf{Source (A)} & \textbf{Target (B)} & \textbf{Known relay cell types} \\
+\midrule
+IL-12       & IFN-$\gamma$  & NK, NKT, CD8 T \\
+IL-1-beta   & IL-6          & Monocytes, macrophages \\
+IL-2        & IL-15         & T cells, NK \\
+IL-33       & IL-13         & ILC2, mast cells \\
+IL-18       & IFN-$\gamma$  & NK, T cells \\
+IL-21       & IL-10         & B cells, plasma cells \\
+TNF-alpha   & IL-6          & Stromal, monocytes \\
+IFN-alpha1  & IFN-$\gamma$  & NK, T cells \\
+IL-10       & IL-6          & Monocytes (regulatory) \\
+IL-4        & IL-13         & Th2, ILC2 \\
+IL-27       & IFN-$\gamma$  & NK, T cells \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Model Performance}
+
+The trained model achieves $P_{\text{correct}} \approx 0.039$ on training data
+(3.5$\times$ above chance for 91 classes). This relatively low accuracy is
+an important caveat for interpreting all experiments in this session.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiment 1: Attention-Weighted Centroid PCA Trajectories}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Hypothesis}
+
+\textbf{If A$\to$B via relay cell type T}, the model should learn to represent
+T cells in A-tubes as B-like. Under fine-tuning, the attention-weighted
+centroid of T cells in A-tubes ($\tilde{\mu}_{A,T}^{\text{attn}}$) should
+drift \emph{toward} the centroid of T cells in B-tubes in the latent space.
+Projecting both cytokines' centroids into a shared PCA 2D subspace (fitted on
+all centroids from source and target across all epochs) should reveal this
+convergence as a trajectory plot.
+
+\subsection{Method}
+
+For each seed and each cell type $T$:
+\begin{enumerate}[noitemsep]
+    \item Compute attention-weighted centroid: $\tilde{\mu}_{A,T}(t) = \text{mean}_{i:\tau(i)=T}\, a_i(t)\cdot \tilde{h}_i(t)$, averaged over training donors.
+    \item Fit PCA on all centroids of source and target (all cell types, all epochs) for that seed.
+    \item Project source and target centroids into the 2D cascade-relevant subspace.
+    \item Track the trajectory over training epochs.
+\end{enumerate}
+
+\textbf{Analysis:} 10 seeds $\times$ 18 cell types, focused on IL-12 $\to$ IFN-$\gamma$.
+
+\subsection{Results and Failure Mode}
+
+Per-seed visualizations showed inconsistent patterns across seeds. The key
+failure mode was identified: \textbf{the attention-weighted centroid is
+contaminated by attention magnitude}. For low-attention cell types (e.g., B
+cells), $a_i \approx 0$ for all cells, so the weighted centroid collapses to
+$\approx \mathbf{0}$ for \emph{both} cytokines, producing spurious convergence.
+For high-attention relay cells, the model pushes their embeddings to be
+\emph{maximally discriminative} (far from each other), not similar — producing
+apparent divergence.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/pca_distance_heatmap_IL_12_IFN_gamma_10seeds.png}
+    \caption{%
+        \textbf{PCA distance convergence heatmap} (IL-12 $\to$ IFN-$\gamma$,
+        10 seeds $\times$ 18 cell types).
+        Metric: $(d_{\text{start}} - d_{\text{end}}) / d_{\text{start}}$ in the
+        per-seed cascade-relevant 2D PCA subspace; clipped to $\pm 3$.
+        Green = converged (source and target centroids moved closer).
+        Red = diverged. \textbf{Sign test (right panel):}
+        B Naive and B Intermediate converge in $>$80\% of seeds --- biologically
+        incorrect (B cells are not relay cells). NK, NKT converge in only
+        $\approx$40--50\% of seeds (near chance), despite being the known relays.
+        The metric is fundamentally unreliable.
+    }
+    \label{fig:pca_heatmap}
+\end{figure}
+
+\subsection{Conclusion}
+
+\textbf{Null result.} The attention-weighted centroid convergence metric does not
+reliably identify relay cells or cascade direction. The attention weighting
+itself is the confound: low-attention cells produce trivial convergence; relay
+cells (high attention) diverge because the model makes them discriminative.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiment 2: Epoch-Dependent PBS-RC Directional Bias Asymmetry}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Hypothesis}
+
+\textbf{If A$\to$B via relay T}, the attention-weighted centroid of T cells in
+A-tubes should deviate \emph{toward} B's global embedding, more than the
+symmetric reverse signal. Define:
+\begin{align}
+b_{\text{fwd}}(A \to B, T, t) &= (\tilde{\mu}_{A,T}(t) - \tilde{\mu}_A(t)) \cdot \hat{u}_{A\to B}(t), \\
+b_{\text{fwd}}(B \to A, T, t) &= (\tilde{\mu}_{B,T}(t) - \tilde{\mu}_B(t)) \cdot \hat{u}_{B\to A}(t),
+\end{align}
+where $\tilde{\mu}_A(t)$ is A's global centroid (mean over all cell types) and
+$\hat{u}_{A\to B}(t)$ is the unit direction from A to B at epoch $t$.
+The asymmetry $\text{Asym}(A\to B, T, t) = b_{\text{fwd}}(A\to B) - b_{\text{fwd}}(B\to A)$
+should be \textbf{positive and growing} for cascade pairs.
+
+\subsection{Method}
+
+Computed from existing \texttt{dynamics\_stage3.pkl} files (no new training).
+For each of the 11 known pairs, computed $b_{\text{fwd}}$ at every logged
+epoch across all training donors and 10 seeds. Summarised by mean asymmetry
+over epochs and cell types.
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{%
+    Epoch asymmetry summary. Mean Asym $= \overline{\text{Asym}(A\to B, T, t)}$
+    averaged over all cell types and epochs. Call: A$\to$B if Mean Asym $> 0$.
+    $\checkmark$ = matches known direction; $\times$ = does not match.
+}
+\begin{tabular}{llrll c}
+\toprule
+\textbf{A} & \textbf{B} & \textbf{Mean Asym} & \textbf{Best relay T} & \textbf{Call} & \\
+\midrule
+IL-12      & IFN-$\gamma$ & $-0.0028$ & MAIT       & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-2       & IL-15        & $+0.0443$ & cDC        & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-33      & IL-13        & $+0.0102$ & cDC        & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-18      & IFN-$\gamma$ & $+0.0537$ & CD14 Mono  & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-21      & IL-10        & $-0.0040$ & NKT        & B$\to$A & \textcolor{marginal}{?} \\
+IL-10      & IL-6         & $-0.0210$ & ILC        & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-4       & IL-13        & $+0.0223$ & Plasmablast & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-27      & IFN-$\gamma$ & $-0.0064$ & CD14 Mono  & B$\to$A & \textcolor{wrong}{$\times$} \\
+\bottomrule
+\multicolumn{6}{l}{\small 3 pairs absent from trajectory data (IL-1-beta, TNF-alpha, IFN-alpha1).} \\
+\multicolumn{6}{l}{\small \textbf{Score: 4/8 correct (50\% = chance).}} \\
+\end{tabular}
+\label{tab:epoch_asym}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{figures/epoch_asym_IL_12_IFN_gamma.png}
+        \caption{IL-12 $\to$ IFN-$\gamma$: essentially flat asymmetry across all
+        100 epochs. MAIT identified as best relay (biologically incorrect; NK
+        cells are the known relay). Mean Asym $= -0.003 \approx 0$.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{figures/epoch_asym_IL_18_IFN_gamma.png}
+        \caption{IL-18 $\to$ IFN-$\gamma$: positive and growing asymmetry
+        (CD14 Mono, CD4 Naive). Mean Asym $= +0.054$. This is what a genuine
+        directional signal would look like, but the relay cell type is
+        biologically unexpected.}
+    \end{subfigure}
+    \caption{%
+        Epoch-dependent directional bias asymmetry for two representative pairs.
+        \textbf{Left panel of each figure}: $b_{\text{fwd}}$ for A-tubes (solid)
+        and B-tubes (dashed) per cell type over training epochs.
+        \textbf{Right panel}: $\text{Asym}(A\to B, T, t)$; positive = A$\to$B signal.
+        Mean across 10 seeds.
+    }
+    \label{fig:epoch_asym}
+\end{figure}
+
+\subsection{Conclusion}
+
+\textbf{Null result} for cascade directionality (4/8 = chance). The canonical
+IL-12$\to$IFN-$\gamma$ pair shows zero signal. Asymmetry magnitudes are
+uniformly small ($|$Asym$| < 0.06$). The same root cause as Experiment 1
+applies: the attention-weighted centroid confounds geometry with attention
+magnitude.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiment 3: Confusion Matrix Asymmetry}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Hypothesis}
+
+\textbf{If A$\to$B via relay cells}, A-tubes contain cells that transcriptionally
+resemble B (they are producing B in response to A). The trained 91-class
+classifier should therefore assign higher softmax probability to class B when
+evaluating A-tubes than it assigns to class A when evaluating B-tubes:
+\[
+P(B \mid A\text{-tube}) > P(A \mid B\text{-tube}) \implies A \to B.
+\]
+This defines the asymmetry:
+$\text{Asym}(A \to B) = C[A,B] - C[B,A]$, where $C[i,j] = \overline{P(j \mid \text{tube of class } i)}$.
+
+\subsection{Method}
+
+For each of the 10 seeds, loaded \texttt{model\_stage3.pt}, ran a forward pass
+on all 9{,}100 training tubes, and accumulated the mean-softmax 91$\times$91
+confusion matrix. Averaged across seeds and computed element-wise asymmetry.
+
+\subsection{Results}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/confusion_asymmetry.png}
+    \caption{%
+        \textbf{Full 90$\times$90 confusion asymmetry matrix} (PBS excluded).
+        $\text{Asym}[A,B] = P(B \mid A\text{-tube}) - P(A \mid B\text{-tube})$;
+        blue = A$\to$B signal. The matrix is dominated by \textbf{random noise}
+        --- no block structure or interpretable pattern is visible. The colorbar
+        range is $\approx \pm 0.015$, consistent with fluctuations around zero.
+    }
+    \label{fig:conf_asym}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Confusion asymmetry for known cascade pairs. All values are $< 0.005$ in magnitude (noise floor $\approx 1/91 \approx 0.011$). Score: \textbf{4/11 = 36\%} (below chance).}
+\begin{tabular}{llrrl c}
+\toprule
+\textbf{A} & \textbf{B} & \textbf{Asym(A$\to$B)} & \textbf{Asym(B$\to$A)} & \textbf{Call} & \\
+\midrule
+IL-12      & IFN-$\gamma$ & $-0.00035$ & $+0.00035$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-1-beta  & IL-6         & $-0.00000$ & $+0.00000$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-2       & IL-15        & $+0.00431$ & $-0.00431$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-33      & IL-13        & $-0.00006$ & $+0.00006$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-18      & IFN-$\gamma$ & $-0.00011$ & $+0.00011$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-21      & IL-10        & $-0.00037$ & $+0.00037$ & B$\to$A & \textcolor{marginal}{?} \\
+TNF-alpha  & IL-6         & $+0.00147$ & $-0.00147$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IFN-alpha1 & IFN-$\gamma$ & $-0.00021$ & $+0.00021$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-10      & IL-6         & $+0.00331$ & $-0.00331$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-4       & IL-13        & $+0.00204$ & $-0.00204$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-27      & IFN-$\gamma$ & $-0.00078$ & $+0.00078$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Conclusion}
+
+\textbf{Null result.} The confusion matrix is pure noise. None of the known
+cascade pairs appear in the top-20 most asymmetric pairs globally (those are
+all dominated by coincidental cytokine similarities unrelated to cascades).
+
+The root cause: with $P_{\text{correct}} \approx 0.039$, the off-diagonal
+confusion elements are each $\approx 1\%$. The asymmetries we seek are on the
+order of $0.001$ (0.1 percentage points), well below the signal-to-noise floor.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiment 4: Cell-Type Ablation}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Hypothesis}
+
+\textbf{If T is a relay for A$\to$B}, removing T cells from A-tubes should
+reduce $P(B \mid A\text{-tube})$ — because T carries the B-like signal that
+makes A-tubes look like B. The relay score quantifies this:
+\[
+\text{relay\_score}(A \to B, T) = P(B \mid \text{full tube}) - P(B \mid \text{tube} \setminus T).
+\]
+\textbf{Directional test:}
+$\text{relay\_score}(A \to B, T^*) > \text{relay\_score}(B \to A, T^*) \implies A \to B.$
+
+This test operates purely on model outputs and makes no assumptions about the
+embedding geometry. Cell types are identified from \texttt{obs['cell\_type']}
+in the original H5AD files.
+
+\subsection{Method}
+
+For each of the 10 seeds and each training-donor tube of cytokine $A$:
+(1) run the model on the full tube; (2) for each cell type $T$, remove all
+cells of type $T$ and re-run the model; (3) compute relay score.
+All 11 known cascade pairs were evaluated in both directions.
+Directionality call: the direction with the higher relay score for the best
+relay cell type wins.
+
+\subsection{Results}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/ablation_known_pairs.png}
+    \caption{%
+        \textbf{Cell-type ablation relay scores} for all 11 known cascade pairs.
+        Red bars: $\text{relay\_score}(A \to B, T)$; blue bars:
+        $\text{relay\_score}(B \to A, T)$. Top 8 cell types per pair by
+        forward score. A$\to$B is indicated when red $>$ blue for the top cell type.
+    }
+    \label{fig:ablation}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{%
+    Cell-type ablation directionality calls. ``Fwd'' = relay\_score$(A\to B)$;
+    ``Rev'' = relay\_score$(B \to A)$. Ratio $= $ Fwd/Rev.
+    Only pairs with ratio $>2$ are considered reliable.
+}
+\begin{tabular}{llllrrl c}
+\toprule
+\textbf{A} & \textbf{B} & \textbf{Best relay T} & \textbf{Fwd} & \textbf{Rev} & \textbf{Ratio} & \textbf{Call} & \\
+\midrule
+IL-2       & IL-15        & cDC         & 0.00755 & 0.00121 & 6.2$\times$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-12      & IFN-$\gamma$ & CD16 Mono   & 0.00119 & 0.00034 & 3.5$\times$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+TNF-alpha  & IL-6         & CD4 Naive   & 0.00630 & 0.00301 & 2.1$\times$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IL-27      & IFN-$\gamma$ & CD14 Mono   & 0.00303 & 0.00192 & 1.6$\times$ & A$\to$B & \textcolor{correct}{$\checkmark$} \\
+IFN-alpha1 & IFN-$\gamma$ & CD16 Mono   & 0.00242 & 0.00207 & 1.2$\times$ & A$\to$B & \textcolor{marginal}{$\checkmark$\textsuperscript{m}} \\
+IL-4       & IL-13        & cDC         & 0.00546 & 0.00441 & 1.2$\times$ & A$\to$B & \textcolor{marginal}{$\checkmark$\textsuperscript{m}} \\
+IL-33      & IL-13        & cDC         & 0.00012 & 0.00011 & 1.1$\times$ & A$\to$B & \textcolor{marginal}{$\checkmark$\textsuperscript{m}} \\
+IL-10      & IL-6         & CD14 Mono   & 0.00734 & 0.00734 & 1.0$\times$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-18      & IFN-$\gamma$ & CD16 Mono   & 0.00007 & 0.00020 & 0.4$\times$ & B$\to$A & \textcolor{wrong}{$\times$} \\
+IL-21      & IL-10        & NK CD56br.  & 0.00003 & 0.00027 & 0.1$\times$ & B$\to$A & \textcolor{marginal}{?} \\
+IL-1-beta  & IL-6         & MAIT        & 0.00000 & 0.00000 & ---         & B$\to$A & \textcolor{wrong}{$\times$} \\
+\bottomrule
+\multicolumn{8}{l}{\small \textsuperscript{m} Marginal (ratio $<1.5\times$, within noise). 7/11 A$\to$B calls; 3/3 high-confidence ($>2\times$) correct.}
+\end{tabular}
+\end{table}
+
+\subsection{Conclusion}
+
+\textbf{Partial signal.} Of 3 high-confidence calls (ratio $>2\times$), all
+3 are correct: IL-2$\to$IL-15 (6.2$\times$), IL-12$\to$IFN-$\gamma$ (3.5$\times$),
+TNF-alpha$\to$IL-6 (2.1$\times$). However, scores are universally small
+($< 0.01$), the relay cell types are not always biologically canonical (CD16
+Mono rather than NK for IL-12), and 4 pairs show no or reversed signal.
+The same low-accuracy bottleneck ($P_{\text{correct}} \approx 4\%$) limits
+the signal-to-noise ratio throughout.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Cross-Experiment Comparison}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+\caption{%
+    Summary of directional calls across all three experiments for each
+    known cascade pair. \textcolor{correct}{$\checkmark$} = correct;
+    \textcolor{wrong}{$\times$} = incorrect; \textcolor{marginal}{$\sim$} = marginal/uncertain.
+    Bolded pairs are those where at least two experiments agree on the correct direction.
+}
+\begin{tabular}{ll ccc}
+\toprule
+\textbf{A} & \textbf{B} &
+\textbf{Exp.\ 2 (Epoch Asym.)} &
+\textbf{Exp.\ 3 (Conf.\ Matrix)} &
+\textbf{Exp.\ 4 (Ablation)} \\
+\midrule
+\textbf{IL-2}      & \textbf{IL-15}       & \textcolor{correct}{$\checkmark$} & \textcolor{correct}{$\checkmark$} & \textcolor{correct}{$\checkmark$} \\
+\textbf{IL-4}      & \textbf{IL-13}       & \textcolor{correct}{$\checkmark$} & \textcolor{correct}{$\checkmark$} & \textcolor{marginal}{$\sim$} \\
+\textbf{TNF-alpha} & \textbf{IL-6}        & ---       & \textcolor{correct}{$\checkmark$} & \textcolor{correct}{$\checkmark$} \\
+IL-33      & IL-13        & \textcolor{correct}{$\checkmark$} & \textcolor{wrong}{$\times$}  & \textcolor{marginal}{$\sim$} \\
+IL-18      & IFN-$\gamma$ & \textcolor{correct}{$\checkmark$} & \textcolor{wrong}{$\times$}  & \textcolor{wrong}{$\times$} \\
+IL-12      & IFN-$\gamma$ & \textcolor{wrong}{$\times$}  & \textcolor{wrong}{$\times$}  & \textcolor{correct}{$\checkmark$} \\
+IL-27      & IFN-$\gamma$ & \textcolor{wrong}{$\times$}  & \textcolor{wrong}{$\times$}  & \textcolor{correct}{$\checkmark$} \\
+IFN-alpha1 & IFN-$\gamma$ & ---       & \textcolor{wrong}{$\times$}  & \textcolor{marginal}{$\sim$} \\
+IL-10      & IL-6         & \textcolor{wrong}{$\times$}  & \textcolor{correct}{$\checkmark$} & \textcolor{wrong}{$\times$} \\
+IL-21      & IL-10        & \textcolor{marginal}{?}       & \textcolor{marginal}{?}       & \textcolor{marginal}{?} \\
+IL-1-beta  & IL-6         & ---       & \textcolor{wrong}{$\times$}  & \textcolor{wrong}{$\times$} \\
+\midrule
+\textbf{Score} & & 4/8 (50\%) & 4/11 (36\%) & 7/11 (64\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Overall Conclusions}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{What Did Not Work}
+
+\begin{enumerate}
+    \item \textbf{Attention-weighted centroid convergence / PCA distance} (Exp.\ 1):
+    Fundamentally flawed metric. The attention weighting conflates embedding
+    geometry with the model's confidence routing. Relay cells are pushed to
+    \emph{discriminative} positions, not B-like positions.
+
+    \item \textbf{Epoch-dependent directional bias} (Exp.\ 2): Inherits the
+    same flaw. The signal is near-zero for most pairs; 4/8 = chance.
+
+    \item \textbf{Confusion matrix asymmetry} (Exp.\ 3): The 91-class model's
+    low accuracy makes off-diagonal elements indistinguishable from noise.
+    The known cascade pairs do not rank among the top-20 globally asymmetric pairs.
+\end{enumerate}
+
+\subsection{What Showed Partial Promise}
+
+\textbf{Cell-type ablation} (Exp.\ 4) is the most principled approach:
+it makes no assumption about embedding geometry and operates directly on model
+outputs. The 3 high-confidence calls (ratio $>2\times$) are all biologically
+correct. However, the signal strength is limited by model accuracy.
+
+\subsection{Root Cause: Model Accuracy}
+
+All four experiments share a bottleneck: $P_{\text{correct}} \approx 0.039$
+on a 91-class problem. At this accuracy level:
+\begin{itemize}[noitemsep]
+    \item Off-diagonal confusion elements are each $\approx 1/91 \approx 1\%$
+    \item Asymmetries of $\approx 0.001$ (0.1 pp) are required to detect cascade direction
+    \item This is well within the noise floor for both the confusion matrix and ablation methods
+\end{itemize}
+
+\subsection{Path Forward}
+
+The conceptually cleanest next step is to revisit the \textbf{PBS-RC static
+geometry} (which already recovers 11/11 pairs with Wilcoxon significance) and
+address directionality by comparing effect sizes rather than binary significance
+calls. Alternatively, the \textbf{cell-type ablation} approach with a
+higher-accuracy model (e.g., more training epochs or a smaller cytokine subset)
+could provide reliable directional calls.
+
+\vspace{2em}
+\hrule
+\vspace{0.5em}
+\small
+\textit{All experiments used 10 random seeds (seed values: 42, 123, 7, 17, 31,
+53, 97, 137, 191, 257), Stage 3 model checkpoint (100 epochs full fine-tuning),
+attention-weighted centroid trajectory, training donors only (Donor2, Donor3
+held out). Code: \texttt{github.com/Yam-Arieli/cytokine-mil}.}
+
+\end{document}
