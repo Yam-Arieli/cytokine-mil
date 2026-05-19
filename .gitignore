@@ -40,3 +40,9 @@ manifest.json
 # Experiment outputs (regeneratable artifacts — pkl, pt, figures)
 results/
 report/
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
