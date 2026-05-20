@@ -34,12 +34,16 @@ mkdir -p ${OUT_DIR}
 source /cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/activate
 cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 
-python scripts/report_cascade_triples.py \
-    --exp_dirs ${EXP_DIRS} \
-    --output   ${OUT_DIR}/cascade_triples.csv \
-    --alpha 0.05 \
-    --min_seeds 5 \
-    --ablation_subdir ablation_union \
-    --per_seed_dump ${OUT_DIR}/per_seed_triples.json
+for MODE in strict geo_t_only ablation_only; do
+    echo "------ mode=${MODE} ------"
+    python scripts/report_cascade_triples.py \
+        --exp_dirs ${EXP_DIRS} \
+        --output   ${OUT_DIR}/cascade_triples_${MODE}.csv \
+        --alpha 0.05 \
+        --min_seeds 5 \
+        --ablation_subdir ablation_union \
+        --mode ${MODE} \
+        --per_seed_dump ${OUT_DIR}/per_seed_triples_${MODE}.json
+done
 
-echo "Done — triple report written to ${OUT_DIR}/cascade_triples.csv"
+echo "Done — triple reports written to ${OUT_DIR}/cascade_triples_<mode>.csv"

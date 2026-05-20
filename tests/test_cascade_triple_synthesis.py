@@ -261,6 +261,99 @@ def test_build_union_alignment_top_k_cap(tmp_path, union_mod):
     assert pairs == {("A1", "B1"), ("A2", "B2")}
 
 
+def test_geo_t_only_drops_cascade_call_clause(tmp_path, triples_mod):
+    """geo_t_only fires even when cascade_call is 'none' or wrong direction,
+    as long as per-T geo significance + ablation agreement hold."""
+    seed = tmp_path / "exp_seed42_geo_t_only"
+
+    # Geo says cascade_call is "none" (e.g. reverse direction also significant),
+    # but per-T forward-Bonferroni p is significant for NK.
+    cascade_call = {("A_cyto", "B_cyto"): "none"}
+    p_fwd_bonf   = {("A_cyto", "B_cyto", "NK"): 0.001}
+    pooled = {
+        ("A_cyto", "B_cyto", "NK"): [0.20, 0.18, 0.22],
+        ("B_cyto", "A_cyto", "NK"): [0.02, 0.01, 0.03],
+    }
+    _make_seed_dir(seed,
+                   cascade_call=cascade_call,
+                   p_fwd_bonf=p_fwd_bonf,
+                   pooled=pooled)
+
+    # strict: rejects (cascade_call != "A->B")
+    assert triples_mod._seed_triples(seed, alpha=0.05, mode="strict") == []
+
+    # geo_t_only: fires
+    rows = triples_mod._seed_triples(seed, alpha=0.05, mode="geo_t_only")
+    assert len(rows) == 1
+    r = rows[0]
+    assert (r["A"], r["B"], r["T"]) == ("A_cyto", "B_cyto", "NK")
+    assert r["p_fwd_bonf"] == pytest.approx(0.001)
+    assert r["mode"] == "geo_t_only"
+
+
+def test_ablation_only_drops_geo_entirely(tmp_path, triples_mod):
+    """ablation_only fires on pure ablation evidence regardless of geo."""
+    seed = tmp_path / "exp_seed42_ablation_only"
+
+    # Geo entirely missing the pair (cascade_call has nothing for it),
+    # but ablation gives a clean forward signal at NK.
+    cascade_call = {}  # no entries at all
+    p_fwd_bonf   = {}
+    pooled = {
+        ("A_cyto", "B_cyto", "NK"): [0.20, 0.18, 0.22],
+        ("B_cyto", "A_cyto", "NK"): [0.01, 0.02, 0.00],
+    }
+    _make_seed_dir(seed,
+                   cascade_call=cascade_call,
+                   p_fwd_bonf=p_fwd_bonf,
+                   pooled=pooled)
+
+    # strict: rejects (no cascade_call entry for the pair)
+    assert triples_mod._seed_triples(seed, alpha=0.05, mode="strict") == []
+    # geo_t_only: rejects (no per-T geo significance for the pair)
+    assert triples_mod._seed_triples(seed, alpha=0.05, mode="geo_t_only") == []
+    # ablation_only: fires
+    rows = triples_mod._seed_triples(seed, alpha=0.05, mode="ablation_only")
+    assert len(rows) == 1
+    r = rows[0]
+    assert (r["A"], r["B"], r["T"]) == ("A_cyto", "B_cyto", "NK")
+    assert r["p_fwd_bonf"] is None
+    assert r["mode"] == "ablation_only"
+    assert r["geo_cascade_call"] is None
+
+
+def test_ablation_only_still_rejects_negative_relay(tmp_path, triples_mod):
+    """Even in ablation_only mode, a non-positive relay must reject."""
+    seed = tmp_path / "exp_seed_negative"
+    pooled = {
+        ("A", "B", "T"): [-0.05, -0.04, -0.06],
+        ("B", "A", "T"): [-0.20, -0.21, -0.22],
+    }
+    _make_seed_dir(seed, cascade_call={}, p_fwd_bonf={}, pooled=pooled)
+    assert triples_mod._seed_triples(seed, alpha=0.05, mode="ablation_only") == []
+
+
+def test_mode_invalid_raises(tmp_path, triples_mod):
+    seed = tmp_path / "exp_bad_mode"
+    _make_seed_dir(seed, cascade_call={}, p_fwd_bonf={}, pooled={("a","b","T"):[0.1]})
+    with pytest.raises(ValueError):
+        triples_mod._seed_triples(seed, alpha=0.05, mode="bogus")
+
+
+def test_aggregation_handles_none_p_fwd_bonf(tmp_path, triples_mod):
+    """In ablation_only mode entries have p_fwd_bonf=None — aggregator must not crash."""
+    triple = {"A": "A", "B": "B", "T": "T",
+              "p_fwd_bonf": None, "ablation_relay": 0.2,
+              "geo_cascade_call": None, "ablation_direction_call": "A→B",
+              "seed": "exp_0_seed42", "mode": "ablation_only"}
+    per_seed = [triple, {**triple, "seed": "exp_1_seed123"}]
+    df = triples_mod._aggregate(per_seed, min_seeds=2)
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert row["p_fwd_bonf_median"] is None
+    assert row["geo_cascade_calls"] == "n/a,n/a"
+
+
 def test_aggregation_requires_min_seeds(tmp_path, triples_mod):
     """A triple seen in 1/3 seeds must not survive min_seeds=2."""
     triple_a = {"A": "IL-12", "B": "IFN-gamma", "T": "NK",

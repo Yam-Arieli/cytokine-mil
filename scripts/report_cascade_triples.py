@@ -57,13 +57,11 @@ def _geo_significant_T(
     b: str,
     alpha: float,
 ) -> List[Tuple[str, float]]:
-    """Return [(T, p_fwd_bonf)] for cell types T where geo declares (A->B) at T.
+    """Return [(T, p_fwd_bonf)] for cell types T where p_fwd_bonf(A,B,T) <= alpha.
 
-    Only triples where cascade_call[(A, B)] == "A->B" are considered.
+    Note: does NOT filter by cascade_call. The cascade_call constraint, when
+    desired (strict mode only), is enforced by the caller in `_seed_triples`.
     """
-    cascade_call = sig["cascade_call"]
-    if cascade_call.get((a, b)) != "A->B":
-        return []
     p_fwd_bonf = sig["p_fwd_bonf"]
     out = []
     for (aa, bb, ct), p in p_fwd_bonf.items():
@@ -130,57 +128,104 @@ def _ablation_call(
 # Per-seed triple extraction
 # ---------------------------------------------------------------------------
 
+VALID_MODES = ("strict", "geo_t_only", "ablation_only")
+
+
+def _ordered_pairs_from_pooled(
+    pooled: Dict[Tuple[str, str, str], list],
+) -> List[Tuple[str, str]]:
+    """Distinct ordered (src, tgt) pairs in an ablation pooled dict."""
+    return sorted({(src, tgt) for (src, tgt, _ct) in pooled})
+
+
 def _seed_triples(
     exp_dir: Path,
     alpha: float,
     ablation_subdir: str = ".",
+    mode: str = "strict",
 ) -> List[dict]:
     """Apply the geo ∧ ablation conjunction within one seed.
 
-    Geo result is read from exp_dir/latent_geo_results.pkl.
+    Geo result is read from exp_dir/latent_geo_results.pkl when needed.
     Ablation shards are read from exp_dir/<ablation_subdir>/.
 
+    ``mode`` controls how strict the conjunction is:
+
+    - ``strict``     (default, original behaviour): geo cascade_call must
+      be ``"A->B"`` AND there must be a geo-significant T (Bonferroni-
+      corrected ``p_fwd_bonf <= alpha``) AND ablation must call ``"A→B"``
+      AND the ablation argmax T must be one of the geo-significant T set.
+    - ``geo_t_only``: drop the cascade_call requirement; keep all other
+      clauses (still requires per-T geo significance + ablation agreement).
+    - ``ablation_only``: drop the geo requirements entirely; report any
+      pair where ablation calls ``"A→B"`` with a positive relay at its
+      argmax T. ``p_fwd_bonf`` and ``geo_cascade_call`` columns are filled
+      with ``None`` when unavailable.
+
     Returns a list of {A, B, T, p_fwd_bonf, ablation_relay,
-                      geo_cascade_call, ablation_direction_call, seed}.
+                      geo_cascade_call, ablation_direction_call, seed, mode}.
     """
-    sig = _load_geo_sig(exp_dir / "latent_geo_results.pkl")
-    if sig is None:
-        return []
+    if mode not in VALID_MODES:
+        raise ValueError(f"mode must be one of {VALID_MODES}, got {mode!r}")
+
     pooled = _load_ablation_pooled(exp_dir / ablation_subdir)
     if not pooled:
         return []
 
+    if mode == "ablation_only":
+        sig = None
+        candidate_pairs: List[Tuple[str, str]] = _ordered_pairs_from_pooled(pooled)
+    else:
+        sig = _load_geo_sig(exp_dir / "latent_geo_results.pkl")
+        if sig is None:
+            return []
+        # Iterate all ordered pairs seen by geo (cascade_call has every pair
+        # observed, regardless of its call).
+        candidate_pairs = list(sig["cascade_call"].keys())
+
+    cascade_call: Dict[Tuple[str, str], str] = (
+        sig["cascade_call"] if sig is not None else {}
+    )
+
     out: List[dict] = []
-    cascade_call = sig["cascade_call"]
-    # Iterate every ordered pair geo called A->B
-    for (a, b), call in cascade_call.items():
-        if call != "A->B":
+    for (a, b) in candidate_pairs:
+        # Clause 1: geo cascade_call. Strict only.
+        call = cascade_call.get((a, b))
+        if mode == "strict" and call != "A->B":
             continue
 
-        # Geo-significant T set for this ordered pair
-        geo_TS = _geo_significant_T(sig, a, b, alpha)
-        if not geo_TS:
-            continue
+        # Clause 2: per-T geo significance. strict + geo_t_only.
+        if mode in ("strict", "geo_t_only"):
+            geo_TS = _geo_significant_T(sig, a, b, alpha) if sig is not None else []
+            if not geo_TS:
+                continue
+            geo_T_map = dict(geo_TS)
+        else:  # ablation_only
+            geo_T_map = {}
 
-        # Ablation direction call + T*
+        # Clauses 3 + 4: ablation direction and positive relay.
         abl_dir, abl_T, abl_relay = _ablation_call(pooled, a, b)
         if abl_dir != "A→B":
             continue
         if abl_T is None or abl_relay is None or abl_relay <= 0:
             continue
 
-        # Conjunction: ablation argmax T must be in the geo-significant T set
-        geo_T_map = dict(geo_TS)
-        if abl_T not in geo_T_map:
-            continue
+        # Clause 5: T match. strict + geo_t_only.
+        if mode in ("strict", "geo_t_only"):
+            if abl_T not in geo_T_map:
+                continue
+            p_for_T: Optional[float] = geo_T_map[abl_T]
+        else:
+            p_for_T = None  # ablation_only
 
         out.append({
             "A": a, "B": b, "T": abl_T,
-            "p_fwd_bonf":               geo_T_map[abl_T],
+            "p_fwd_bonf":               p_for_T,
             "ablation_relay":           abl_relay,
-            "geo_cascade_call":         call,
+            "geo_cascade_call":         call,  # may be None / "none" in non-strict modes
             "ablation_direction_call":  abl_dir,
             "seed":                     exp_dir.name,
+            "mode":                     mode,
         })
     return out
 
@@ -202,18 +247,27 @@ def _aggregate(
         n = len(entries)
         if n < min_seeds:
             continue
-        p_arr  = np.array([e["p_fwd_bonf"]    for e in entries])
-        ab_arr = np.array([e["ablation_relay"] for e in entries])
+        p_vals  = [e["p_fwd_bonf"] for e in entries if e["p_fwd_bonf"] is not None]
+        ab_arr  = np.array([e["ablation_relay"] for e in entries])
+        if p_vals:
+            p_arr = np.array(p_vals)
+            p_med = float(np.median(p_arr))
+            p_min = float(np.min(p_arr))
+            p_max = float(np.max(p_arr))
+        else:
+            p_med = p_min = p_max = None
         rows.append({
             "A": a, "B": b, "T": t,
             "n_seeds":                n,
-            "p_fwd_bonf_median":      float(np.median(p_arr)),
-            "p_fwd_bonf_min":         float(np.min(p_arr)),
-            "p_fwd_bonf_max":         float(np.max(p_arr)),
+            "p_fwd_bonf_median":      p_med,
+            "p_fwd_bonf_min":         p_min,
+            "p_fwd_bonf_max":         p_max,
             "ablation_relay_median":  float(np.median(ab_arr)),
             "ablation_relay_min":     float(np.min(ab_arr)),
             "ablation_relay_max":     float(np.max(ab_arr)),
-            "geo_cascade_calls":      ",".join(e["geo_cascade_call"] for e in entries),
+            "geo_cascade_calls":      ",".join(
+                (e["geo_cascade_call"] or "n/a") for e in entries
+            ),
             "ablation_direction_calls": ",".join(e["ablation_direction_call"] for e in entries),
             "seeds_supporting":       " ".join(sorted(e["seed"] for e in entries)),
         })
@@ -248,15 +302,24 @@ def parse_args():
                         "union-pair-list ablations.")
     p.add_argument("--per_seed_dump", type=str, default=None,
                    help="Optional path to dump the raw per-seed triple list as JSON.")
+    p.add_argument("--mode", choices=list(VALID_MODES), default="strict",
+                   help="Conjunction strictness. "
+                        "'strict' (default): geo cascade_call=='A->B' AND "
+                        "per-T geo significance AND ablation direction AND T match. "
+                        "'geo_t_only': drop the cascade_call requirement. "
+                        "'ablation_only': drop geo entirely, direction & T from "
+                        "ablation only.")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
     all_seed_triples: List[dict] = []
+    print(f"Mode: {args.mode}", flush=True)
     for d in args.exp_dirs:
         seed_rows = _seed_triples(Path(d), alpha=args.alpha,
-                                  ablation_subdir=args.ablation_subdir)
+                                  ablation_subdir=args.ablation_subdir,
+                                  mode=args.mode)
         print(f"  {Path(d).name:<30s} {len(seed_rows):>4d} triples (seed-level)",
               flush=True)
         all_seed_triples.extend(seed_rows)
