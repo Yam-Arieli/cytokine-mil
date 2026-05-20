@@ -13,6 +13,12 @@ Inputs
     scripts/run_inner_product_pairs.py. Schema: list of
     {A, B, relay_cell_type, score, rank}. May be omitted (geo-only union).
 
+--alignment_top_k : optional cap on the number of alignment pairs to include
+    (sorted by rank ascending). Useful because run_inner_product_pairs.py
+    defaults to top_pct=0.20 (~800 pairs of 4005), but ablation budget on
+    "short" partition only fits ~200-300 unordered pairs across 4 shards.
+    See recall_table.csv to pick a top_pct that matches your budget.
+
 --geo_results : path to latent_geo_results.pkl emitted by
     scripts/run_geo_extract.py. Reads sig_result["cascade_call"] and
     sig_result["relay_T"]. May be omitted (alignment-only union).
@@ -47,10 +53,15 @@ def _canonical(a: str, b: str) -> Tuple[str, str]:
     return (a, b) if a <= b else (b, a)
 
 
-def _load_alignment(path: Path) -> Dict[Tuple[str, str], dict]:
-    """Return {(A, B canonical) -> {alignment_score, alignment_rank, relay_T}}."""
+def _load_alignment(path: Path, top_k: Optional[int] = None) -> Dict[Tuple[str, str], dict]:
+    """Return {(A, B canonical) -> {alignment_score, alignment_rank, relay_T}}.
+
+    If `top_k` is given, only the top_k entries by rank ascending are kept.
+    """
     with open(path) as f:
         rows = json.load(f)
+    if top_k is not None:
+        rows = sorted(rows, key=lambda r: r["rank"])[:top_k]
     out: Dict[Tuple[str, str], dict] = {}
     for r in rows:
         key = _canonical(r["A"], r["B"])
@@ -163,6 +174,8 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--alignment_pairs_file", type=str, default=None,
                    help="Path to top_pairs_<metric>_<dim>.json from alignment pipeline.")
+    p.add_argument("--alignment_top_k", type=int, default=None,
+                   help="Optional cap: keep only the top_k alignment entries by rank.")
     p.add_argument("--geo_results", type=str, default=None,
                    help="Path to latent_geo_results.pkl from run_geo_extract.py.")
     p.add_argument("--output", type=str, required=True,
@@ -175,7 +188,10 @@ def main():
     if not args.alignment_pairs_file and not args.geo_results:
         raise SystemExit("Provide at least one of --alignment_pairs_file or --geo_results.")
 
-    align = _load_alignment(Path(args.alignment_pairs_file)) if args.alignment_pairs_file else {}
+    align = (
+        _load_alignment(Path(args.alignment_pairs_file), top_k=args.alignment_top_k)
+        if args.alignment_pairs_file else {}
+    )
     geo   = _load_geo(Path(args.geo_results)) if args.geo_results else {}
 
     rows = _merge(align, geo)

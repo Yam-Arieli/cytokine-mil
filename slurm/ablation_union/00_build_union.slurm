@@ -46,8 +46,13 @@ for IDX in 0 1 2 3 4 5 6 7; do
     SEED=${SEEDS[$IDX]}
     EXP_DIR=${BASE}/exp_${IDX}_seed${SEED}
     echo "--- exp_${IDX}_seed${SEED} ---"
+    # ALIGN_TOP_K caps the alignment list to its top-K entries by rank.
+    # Default 200 ≈ top-5% (matches the recall@5% column of recall_table.csv;
+    # 5/11 known recovered with inner_product_128D). At ~3.5 min/ordered pair
+    # × 2 directions × 200 / 4 shards = ~5.8 h per shard — fits 8h budget.
     python scripts/build_union_pair_list.py \
         --alignment_pairs_file ${EXP_DIR}/top_pairs_${ALIGN_VARIANT}.json \
+        --alignment_top_k      ${ALIGN_TOP_K:-200} \
         --output               ${EXP_DIR}/top_pairs_union.json
 done
 

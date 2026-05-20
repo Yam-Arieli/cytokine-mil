@@ -233,6 +233,34 @@ def test_conjunction_rejects_when_relay_negative(tmp_path, triples_mod):
     assert triples_mod._seed_triples(seed, alpha=0.05) == []
 
 
+def test_build_union_alignment_top_k_cap(tmp_path, union_mod):
+    """--alignment_top_k caps the alignment list to top-K entries by rank."""
+    align_path = tmp_path / "top_pairs_inner_product_128D.json"
+    json.dump(
+        [
+            {"A": "A1", "B": "B1", "relay_cell_type": "T", "score": 0.9, "rank": 1},
+            {"A": "A2", "B": "B2", "relay_cell_type": "T", "score": 0.8, "rank": 2},
+            {"A": "A3", "B": "B3", "relay_cell_type": "T", "score": 0.7, "rank": 3},
+            {"A": "A4", "B": "B4", "relay_cell_type": "T", "score": 0.6, "rank": 4},
+        ],
+        open(align_path, "w"),
+    )
+    out = tmp_path / "union.json"
+    import sys
+    sys.argv = [
+        "build_union_pair_list",
+        "--alignment_pairs_file", str(align_path),
+        "--alignment_top_k", "2",
+        "--output",               str(out),
+    ]
+    union_mod.main()
+    rows = json.load(open(out))
+    assert len(rows) == 2, f"top_k=2 should keep 2 entries, got {len(rows)}"
+    pairs = {(r["A"], r["B"]) for r in rows}
+    # Canonical of (A1, B1) is (A1, B1) since A1 < B1; same for (A2, B2)
+    assert pairs == {("A1", "B1"), ("A2", "B2")}
+
+
 def test_aggregation_requires_min_seeds(tmp_path, triples_mod):
     """A triple seen in 1/3 seeds must not survive min_seeds=2."""
     triple_a = {"A": "IL-12", "B": "IFN-gamma", "T": "NK",
