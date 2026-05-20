@@ -172,6 +172,34 @@ def test_pool_then_call_rejects_when_pooled_reverse_wins(tmp_path, mod):
     assert (row["A"], row["B"]) == ("B", "A")
 
 
+def test_pool_then_call_reports_correct_reverse_relay_in_b_to_a_case(tmp_path, mod):
+    """Regression: when the call is B→A in canonical (i.e. the canonically-
+    second cytokine wins direction), the row's pooled_relay and
+    pooled_reverse_relay must reflect the winning and losing direction
+    respectively — not the same value.
+    """
+    pooled_by_seed = {}
+    for i in range(5):
+        seed_dir = tmp_path / f"seed_{i}"
+        # Canonical key is ("A", "B"). We make the reverse direction win.
+        pooled = {
+            ("A", "B", "NK"): [0.05, 0.04, 0.06],   # canonical-forward weak
+            ("B", "A", "NK"): [0.25, 0.24, 0.26],   # canonical-reverse strong → wins
+        }
+        _make_seed_pool(seed_dir, pooled)
+        pooled_by_seed[f"seed_{i}"] = pooled
+    df = mod._pool_then_call(pooled_by_seed, min_seeds=3)
+    row = df.iloc[0]
+    assert (row["A"], row["B"]) == ("B", "A"), "expected B→A in primary"
+    # Winning relay ≈ 0.25; losing relay ≈ 0.05. Must differ.
+    assert row["pooled_relay"] > row["pooled_reverse_relay"], (
+        f"pooled_relay {row['pooled_relay']} should exceed reverse "
+        f"{row['pooled_reverse_relay']}"
+    )
+    assert row["pooled_relay"] == pytest.approx(0.25, abs=0.02)
+    assert row["pooled_reverse_relay"] == pytest.approx(0.05, abs=0.02)
+
+
 # ---------------------------------------------------------------------------
 # KNOWN_CASCADES tagging
 # ---------------------------------------------------------------------------

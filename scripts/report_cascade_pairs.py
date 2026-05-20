@@ -260,11 +260,17 @@ def _pool_then_call(
         d_pool, T_pool, relay_pool = _seed_call(big, key[0], key[1])
         if d_pool == "no_data":
             continue
-        # Reverse relay for reporting symmetry
-        rev_pool = {ct: float(np.mean(v))
-                    for (s, t, ct), v in big.items()
-                    if s == key[1] and t == key[0] and len(v) > 0}
-        rev_pool_best = max(rev_pool.values()) if rev_pool else -np.inf
+        # Compute BOTH max pooled means in the canonical orientation so the
+        # "forward" and "reverse" labels in the output row track the WINNING
+        # call (not the canonical orientation).
+        fwd_canon = {ct: float(np.mean(v))
+                     for (s, t, ct), v in big.items()
+                     if s == key[0] and t == key[1] and len(v) > 0}
+        rev_canon = {ct: float(np.mean(v))
+                     for (s, t, ct), v in big.items()
+                     if s == key[1] and t == key[0] and len(v) > 0}
+        fwd_canon_best = max(fwd_canon.values()) if fwd_canon else -np.inf
+        rev_canon_best = max(rev_canon.values()) if rev_canon else -np.inf
 
         # Per-seed T-distribution in the canonical-A→B direction
         T_fwd_dist: Counter = Counter()
@@ -288,14 +294,14 @@ def _pool_then_call(
             primary_a, primary_b = key[0], key[1]
             T_str = ",".join(f"{ct}:{n}" for ct, n in T_fwd_dist.most_common())
             n_fwd_out, n_rev_out = n_fwd, n_rev
-            forward_relay = relay_pool
-            reverse_relay = rev_pool_best
+            forward_relay = fwd_canon_best
+            reverse_relay = rev_canon_best
         elif d_pool == "B→A":
             primary_a, primary_b = key[1], key[0]
             T_str = ",".join(f"{ct}:{n}" for ct, n in T_rev_dist.most_common())
             n_fwd_out, n_rev_out = n_rev, n_fwd
-            forward_relay = relay_pool
-            reverse_relay = rev_pool_best
+            forward_relay = rev_canon_best  # winning direction (B→A in canonical → key[1]→key[0])
+            reverse_relay = fwd_canon_best  # losing direction
         else:  # shared
             continue
 
