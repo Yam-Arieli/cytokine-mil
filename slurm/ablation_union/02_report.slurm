@@ -35,7 +35,7 @@ source /cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/activate
 cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 
 for MODE in strict geo_t_only ablation_only; do
-    echo "------ mode=${MODE} ------"
+    echo "------ triple report, mode=${MODE} ------"
     python scripts/report_cascade_triples.py \
         --exp_dirs ${EXP_DIRS} \
         --output   ${OUT_DIR}/cascade_triples_${MODE}.csv \
@@ -46,4 +46,13 @@ for MODE in strict geo_t_only ablation_only; do
         --per_seed_dump ${OUT_DIR}/per_seed_triples_${MODE}.json
 done
 
-echo "Done — triple reports written to ${OUT_DIR}/cascade_triples_<mode>.csv"
+echo "------ pair-level report ------"
+python scripts/report_cascade_pairs.py \
+    --exp_dirs ${EXP_DIRS} \
+    --output_dir ${OUT_DIR} \
+    --ablation_subdir ablation_union \
+    --min_seeds 5
+
+echo "Done — triple reports: ${OUT_DIR}/cascade_triples_<mode>.csv"
+echo "       pair reports:   ${OUT_DIR}/cascade_pairs_per_seed_then_count.csv"
+echo "                       ${OUT_DIR}/cascade_pairs_pool_then_call.csv"
