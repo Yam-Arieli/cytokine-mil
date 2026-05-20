@@ -1,0 +1,2052 @@
+[
+  {
+    "A": "IFN-beta",
+    "B": "IFN-omega",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IFN-beta and IFN-omega are both type I interferons that bind the same IFNAR receptor and are typically co-induced by viral signals via IRF3/IRF7, but IFN-beta is not documented as a direct upstream inducer of IFN-omega in CD8 T cells.",
+    "citations": [
+      "Shared and Unique Features of Human Interferon-Beta and Interferon-Alpha Subtypes \u2014 https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2020.605673/full",
+      "Type I Interferon Signaling Pathways \u2014 https://www.rndsystems.com/pathways/type-i-interferon-signaling-pathways"
+    ],
+    "search_queries_used": [
+      "IFN-beta induces IFN-omega type I interferon"
+    ],
+    "relay": 0.07416504053471726,
+    "reverse_relay": 0.053529860479258264,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-20",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence that VEGF induces IL-20 in monocytes. VEGF induces MCP-1, IL-6, and IL-8 in vascular cells/monocytes, but IL-20 was not identified as a downstream target.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF induces IL-20 monocyte",
+      "VEGF IL-20 upregulation immune cells"
+    ],
+    "relay": 0.01830995065747023,
+    "reverse_relay": 0.016258035936189116,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "IFN-lambda1",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No direct evidence found that IFN-lambda1 (IL-29) induces IL-27 in MAIT or other immune cells. IFN-lambda1 induces ELR(-) CXC chemokines and inhibits Th2 responses, but IL-27 induction was not described.",
+    "citations": [],
+    "search_queries_used": [
+      "IFN-lambda1 IL-29 induces IL-27 MAIT cells",
+      "IFN-lambda induces IL-27 dendritic cells",
+      "\"IL-29\" OR \"IFN-lambda\" induces IL-27"
+    ],
+    "relay": 0.013618186310739779,
+    "reverse_relay": 0.012672659622306431,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "VEGF",
+    "T": "CD14 Mono",
+    "classification": "PARTIAL",
+    "evidence_summary": "APRIL and VEGF-A are both elevated in disease (e.g., extracellular vesicles in TNBC, gliomas) and are correlated prognostic biomarkers, but no mechanistic link showing APRIL directly induces VEGF in monocytes was found.",
+    "citations": [
+      "A Retrospective Exploratory Analysis for Serum Extracellular Vesicles Reveals APRIL (TNFSF13), CXCL13, and VEGF-A as Prognostic Biomarkers \u2014 https://www.mdpi.com/1422-0067/24/21/15576"
+    ],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces VEGF monocyte"
+    ],
+    "relay": 0.012723350409984657,
+    "reverse_relay": 0.009216271548959109,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "IFN-lambda1",
+    "T": "pDC",
+    "classification": "NOVEL",
+    "evidence_summary": "Both APRIL and IFN-lambda1 are associated with plasmacytoid dendritic cells, but there is no published evidence that APRIL induces IFN-lambda1 in pDCs. IFN-lambda induction in pDCs is documented for TLR9 ligands (e.g., HHV-6B), not APRIL.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces IFN-lambda1 IL-29 plasmacytoid dendritic cells"
+    ],
+    "relay": 0.009857139081092706,
+    "reverse_relay": 0.005840963286477366,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-9",
+    "T": "CD14 Mono",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The documented direction is the reverse: IL-9 induces VEGF secretion from mast cells (PLOS One 2012). No evidence VEGF induces IL-9 in monocytes; reverse direction is published.",
+    "citations": [
+      "IL-9 Induces VEGF Secretion from Human Mast Cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3297631/"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-9 production T cells",
+      "\"VEGF\" induces \"IL-9\" mast cells"
+    ],
+    "relay": 0.008163305477126934,
+    "reverse_relay": 0.007122111576203938,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "Noggin",
+    "B": "IL-36-alpha",
+    "T": "HSPC",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist, not a classical immune cytokine. No evidence of a Noggin \u2192 IL-36-alpha axis in HSPCs in the immune literature.",
+    "citations": [],
+    "search_queries_used": [
+      "Noggin IL-36 alpha HSPC hematopoietic stem cell"
+    ],
+    "relay": 0.007909177212373573,
+    "reverse_relay": 0.006183046038945577,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-6",
+    "B": "APRIL",
+    "T": "CD8 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "APRIL and IL-6 are co-regulated in inflammation and both contribute to plasma cell survival, with positive correlations in arthritis models. No mechanistic evidence of IL-6 directly inducing APRIL in CD8 naive T cells was found.",
+    "citations": [
+      "APRIL (TNFSF13) regulates collagen induced arthritis, IL-17 production and TH2 response \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC2755626/"
+    ],
+    "search_queries_used": [
+      "IL-6 induces APRIL TNFSF13 expression"
+    ],
+    "relay": 0.007397429565883253,
+    "reverse_relay": 0.00422797530483507,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-21",
+    "B": "IL-27",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The well-documented direction is the reverse: IL-27 induces IL-21 in CD8+ T cells (and in Tfh/Tr1 differentiation). However, IL-21 enhancement of IL-27 in B cells has also been reported, making the relationship bidirectional but with the canonical cascade being IL-27 \u2192 IL-21.",
+    "citations": [
+      "IL-27 induction of IL-21 from human CD8+ T cells induces granzyme B in an autocrine manner \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC7293547/",
+      "BATF3-dependent induction of IL-27 in B cells \u2014 https://www.biorxiv.org/content/10.1101/2020.06.26.117010.full.pdf"
+    ],
+    "search_queries_used": [
+      "IL-21 induces IL-27 T cell differentiation",
+      "\"IL-21\" induces \"IL-27\" OR \"EBI3\"",
+      "\"IL-21\" induces \"EBI3\" T cell IL-27"
+    ],
+    "relay": 0.006082707876960542,
+    "reverse_relay": 0.004002268217812019,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-35",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "No literature directly linking APRIL induction of IL-35 in CD4 naive T cells. APRIL induces IL-10-producing IgA+ Bregs (which in turn induce Tregs/IL-35-producing populations) but the direct A\u2192B axis was not found.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces IL-35 regulatory T cell"
+    ],
+    "relay": 0.005015274673654688,
+    "reverse_relay": 0.003463961213850439,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-16",
+    "B": "IL-8",
+    "T": "CD8 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "IL-16 is known to modulate surface receptor and cytokine release in macrophages/DCs, and IL-16 promotes inflammatory cell recruitment to similar tissues as IL-8, but a direct IL-16\u2192IL-8 cascade in CD8 naive T cells was not found.",
+    "citations": [
+      "Recombinant interleukin-16 selectively modulates surface receptor expression and cytokine release in macrophages and dendritic cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC2326843/"
+    ],
+    "search_queries_used": [
+      "IL-16 induces IL-8 CXCL8 chemokine production T cells",
+      "\"IL-16\" \"CXCL8\" OR \"IL-8\" upregulation"
+    ],
+    "relay": 0.003918257223572241,
+    "reverse_relay": 0.0019158753893224777,
+    "n_fwd": 3,
+    "n_rev": 5
+  },
+  {
+    "A": "C5a",
+    "B": "CD30L",
+    "T": "ILC",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence that C5a induces CD30L (TNFSF8) expression in ILCs. C5a is documented in neutrophil priming and IL-17/IL-23 regulation but not CD30L induction in ILCs.",
+    "citations": [],
+    "search_queries_used": [
+      "C5a induces CD30L TNFSF8 expression",
+      "\"C5a\" complement induces TNF superfamily TNFSF NK cells ILC"
+    ],
+    "relay": 0.003434549224358562,
+    "reverse_relay": 0.000952260110448675,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-4",
+    "T": "NKT",
+    "classification": "PARTIAL",
+    "evidence_summary": "VEGF enhances TH2-mediated sensitization/inflammation in lung (Lee et al., Nature Medicine 2004) and VEGF inhibition decreases IL-4 production, supporting indirect VEGF\u2192IL-4 enhancement. However, direct evidence in NKT cells specifically was not found, and other reports suggest VEGF skews toward Th1.",
+    "citations": [
+      "Vascular endothelial growth factor (VEGF) induces remodeling and enhances TH2-mediated sensitization and inflammation in the lung \u2014 https://www.nature.com/articles/nm1105"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-4 NKT cells Th2",
+      "\"VEGF\" induces \"IL-4\" T helper Th2 differentiation"
+    ],
+    "relay": 0.002511023145748049,
+    "reverse_relay": 0.0005982393941371459,
+    "n_fwd": 7,
+    "n_rev": 1
+  },
+  {
+    "A": "GITRL",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence linking GITRL (TNFSF18) to APRIL induction in MAIT cells. GITRL regulates Treg/effector T cell responses; APRIL induction was not described downstream of GITR triggering.",
+    "citations": [],
+    "search_queries_used": [
+      "GITRL TNFSF18 induces APRIL expression"
+    ],
+    "relay": 0.002273012937128371,
+    "reverse_relay": 0.00129316098649997,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "VEGF",
+    "B": "GM-CSF",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "VEGF and GM-CSF operate via distinct pathways with mostly opposing effects on dendritic cell function (VEGF suppresses, GM-CSF promotes maturation). No literature describes VEGF inducing GM-CSF in CD4 naive T cells.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF GM-CSF crosstalk T cells dendritic cells"
+    ],
+    "relay": 0.001635369262591738,
+    "reverse_relay": 0.0015818994147376898,
+    "n_fwd": 1,
+    "n_rev": 6
+  },
+  {
+    "A": "IL-16",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence that IL-16 induces APRIL expression. IL-16 and APRIL are linked to B cell biology separately but no direct cascade in MAIT or other cells was found.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-16 induces APRIL B cell activation"
+    ],
+    "relay": 0.0011769226052705762,
+    "reverse_relay": 0.0007839566136346577,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-12",
+    "B": "IL-9",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "IL-12 is listed among cytokines that can increase IL-9 production from CD4+ T cells under certain conditions, but the canonical Th9 differentiation pathway involves TGF-\u03b2 + IL-4 (not IL-12, which classically drives Th1/IFN-\u03b3).",
+    "citations": [
+      "Th9 cells: differentiation and disease \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3982928/"
+    ],
+    "search_queries_used": [
+      "IL-12 induces IL-9 Th9 T cell differentiation"
+    ],
+    "relay": 0.0008452150018904685,
+    "reverse_relay": 0.00016821020721256318,
+    "n_fwd": 2,
+    "n_rev": 5
+  },
+  {
+    "A": "Noggin",
+    "B": "CD40L",
+    "T": "NK",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist, not a classical immune cytokine. No evidence linking Noggin to CD40L induction on NK cells in immune literature. CD40L on NK is regulated by IL-12/IFN-\u03b3.",
+    "citations": [
+      "Regulation of CD40L expression on natural killer cells by interleukin-12 and interferon gamma \u2014 https://pubmed.ncbi.nlm.nih.gov/11129327/"
+    ],
+    "search_queries_used": [
+      "Noggin CD40L NK cells immune induction"
+    ],
+    "relay": 0.0004486945662324564,
+    "reverse_relay": 0.00016288422358423416,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-36Ra",
+    "B": "IL-6",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-36Ra is an antagonist that suppresses (not induces) IL-6 by inhibiting IL-36 signaling at IL-36R. The documented relationship is IL-36 agonists \u2192 IL-6 induction; IL-36Ra reduces IL-6. Thus IL-36Ra \u2192 IL-6 induction is the opposite of documented biology.",
+    "citations": [
+      "Protective effect of interleukin-36 receptor antagonist on liver injury \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC7374990/",
+      "Interleukin(IL)-36\u03b1 and IL-36\u03b3 Induce Proinflammatory Mediators \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC4585048/"
+    ],
+    "search_queries_used": [
+      "IL-36 receptor antagonist IL-36Ra IL-6 induction"
+    ],
+    "relay": 0.0002576162808207164,
+    "reverse_relay": 8.409432665884415e-05,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-21",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "APRIL and IL-21 cooperate in B cell differentiation (APRIL+IL-21 induces IgA class switching and IL-10 in Bregs), but no direct evidence that APRIL induces IL-21 production in CD4 naive T cells was found. IL-21 is mainly induced by IL-6 and IL-27 in Tfh/Tr1 contexts.",
+    "citations": [
+      "APRIL Induces a Novel Subset of IgA+ Regulatory B Cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC6587076/"
+    ],
+    "search_queries_used": [
+      "APRIL induces IL-21 production T cell",
+      "\"APRIL\" induces IL-21 plasma B cell production"
+    ],
+    "relay": 0.0001713361675037208,
+    "reverse_relay": 0.00014651556361368348,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "IFN-beta",
+    "B": "IFN-gamma",
+    "T": "CD16 Mono",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Both are interferons in the same signaling family. IFN-beta has cell-type-specific and context-dependent effects: in monocytes it has been shown to modulate inflammatory responses, while in CD4+ T cells it can suppress IFN-gamma. Direct induction of IFN-gamma by IFN-beta in monocytes is not the canonical documented cascade; co-regulation in the type I/II IFN axis is well established.",
+    "citations": [
+      "Interferon-Beta Induces Distinct Gene Expression Response Patterns in Human Monocytes versus T cells (PLOS One) \u2014 https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0062366",
+      "Salmonella Induced IL-23 and IL-1\u03b2 Allow for IL-12 Production by Monocytes... through Induction of IFN-\u03b3 \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2791865/"
+    ],
+    "search_queries_used": [
+      "IFN-beta induces IFN-gamma production monocytes"
+    ],
+    "relay": 0.02268996730560571,
+    "reverse_relay": 0.014953758838980287,
+    "n_fwd": 3,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-2",
+    "B": "IFN-gamma",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-2 is well-established to induce IFN-gamma production in CD8+ T cells via STAT5/T-bet signaling, with multiple papers showing autocrine and paracrine IL-2 amplifies IFN-gamma and granzyme B output in CD8+ effector and memory T cells.",
+    "citations": [
+      "IL-2 Produced by CD8+ Immune T cells Can Augment Their IFN-\u03b3 Production \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3578122/",
+      "CD4+ T Cell-Derived IL-2 Signals during Early Priming Advances Primary CD8+ T Cell Responses \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2770320/"
+    ],
+    "search_queries_used": [
+      "IL-2 induces IFN-gamma CD8 T cells"
+    ],
+    "relay": 0.017593628449869142,
+    "reverse_relay": 0.007872009038181083,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "Decorin",
+    "B": "IL-8",
+    "T": "CD8 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "Decorin has been linked to IL-8 modulation in cancer/macrophage settings, with one study showing reduced decorin increases IL-8 in macrophages and another showing decorin-silenced oral cancer cells lose IL-8 expression. Effects are context-dependent and there is no clear direct A\u2192B cascade documented in immune cells, particularly not in CD8 T cells.",
+    "citations": [
+      "A role for aberrantly expressed nuclear localized decorin in migration and invasion of dysplastic and malignant oral epithelial cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3198745/",
+      "Decorin Secreted by Human Umbilical Cord Blood-Derived Mesenchymal Stem Cells Induces Macrophage Polarization via CD44 \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC6801980/"
+    ],
+    "search_queries_used": [
+      "Decorin induces IL-8 production immune cells"
+    ],
+    "relay": 0.013547586721526698,
+    "reverse_relay": 0.007613513725737277,
+    "n_fwd": 3,
+    "n_rev": 5
+  },
+  {
+    "A": "IL-6",
+    "B": "Decorin",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-6 directly induces decorin mRNA in human endothelial cells in a dose-dependent manner (max at 10 ng/ml), although translation requires extracellular collagen signals. This is a well-documented direct induction of B by A, though not specifically in CD8 T cells.",
+    "citations": [
+      "Interleukin (IL)-6 and IL-10 induce decorin mRNA in endothelial cells \u2014 https://pubmed.ncbi.nlm.nih.gov/15016829/"
+    ],
+    "search_queries_used": [
+      "IL-6 induces Decorin expression"
+    ],
+    "relay": 0.012574220687220077,
+    "reverse_relay": 0.00631638160610641,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "TNF-alpha",
+    "B": "IL-9",
+    "T": "Treg",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "TNF-alpha potently promotes Th9 cell differentiation and IL-9 production through TNFR2-dependent pathways. iTregs and Foxp3+ regulatory T cells are among the cell populations producing IL-9 downstream of TNF-alpha signaling.",
+    "citations": [
+      "TNF-\u03b1 enhances Th9 cell differentiation and antitumor immunity via TNFR2-dependent pathways \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6360681/",
+      "Transcription factor Foxo1 is essential for IL-9 induction in T helper cells \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5634439/"
+    ],
+    "search_queries_used": [
+      "TNF-alpha induces IL-9 production T regulatory cells"
+    ],
+    "relay": 0.009694415765491916,
+    "reverse_relay": 0.00808095109686595,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-27",
+    "B": "VEGF",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The direction is reversed in the literature: IL-27 INHIBITS VEGF expression via STAT1 signaling and has documented anti-angiogenic properties. Both molecules are in the same axis (inflammation-angiogenesis) but A\u2192B induction is not supported; the inverse is documented.",
+    "citations": [
+      "IL-27 inhibits epithelial-mesenchymal transition and angiogenic factor production in a STAT1-dominant pathway in human non-small cell lung cancer \u2014 https://jeccr.biomedcentral.com/articles/10.1186/1756-9966-32-97"
+    ],
+    "search_queries_used": [
+      "IL-27 induces VEGF expression"
+    ],
+    "relay": 0.008153122165022394,
+    "reverse_relay": 0.004977121754722508,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "GM-CSF",
+    "B": "TSLP",
+    "T": "NKT",
+    "classification": "PARTIAL",
+    "evidence_summary": "GM-CSF is used to differentiate monocytes/DCs that can subsequently produce TSLP in response to LPS or other stimuli, and GM-CSF/TSLP/STAT3 signaling has been linked in cancer contexts. However direct GM-CSF\u2192TSLP induction in immune cells (especially NKT) is not clearly established as a documented cascade.",
+    "citations": [
+      "Thymic Stromal Lymphopoietin is Produced by Dendritic Cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3140600/"
+    ],
+    "search_queries_used": [
+      "GM-CSF induces TSLP production"
+    ],
+    "relay": 0.007739661879459054,
+    "reverse_relay": 0.006401485891794707,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-17A",
+    "B": "IL-36Ra",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-17A drives IL-36 agonist production (IL-36\u03b1/\u03b2/\u03b3) in keratinocytes, and the IL-17A/IL-36 axis is well-established in psoriasis. IL-36Ra (the antagonist) is part of the same regulatory circuit and IL-38 (a related antagonist) is upregulated by anti-IL-17A treatment, suggesting feedback regulation rather than direct A\u2192B induction in NKT cells.",
+    "citations": [
+      "IL-17A-driven psoriasis is critically dependent on IL-36 signaling \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10754973/",
+      "The psoriasis-associated IL-17A induces and cooperates with IL-36 cytokines \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5688102/"
+    ],
+    "search_queries_used": [
+      "IL-17A induces IL-36 receptor antagonist expression"
+    ],
+    "relay": 0.007240799378497387,
+    "reverse_relay": 0.005692090558686639,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-9",
+    "B": "APRIL",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "No clear literature identified linking IL-9 to APRIL induction in any cell type, let alone CD8 T cells. APRIL is primarily produced by myeloid cells in response to TLR agonists and inflammation, not via documented IL-9 signaling.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-9 induces APRIL TNFSF13 expression B cells",
+      "IL-9 induces APRIL plasma cells"
+    ],
+    "relay": 0.00606892183551951,
+    "reverse_relay": 0.005726048844427558,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "CD30L",
+    "B": "VEGF",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "While CD30L is expressed on monocytes and can mediate various pleiotropic effects, no clear literature was found establishing CD30L\u2192VEGF induction in CD14+ monocytes or any other immune cell type.",
+    "citations": [],
+    "search_queries_used": [
+      "CD30L TNFSF8 induces VEGF monocytes angiogenesis"
+    ],
+    "relay": 0.004747655270432389,
+    "reverse_relay": 0.004051059243540152,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "Decorin",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "Decorin modulates macrophage polarization (M1/M2) and influences cytokine output in mesenchymal stem cells, but no direct evidence was found linking decorin to IL-27 induction, especially in MAIT cells.",
+    "citations": [],
+    "search_queries_used": [
+      "Decorin induces IL-27 expression macrophages"
+    ],
+    "relay": 0.003909209515890358,
+    "reverse_relay": 0.0018588010841659752,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL is known to regulate B/T cell responses (collagen arthritis, IL-17, Th2 responses) but no documented evidence of APRIL inducing IL-27 production in immune cells, particularly MAIT cells.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces IL-27 expression"
+    ],
+    "relay": 0.003388844629919398,
+    "reverse_relay": 0.002754159946459497,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "FasL",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL primarily acts on B cell survival, plasma cell maintenance, and IgA regulation. No documented evidence found linking APRIL to FasL induction in CD4 T cells or other immune contexts.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces FasL expression T cells apoptosis",
+      "APRIL induces Fas FasL B cells lymphoma"
+    ],
+    "relay": 0.002346165209680568,
+    "reverse_relay": 0.0015590216357129801,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "EGF",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "No literature found connecting APRIL/TNFSF13 to EGF (epidermal growth factor) induction in T cells or immune cells. These molecules operate in distinct signaling families with no documented cascade.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 EGF epidermal growth factor T cells"
+    ],
+    "relay": 0.00212710238479121,
+    "reverse_relay": 0.0019343407359446467,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-36Ra",
+    "B": "VEGF",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-36Ra is the natural antagonist of IL-36 agonists, which themselves induce VEGF and angiogenesis. IL-36Ra INHIBITS VEGF expression by blocking IL-36 signaling \u2014 opposite direction of A\u2192B induction. The molecules are coupled via the IL-36/VEGF axis.",
+    "citations": [
+      "IL-36\u03b3 Augments Ocular Angiogenesis by Promoting the VEGF\u2013VEGFR Axis \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC10616713/",
+      "IL-36\u03b3 Is a Strong Inducer of IL-23 in Psoriatic Cells and Activates Angiogenesis \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC5834930/"
+    ],
+    "search_queries_used": [
+      "IL-36Ra induces VEGF expression angiogenesis"
+    ],
+    "relay": 0.0014614968358574627,
+    "reverse_relay": 0.000825108908365575,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "TL1A",
+    "B": "IL-13",
+    "T": "CD14 Mono",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "TL1A/TNFSF15 drives IL-13 production primarily from ILC2s and Th2/Th9 cells (well-documented in muco-secretory fibrotic disorders and gut inflammation). The relay cell type in this case is CD14 Mono, where monocytes/macrophages are the primary SOURCE of TL1A, not the producer of IL-13 \u2014 so the documented cascade goes via lymphocytes, not directly through monocytes.",
+    "citations": [
+      "Targeting TL1A/DR3 Signaling Offers a Therapeutic Advantage to Neutralizing IL13/IL4R\u03b1 \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8299868/",
+      "The tale of TL1A in inflammation \u2014 https://www.nature.com/articles/mi201120"
+    ],
+    "search_queries_used": [
+      "TL1A TNFSF15 induces IL-13 production monocytes"
+    ],
+    "relay": 0.0011296838107042442,
+    "reverse_relay": 0.0006123144924134087,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-16",
+    "B": "VEGF",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No clear evidence of IL-16 inducing VEGF expression in immune cells, particularly MAIT cells. Multiple other interleukins (IL-6, IL-17, IL-1) are well-documented VEGF inducers, but IL-16 is not.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-16 induces VEGF expression angiogenesis"
+    ],
+    "relay": 0.0007881107868488509,
+    "reverse_relay": 0.00021306597647514192,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "APRIL",
+    "B": "CD27L",
+    "T": "NKT",
+    "classification": "NOVEL",
+    "evidence_summary": "CD70/CD27L is upregulated upon T/B cell activation, and IFN-gamma can induce CD70 on T cells. No documented evidence of APRIL inducing CD70/CD27L expression in NKT cells or other immune cells.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces CD70 CD27L expression T cells"
+    ],
+    "relay": 0.00038438106153540827,
+    "reverse_relay": 0.00014135350297228154,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "CD27L",
+    "B": "VEGF",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "CD70/CD27L signals through CD27 leading to NF-kB/c-Jun activation, T cell costimulation and survival. No documented direct link to VEGF induction in MAIT cells or other immune cell types in the literature found.",
+    "citations": [],
+    "search_queries_used": [
+      "CD70 CD27L induces VEGF angiogenesis"
+    ],
+    "relay": 0.00023457907650093575,
+    "reverse_relay": 0.00014738931607888306,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-12",
+    "B": "VEGF",
+    "T": "CD16 Mono",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-12 is documented as ANTI-angiogenic (opposite direction to A\u2192B), acting via IFN-\u03b3/IP-10 to inhibit neovascularization and VEGF-dependent angiogenesis. Both molecules are coupled in the angiogenesis axis but the documented cascade is IL-12 inhibiting (not inducing) VEGF.",
+    "citations": [
+      "IL-12 Inhibition of Endothelial Cell Functions and Angiogenesis \u2014 https://journals.aai.org/jimmunol/article/166/6/3890/70412/",
+      "Angiostatin anti-angiogenesis requires IL-12 \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC2630934/"
+    ],
+    "search_queries_used": [
+      "IL-12 induces VEGF monocytes angiogenesis"
+    ],
+    "relay": 0.0001246787904765311,
+    "reverse_relay": 0.00012396354210547392,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "IFN-omega",
+    "B": "IFN-gamma",
+    "T": "pDC",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "Type I interferons (the family IFN-omega belongs to) are well-documented inducers of IFN-gamma in NK/NKT/T cells, and IFN-omega specifically enhances cytolytic CD8+ T cell IFN-gamma responses. The relay through pDC is plausible since pDCs are the primary type I IFN amplifier.",
+    "citations": [
+      "Type 1 Interferon Induction of Natural Killer Cell Gamma Interferon Production during LCMV Infection \u2014 https://journals.asm.org/doi/10.1128/mbio.00169-11",
+      "Human type-I interferon omega promotes cytolytic CD8+ T cell responses (bioRxiv 2025) \u2014 https://www.biorxiv.org/content/10.1101/2025.02.13.638030v1",
+      "IFN-alpha treatment stimulates IFN-gamma in type I NKT cells \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5333814/"
+    ],
+    "search_queries_used": [
+      "IFN-omega induces IFN-gamma plasmacytoid dendritic cells",
+      "type I interferon induces IFN-gamma NK cells T cells",
+      "IFN-omega pleiotropic immune cells review"
+    ],
+    "relay": 0.021330516375772796,
+    "reverse_relay": 0.015303057674902252,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "OSM",
+    "B": "IL-9",
+    "T": "Treg",
+    "classification": "NOVEL",
+    "evidence_summary": "OSM is known to expand Treg and modulate Th17/Th2 balance, but no published evidence directly links OSM to IL-9 induction in Treg or other immune cells.",
+    "citations": [],
+    "search_queries_used": [
+      "OSM oncostatin M induces IL-9 Treg",
+      "OSM oncostatin M IL-9 production immune cells"
+    ],
+    "relay": 0.016431101369365934,
+    "reverse_relay": 0.01119950597414936,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-20",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL is known to act on B cells and induce IL-10/PD-L1 in regulatory B cells, but no direct evidence found for APRIL induction of IL-20 in monocytes.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces IL-20 monocytes",
+      "APRIL BAFF induces IL-20 cytokine production"
+    ],
+    "relay": 0.01353409924643347,
+    "reverse_relay": 0.008190565535573114,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-35",
+    "B": "IL-27",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-35 and IL-27 are both heterodimeric IL-12-family cytokines sharing the Ebi3 subunit; both function as negative regulators with overlapping receptor usage (gp130/IL-12Rb2/WSX-1), but A\u2192B direction (IL-35 inducing IL-27) is not explicitly documented.",
+    "citations": [
+      "Interleukin-35 on B cell and T cell induction and regulation \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC5547520/",
+      "IL-12 family cytokines: immunological playmakers (Nature Immunology) \u2014 https://www.nature.com/articles/ni.2366"
+    ],
+    "search_queries_used": [
+      "IL-35 induces IL-27 CD8 T cells",
+      "IL-35 IL-27 relationship IL-12 family co-regulation"
+    ],
+    "relay": 0.012349712224144924,
+    "reverse_relay": 0.009234799136490134,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-9",
+    "B": "Decorin",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "No literature found linking IL-9 to decorin expression in immune cells. Decorin is an ECM proteoglycan with TGF-beta scavenger function; no IL-9-related regulatory axis documented.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-9 induces decorin proteoglycan CD8 T cells",
+      "IL-9 decorin expression immune cells"
+    ],
+    "relay": 0.009355463587789013,
+    "reverse_relay": 0.007472708482812647,
+    "n_fwd": 3,
+    "n_rev": 4
+  },
+  {
+    "A": "VEGF",
+    "B": "IFN-lambda1",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "VEGF modulates T cell IL-10/IFN-gamma balance and influences immunosuppression, but no published evidence found for VEGF induction of IFN-lambda1 (IL-29) in CD8 or any immune cell type.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF induces IFN-lambda1 IL-29 expression T cells",
+      "VEGF interferon lambda induces inhibits T cells"
+    ],
+    "relay": 0.00808304930063384,
+    "reverse_relay": 0.005947013696230507,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-27",
+    "B": "CD30L",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "CD30L is expressed on activated monocytes (LPS-inducible) and IL-27 has effects on monocyte inflammatory programs, but no direct evidence found that IL-27 induces CD30L/TNFSF8 expression on monocytes.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-27 induces CD30L TNFSF8 monocytes"
+    ],
+    "relay": 0.007609554683363911,
+    "reverse_relay": 0.004887340243173189,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-13",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-27 is documented to suppress Th2 responses (including IL-13 production), so the documented direction is reverse (IL-27 \u2192 suppresses IL-13). IL-27 is known to induce IL-10 in MAIT cells, but IL-13 inducing IL-27 in MAIT was not found.",
+    "citations": [
+      "Interleukin-27 in T Cell Immunity \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC4346869/",
+      "Human MAIT cell response profiles biased toward IL-17 or IL-10 \u2014 https://www.pnas.org/doi/10.1073/pnas.2414230122"
+    ],
+    "search_queries_used": [
+      "IL-13 induces IL-27 MAIT cells",
+      "IL-13 IL-27 expression macrophages T cells"
+    ],
+    "relay": 0.007002706380067971,
+    "reverse_relay": 0.002609132653479545,
+    "n_fwd": 3,
+    "n_rev": 5
+  },
+  {
+    "A": "IL-6",
+    "B": "VEGF",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-6 is a well-established inducer of VEGF expression via trans-signaling and STAT3 activation, both directly and synergistically with IL-1B and TNF.",
+    "citations": [
+      "Interleukin 6 induces the expression of vascular endothelial growth factor \u2014 https://pubmed.ncbi.nlm.nih.gov/8557680/",
+      "IL-6 in Inflammation, Immunity, and Disease \u2014 https://cshperspectives.cshlp.org/content/6/10/a016295.full",
+      "IL-6 induces VEGF-C via Src-FAK-STAT3 \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4934912/"
+    ],
+    "search_queries_used": [
+      "IL-6 induces VEGF production T cells"
+    ],
+    "relay": 0.005691806320303733,
+    "reverse_relay": 0.004455615402392841,
+    "n_fwd": 2,
+    "n_rev": 5
+  },
+  {
+    "A": "IL-6",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The documented direction is reverse: IL-36-alpha induces IL-6 (in fibroblasts and synovial cells, via MyD88/NF-kB). IL-6 inducing IL-36-alpha is not the documented cascade.",
+    "citations": [
+      "IL-36a and IL-36g Induce Proinflammatory Mediators from Human Colonic Subepithelial Myofibroblasts \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4585048/",
+      "IL-36a Exerts Pro-Inflammatory Effects in the Lungs of Mice \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3447790/"
+    ],
+    "search_queries_used": [
+      "IL-6 induces IL-36-alpha inflammation"
+    ],
+    "relay": 0.004432690843283679,
+    "reverse_relay": 0.0023410165606821617,
+    "n_fwd": 3,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-9",
+    "B": "OX40L",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The documented direction is reverse: OX40L is a potent inducer of IL-9 (TH9 induction via TRAF6/NF-kB). IL-9 inducing OX40L is not the documented cascade direction.",
+    "citations": [
+      "OX40 signaling favors the induction of TH9 cells and airway inflammation (Nature Immunology) \u2014 https://www.nature.com/articles/ni.2390",
+      "IL-33-primed human mast cells drive IL-9 production by CD4+ T cells in an OX40L-dependent manner \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11479898/"
+    ],
+    "search_queries_used": [
+      "IL-9 induces OX40L CD4 T cells"
+    ],
+    "relay": 0.003898791359765994,
+    "reverse_relay": 0.003747918482568385,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "GM-CSF",
+    "B": "APRIL",
+    "T": "NKT",
+    "classification": "PARTIAL",
+    "evidence_summary": "GM-CSF differentiates and primes myeloid cells; neutrophils are known to secrete APRIL in response to stimuli (TGF-beta, glycosaminoglycans), but a direct GM-CSF \u2192 APRIL induction (especially via NKT cells) is not directly documented. Indirect link via myeloid activation.",
+    "citations": [
+      "Neutrophil TLR4 and PKR are targets of glycosaminoglycans and effectors of APRIL secretion \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6002394/"
+    ],
+    "search_queries_used": [
+      "GM-CSF induces APRIL TNFSF13 production NKT",
+      "GM-CSF induces APRIL myeloid neutrophils"
+    ],
+    "relay": 0.0033557680620139928,
+    "reverse_relay": 0.0021446204158026613,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-27",
+    "B": "IL-6",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-27 has been shown to augment TNF-alpha-induced IL-6 production in epithelial cells; the IL-6/IL-27 axis is well-documented bidirectional within the gp130 cytokine family, with both directions reported.",
+    "citations": [
+      "Early IL-6 signalling promotes IL-27 dependent maturation of regulatory T cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC5633202/",
+      "Regulation of inflammatory immune responses by IL-27 \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3332455/"
+    ],
+    "search_queries_used": [
+      "IL-27 induces IL-6 production T cells",
+      "IL-27 IL-6 macrophages mutual regulation"
+    ],
+    "relay": 0.0023391369430381934,
+    "reverse_relay": 0.0021743688117711016,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-19",
+    "T": "NK CD56bright",
+    "classification": "NOVEL",
+    "evidence_summary": "Both VEGF and IL-19 participate in vascular inflammation but no direct evidence found for VEGF inducing IL-19 in NK cells or other immune cells.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF induces IL-19 NK cells",
+      "VEGF IL-19 cytokine relationship"
+    ],
+    "relay": 0.0020109503722521337,
+    "reverse_relay": 0.0010541783520956471,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "Decorin",
+    "B": "IL-16",
+    "T": "CD16 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "Decorin has documented immunomodulatory effects on monocytes via MCP-1 induction and macrophage polarization, but no published evidence found linking decorin to IL-16 induction.",
+    "citations": [],
+    "search_queries_used": [
+      "decorin induces IL-16 monocyte chemokine",
+      "decorin IL-16 immunomodulation"
+    ],
+    "relay": 0.0013800442084030522,
+    "reverse_relay": 0.00038232571677107477,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-21",
+    "T": "NKT",
+    "classification": "NOVEL",
+    "evidence_summary": "VEGF affects T-cell function (IL-10/IFN-gamma balance, suppression via VEGFR2), and NKT cells are known producers of IL-21, but no published direct link of VEGF inducing IL-21 in NKT cells was found.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF induces IL-21 NKT cells"
+    ],
+    "relay": 0.0010722806483956092,
+    "reverse_relay": 0.0005586518219171513,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-19",
+    "B": "IL-9",
+    "T": "ILC",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-9 is a known ILC2 product induced by IL-33/IL-25 alarmins, but no published evidence found that IL-19 induces IL-9 in ILCs.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-19 induces IL-9 ILC innate lymphoid"
+    ],
+    "relay": 0.0007511853722555806,
+    "reverse_relay": 0.0004564800972396217,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-16",
+    "B": "IL-6",
+    "T": "CD16 Mono",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-16 stimulation of CD14+ CD4+ monocytes/maturing macrophages induces IL-1b, IL-6, IL-15, and TNF-alpha production, with mRNA detected within 4 hours and protein by 24 hours. This is a direct, well-documented A\u2192B effect.",
+    "citations": [
+      "Interleukin-16 stimulates the expression and production of pro-inflammatory cytokines by human monocytes \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC2326980/"
+    ],
+    "search_queries_used": [
+      "IL-16 induces IL-6 monocyte production"
+    ],
+    "relay": 0.00036773657962862403,
+    "reverse_relay": 0.00030074758485700394,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-12",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL modulates T cell proliferation and Th2/Th17 cytokine output in mouse models (in APRIL-/- mice, Th2 cytokines increase), but no published direct evidence of APRIL inducing IL-12 in CD4 T cells.",
+    "citations": [
+      "APRIL (TNFSF13) regulates collagen induced arthritis, IL-17 production and TH2 response \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC2755626/"
+    ],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces IL-12 T cell CD4"
+    ],
+    "relay": 0.000228806550799251,
+    "reverse_relay": 4.105195916148083e-05,
+    "n_fwd": 6,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-15",
+    "B": "APRIL",
+    "T": "CD14 Mono",
+    "classification": "PARTIAL",
+    "evidence_summary": "IL-15 induces monocyte/macrophage activation and chemokine production (IL-8, MCP-1), and APRIL is produced by monocytes/macrophages. Both share myeloid expression but no direct mechanistic evidence found for IL-15 induction of APRIL in CD14 monocytes.",
+    "citations": [
+      "Interleukin-15 (IL-15) Induces IL-8 and Monocyte Chemotactic Protein 1 Production in Human Monocytes \u2014 https://www.sciencedirect.com/science/article/pii/S0006497120579937"
+    ],
+    "search_queries_used": [
+      "IL-15 induces APRIL TNFSF13 monocytes macrophages",
+      "IL-15 induces APRIL myeloid expression"
+    ],
+    "relay": 1.8895462099921997e-06,
+    "reverse_relay": 4.412332986371421e-07,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "APRIL",
+    "B": "Decorin",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "No literature found linking APRIL (TNFSF13) to induction of Decorin in immune cells or any context. APRIL drives B cell/plasma cell biology and TACI/BCMA signaling; Decorin is an ECM proteoglycan regulated by TGF-beta, not APRIL.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces Decorin expression immune cells",
+      "APRIL decorin proteoglycan ECM extracellular matrix"
+    ],
+    "relay": 0.02035120764892781,
+    "reverse_relay": 0.016080448374038193,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "IFN-omega",
+    "B": "IL-15",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "Type I interferons (including IFN-omega, signaling through the same IFNAR receptor as IFN-alpha/beta) upregulate IL-15 expression in vitro and in vivo, priming CD8 T and NK cells.",
+    "citations": [
+      "Interferon-alpha/beta upregulate IL-15 expression in vitro and in vivo - https://pmc.ncbi.nlm.nih.gov/articles/PMC11030826/",
+      "IFN-alpha primes T- and NK-cells for IL-15-mediated signaling and cytotoxicity - https://www.sciencedirect.com/science/article/abs/pii/S0161589011006705",
+      "Soluble IL-15 Complexes Generated by Type I IFN Pathways - https://pmc.ncbi.nlm.nih.gov/articles/PMC4354909/"
+    ],
+    "search_queries_used": [
+      "IFN-omega induces IL-15 CD8 T cells",
+      "type I interferon induces IL-15 expression",
+      "IFN-omega type I interferon antiviral IL-15 induction"
+    ],
+    "relay": 0.01625531775932518,
+    "reverse_relay": 0.013310378774381954,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-9",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Direction is reversed in literature: IL-36 signaling (via IL-36R/MyD88/NF-kB) drives Th9 differentiation and IL-9 production in CD4+ T cells, not the other way around.",
+    "citations": [
+      "IL-36gamma signaling controls iTreg-Th9 balance - https://www.nature.com/articles/mi201721",
+      "IL-36 cytokines imprint a colitogenic phenotype on CD4+ T helper cells - https://pmc.ncbi.nlm.nih.gov/articles/PMC9038530/"
+    ],
+    "search_queries_used": [
+      "IL-9 induces IL-36 alpha expression",
+      "IL-9 IL-36 alpha CD4 T cell axis"
+    ],
+    "relay": 0.013450213802833337,
+    "reverse_relay": 0.005872169625929473,
+    "n_fwd": 4,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-9",
+    "B": "IL-17C",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "MAIT cells highly express IL17RE (receptor for IL-17C) and IL-17C is epithelium-derived (induced by IL-1beta/TNF/TLR2/TLR5), not by IL-9. No evidence IL-9 induces IL-17C in MAIT cells or elsewhere.",
+    "citations": [
+      "MAIT cells and the microbiome (IL-17RE expression) - https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2023.1127588/full",
+      "IL-17C: Unique Epithelial Cytokine - https://www.jidonline.org/article/S0022-202X(18)30223-9/fulltext"
+    ],
+    "search_queries_used": [
+      "IL-9 IL-17C MAIT cells induce",
+      "IL-9 IL-17C epithelial induction"
+    ],
+    "relay": 0.011538622498970653,
+    "reverse_relay": 0.011142988513485762,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "EPO",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "No published link found between APRIL and EPO induction in monocytes. APRIL is produced by monocytes (not the reverse), and EPO is hypoxia-regulated by HIF in kidney/liver; the two are studied independently.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 erythropoietin EPO monocytes"
+    ],
+    "relay": 0.009258920492130528,
+    "reverse_relay": 0.00855258159701043,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-35",
+    "B": "VEGF",
+    "T": "MAIT",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "Tumor-derived IL-35 promotes VEGF secretion and angiogenesis via STAT3 activation in myeloid cells (CD11b+Gr1+, neutrophils). Context-dependent: pro-angiogenic in tumors, anti-VEGF in rheumatoid arthritis.",
+    "citations": [
+      "Tumor-derived IL-35 promotes tumor growth by enhancing myeloid cell accumulation and angiogenesis - https://pmc.ncbi.nlm.nih.gov/articles/PMC3578001/",
+      "IL-35 enhances angiogenic effects of small extracellular vesicles in breast cancer - https://pubmed.ncbi.nlm.nih.gov/35037402/",
+      "Mathematical modeling of IL-35 promoting tumor growth and angiogenesis - https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0110126"
+    ],
+    "search_queries_used": [
+      "IL-35 induces VEGF expression",
+      "IL-35 VEGF angiogenesis tumor"
+    ],
+    "relay": 0.007997778402140814,
+    "reverse_relay": 0.006444022591276735,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-27",
+    "B": "GM-CSF",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Direction is reversed: IL-27 is a robust SUPPRESSOR of GM-CSF in T cells (STAT1-dependent), well documented in EAE and CNS inflammation. Co-regulated but A\u2192B is anti-cascade.",
+    "citations": [
+      "Suppression of GM-CSF expression in murine and human T cells by IL-27 - https://pmc.ncbi.nlm.nih.gov/articles/PMC3424384/",
+      "IL-27, but not IL-35, inhibits neuroinflammation through modulating GM-CSF expression - https://www.nature.com/articles/s41598-017-16702-w"
+    ],
+    "search_queries_used": [
+      "IL-27 induces GM-CSF production T cells",
+      "IL-27 GM-CSF macrophages MAIT"
+    ],
+    "relay": 0.007533653143917709,
+    "reverse_relay": 0.0073427087421142675,
+    "n_fwd": 3,
+    "n_rev": 5
+  },
+  {
+    "A": "IL-27",
+    "B": "IL-9",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Direction is reversed: IL-27 is a well-documented SUPPRESSOR of Th9 differentiation and IL-9 production in naive CD4+ T cells, partially via STAT1/T-bet.",
+    "citations": [
+      "IL-27 inhibits Th9 differentiation while inducing Tr1 cells - https://www.researchgate.net/figure/L-27-inhibits-Th9-differentiation-while-inducing-Tr1-cells-Real-time-PCR-and-flow_fig7_232813959",
+      "Updated advancement of bifunctional IL-27 in inflammatory autoimmune diseases - https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2024.1366377/full"
+    ],
+    "search_queries_used": [
+      "IL-27 IL-9 differentiation Th9 cells"
+    ],
+    "relay": 0.006424213701474493,
+    "reverse_relay": 0.006321572567358731,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-27",
+    "B": "LT-alpha2-beta1",
+    "T": "CD8 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "Indirect link: IL-27 induces Th1 differentiation via STAT1/T-bet, and Th1 cells produce lymphotoxin (alongside IFN-gamma). No direct study of IL-27 inducing LT-alpha2-beta1 specifically in CD8 cells.",
+    "citations": [
+      "Interleukin-27 in T Cell Immunity - https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4346869/",
+      "IL-27 elicits a cytotoxic CD8+ T cell program - https://www.nature.com/articles/s41586-024-08510-w"
+    ],
+    "search_queries_used": [
+      "IL-27 lymphotoxin LT alpha beta induction",
+      "IL-27 lymphotoxin induction T cells"
+    ],
+    "relay": 0.005575337443213015,
+    "reverse_relay": 0.0053210501027060675,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-6",
+    "B": "IL-13",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "IL-6 promotes Th2 polarization (inducing IL-4 secretion and inhibiting Th1), and Th2 cells are the canonical IL-13 source. No direct mechanistic study of IL-6 inducing IL-13 transcription in naive CD4 T cells.",
+    "citations": [
+      "Interleukin 6: at the interface of human health and disease - https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2023.1255533/full"
+    ],
+    "search_queries_used": [
+      "IL-6 induces IL-13 expression T cells"
+    ],
+    "relay": 0.004051068833854519,
+    "reverse_relay": 0.002214472816384579,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-13",
+    "T": "CD4 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "VEGF enhances Th2 sensitization and inflammation in the lung, with a documented positive feedback loop with IL-13. VEGF induces IL-13-dependent asthma-like phenotype in transgenic mice.",
+    "citations": [
+      "VEGF induces remodeling and enhances TH2-mediated sensitization - https://www.nature.com/articles/nm1105",
+      "VEGF controls lung Th2 inflammation via miR-1-Mpl-P-selectin axis - https://rupress.org/jem/article/210/10/1993/41405/VEGF-controls-lung-Th2-inflammation-via-the-miR-1",
+      "Studies of VEGF in asthma and COPD - https://pubmed.ncbi.nlm.nih.gov/22052929/"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-13 T cells",
+      "VEGF Th2 induces IL-13 lung asthma"
+    ],
+    "relay": 0.003771369198781428,
+    "reverse_relay": 0.0016258871486829586,
+    "n_fwd": 6,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-36-alpha",
+    "B": "IL-17A",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-36 (including IL-36alpha) activates Th17 cells and induces IL-17A expression, forming a positive feedback loop with IL-17A in psoriasis. Direct evidence in T cells via Th17 differentiation.",
+    "citations": [
+      "Biology of IL-36 Signaling and Its Role in Systemic Inflammatory Diseases - https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2019.02532/full",
+      "Inter-Regulation of Th17 Cytokines and IL-36 Cytokines - https://www.sciencedirect.com/science/article/pii/S0022202X15351137",
+      "IL-17/IL-36 axis in skin inflammation - https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0222969"
+    ],
+    "search_queries_used": [
+      "IL-36 alpha induces IL-17A production"
+    ],
+    "relay": 0.003151772206839051,
+    "reverse_relay": 0.0013022627762232376,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-19",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No published link between IL-19 (IL-10 family) and APRIL induction in any immune cell type, including MAIT cells. IL-19 signals through IL-20R complexes/STAT3; APRIL is induced by TLR9, IFN-alpha, and B cell activation independently.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-19 induces APRIL TNFSF13 B cells",
+      "IL-19 APRIL plasma cells IL-10 family",
+      "IL-19 cytokine induction APRIL signaling",
+      "IL-19 induces B cell APRIL plasma differentiation"
+    ],
+    "relay": 0.0023255766295425776,
+    "reverse_relay": 0.0013382791736162333,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "GM-CSF",
+    "B": "TL1A",
+    "T": "NK CD56bright",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "GM-CSF induces TL1A (Tnfsf15) expression in macrophages, demonstrated in intestinal inflammation models. ILC3 effects on macrophage TL1A were GM-CSF-dependent.",
+    "citations": [
+      "GM-CSF Calibrates Macrophage Defense and Wound Healing Programs - https://www.sciencedirect.com/science/article/pii/S221112472030838X",
+      "TL1A/TNFSF15 directly induces proinflammatory cytokines from CD3+CD161+ T cells - https://www.mucosalimmunology.org/article/S1933-0219(22)01244-2/fulltext"
+    ],
+    "search_queries_used": [
+      "GM-CSF induces TL1A TNFSF15"
+    ],
+    "relay": 0.001997509810908918,
+    "reverse_relay": 0.0016091569714471315,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-36Ra",
+    "T": "NKT",
+    "classification": "NOVEL",
+    "evidence_summary": "No literature found linking APRIL to IL-36Ra induction in NKT or any other immune cells. The two molecules operate in distinct pathways (APRIL: TACI/BCMA on B cells; IL-36Ra: IL-36R competitive antagonism in epithelia/B cells).",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL IL-36Ra antagonist NKT cells",
+      "APRIL IL-36 receptor antagonist B cell production"
+    ],
+    "relay": 0.0012997829531158917,
+    "reverse_relay": 0.0009016052974597914,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "VEGF",
+    "B": "GITRL",
+    "T": "NKT",
+    "classification": "NOVEL",
+    "evidence_summary": "GITRL is induced in keratinocytes by Th2 cytokines/TNF-alpha and on APCs by various stimuli, but no published evidence of VEGF inducing GITRL in NKT cells or any cell type.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF GITRL expression induction",
+      "VEGF NKT cells GITRL TNFSF18"
+    ],
+    "relay": 0.0010230063942062919,
+    "reverse_relay": 0.0006874275130632197,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-9",
+    "B": "GITRL",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Direction is reversed: GITRL/GITR co-stimulation drives Th9 differentiation and IL-9 production from CD4 T cells (key axis in anti-tumor immunity), not the other way around. IL-9 and GITRL co-occur in the Th9 axis.",
+    "citations": [
+      "GITR drives TH9-mediated antitumor immunity - https://pmc.ncbi.nlm.nih.gov/articles/PMC4910720/",
+      "GITR subverts Foxp3+ Tregs to boost Th9 immunity - https://www.nature.com/articles/ncomms9266"
+    ],
+    "search_queries_used": [
+      "IL-9 GITRL TNFSF18 expression",
+      "IL-9 mast cells GITR GITRL costimulation"
+    ],
+    "relay": 0.0007425608859224462,
+    "reverse_relay": 0.0003112040717304314,
+    "n_fwd": 5,
+    "n_rev": 0
+  },
+  {
+    "A": "CT-1",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No published link between cardiotrophin-1 (IL-6 family/gp130) and APRIL induction. CT-1 induces IL-6, TNF-alpha, and VEGF via JAK2/STAT3, but no evidence for APRIL induction in MAIT or other cells.",
+    "citations": [],
+    "search_queries_used": [
+      "cardiotrophin CT-1 APRIL induction immune",
+      "cardiotrophin-1 APRIL TNFSF13 induction"
+    ],
+    "relay": 0.00034017866121853404,
+    "reverse_relay": 0.00023197664690458885,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "VEGF",
+    "B": "CT-1",
+    "T": "NK CD56bright",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Direction is reversed: cardiotrophin-1 induces VEGF expression in cardiac myocytes (via STAT3), well documented. No evidence of VEGF inducing CT-1.",
+    "citations": [
+      "Cardiotrophin-1 induces VEGF expression in cardiac myocytes - https://www.pnas.org/doi/pdf/10.1073/pnas.92.4.1142",
+      "VEGF-A in Cardiomyocytes and Heart Diseases - https://pmc.ncbi.nlm.nih.gov/articles/PMC7432634/"
+    ],
+    "search_queries_used": [
+      "VEGF cardiotrophin CT-1 IL-6 family induction",
+      "VEGF induces cardiotrophin-1 expression"
+    ],
+    "relay": 0.0002070863868325389,
+    "reverse_relay": 9.572694247350614e-05,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-9",
+    "B": "IL-15",
+    "T": "NKT",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-9 and IL-15 share the gamma chain receptor but no evidence IL-9 induces IL-15 production. IL-15 (not IL-9) regulates NKT homeostasis, terminal maturation, and stage 3 differentiation.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-9 IL-15 NKT cells induction",
+      "IL-9 induces IL-15 production cytokine"
+    ],
+    "relay": 1.7785380888073896e-06,
+    "reverse_relay": 3.605855952306186e-07,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "TL1A",
+    "B": "IL-12",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "TL1A synergizes with IL-12 (and IL-18) to enhance IFN-gamma production in T/NK/MAIT cells, but TL1A does not directly induce IL-12 expression \u2014 they are co-acting partners on shared targets.",
+    "citations": [
+      "TL1A Synergizes with IL-12 and IL-18 to Enhance IFN-gamma Production in Human T Cells and NK Cells \u2014 https://journals.aai.org/jimmunol/article/172/11/7002/80995/",
+      "TCR and Inflammatory Signals Tune Human MAIT Cells \u2014 https://www.sciencedirect.com/science/article/pii/S2211124719310988"
+    ],
+    "search_queries_used": [
+      "TL1A induces IL-12 production MAIT cells",
+      "TNFSF15 TL1A IL-12 upregulation"
+    ],
+    "relay": 0.02000977979149616,
+    "reverse_relay": 0.017517902659790023,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-17C",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: IL-17C induces VEGF (via STAT3/miR-23a-3p) in colorectal cancer and IL-17 family drives angiogenesis. No published evidence of VEGF inducing IL-17C in immune cells.",
+    "citations": [
+      "miR-23a-3p is a Key Regulator of IL-17C-Induced Tumor Angiogenesis \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7348989/",
+      "IL-17 Promotes Angiogenic Factors IL-6, IL-8, and VEGF Production \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC5098156/"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-17C expression"
+    ],
+    "relay": 0.015216374393814475,
+    "reverse_relay": 0.011810515024644702,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-26",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL is known for B-cell biology (IgA class switching, Bregs) and modest T-cell costimulation, but no published literature links APRIL to IL-26 induction in CD8 T cells.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces IL-26 CD8 T cells",
+      "APRIL BAFF IL-26 induction T cell"
+    ],
+    "relay": 0.013200884537698888,
+    "reverse_relay": 0.005373132605535223,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-36-alpha",
+    "B": "VEGF",
+    "T": "CD14 Mono",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-36\u03b1 (50 ng/ml) significantly increases endothelial tube formation in a VEGF-dependent manner; IL-36 family upregulates VEGFs and VEGFR2/3 in monocyte-rich inflammatory milieus (psoriasis).",
+    "citations": [
+      "IL-36\u03b3 Is a Strong Inducer of IL-23 in Psoriatic Cells and Activates Angiogenesis \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC5834930/",
+      "IL-36\u03b3 Augments Ocular Angiogenesis by Promoting the VEGF\u2013VEGFR Axis \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC10616713/",
+      "IL-1 Family Cytokine Regulation of Vascular Permeability and Angiogenesis \u2014 https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2019.01426/full"
+    ],
+    "search_queries_used": [
+      "IL-36 alpha induces VEGF monocyte angiogenesis",
+      "\"IL-36 alpha\" OR \"IL-36\u03b1\" VEGF angiogenesis induction",
+      "\"IL-36\u03b1\" OR \"IL36A\" monocyte VEGF inflammation"
+    ],
+    "relay": 0.011356194479757633,
+    "reverse_relay": 0.011178361437520152,
+    "n_fwd": 4,
+    "n_rev": 4
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-24",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-4 (not APRIL) induces IL-24 in macrophages and IL-4 also induces APRIL \u2014 they are downstream of a common signal but no direct APRIL\u2192IL-24 induction is documented.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces IL-24 monocyte macrophage"
+    ],
+    "relay": 0.009005409741642325,
+    "reverse_relay": 0.008850667003786384,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "APRIL",
+    "B": "CD30L",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL is a TNF superfamily member like CD30L, but no published link between APRIL signaling and CD30L (TNFSF8) upregulation in naive CD4 T cells.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces CD30 ligand TNFSF8 T cells"
+    ],
+    "relay": 0.007995227262863398,
+    "reverse_relay": 0.00372202904098583,
+    "n_fwd": 6,
+    "n_rev": 0
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "Both APRIL and IL-36\u03b1 are involved in inflammation but no published evidence that APRIL induces IL-36\u03b1 expression in CD4 T cells.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces IL-36 alpha expression T cell"
+    ],
+    "relay": 0.007435217814862801,
+    "reverse_relay": 0.005359740207823051,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "FasL",
+    "B": "IL-27",
+    "T": "cDC",
+    "classification": "NOVEL",
+    "evidence_summary": "FasL engagement induces DC maturation, IL-1\u03b2 release, and IFN-\u03b3, but no published evidence specifically linking FasL stimulation to IL-27 induction in conventional dendritic cells.",
+    "citations": [],
+    "search_queries_used": [
+      "FasL CD95L induces IL-27 dendritic cells"
+    ],
+    "relay": 0.006414992895496603,
+    "reverse_relay": 0.003942269584090354,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-12",
+    "B": "IL-27",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-12 and IL-27 are sister IL-12 family cytokines co-regulated by TLR signaling in DCs; both act on CD8 T cells (CD39 induction, effector differentiation) but IL-12 does not directly induce IL-27 expression.",
+    "citations": [
+      "IL-12 and IL-27 Promote CD39 Expression on CD8+ T Cells \u2014 https://journals.aai.org/jimmunol/article/210/10/1598/263576/",
+      "Regulation of Antitumor Immune Responses by the IL-12 Family \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2946577/"
+    ],
+    "search_queries_used": [
+      "IL-12 induces IL-27 CD8 T cells",
+      "\"IL-12\" induces \"IL-27\" production expression"
+    ],
+    "relay": 0.005106407001832677,
+    "reverse_relay": 0.003383741057812122,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-27",
+    "B": "Noggin",
+    "T": "CD14 Mono",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist, not a classical immune cytokine. IL-27 modulates monocyte differentiation but no link to Noggin induction is documented.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-27 induces Noggin BMP antagonist monocyte"
+    ],
+    "relay": 0.003969230110782549,
+    "reverse_relay": 0.0029348120508833377,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "VEGF",
+    "B": "Noggin",
+    "T": "NK CD56bright",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist that opposes VEGF-driven vasculogenesis; it is not a classical immune cytokine. No published link between VEGF and Noggin induction in NK cells.",
+    "citations": [
+      "In vitro and In vivo imaging of antivasculogenesis induced by Noggin in human venous endothelial cells \u2014 https://pubmed.ncbi.nlm.nih.gov/19692649/"
+    ],
+    "search_queries_used": [
+      "VEGF induces Noggin expression NK cells"
+    ],
+    "relay": 0.0035120098791403976,
+    "reverse_relay": 0.0017791428242755103,
+    "n_fwd": 7,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-13",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL induces IL-10/PD-L1 in IgA+ Bregs and modulates Th2 responses indirectly, but no published evidence that APRIL directly induces IL-13 in naive CD4 T cells.",
+    "citations": [],
+    "search_queries_used": [
+      "APRIL induces IL-13 T helper 2 cells",
+      "APRIL TACI signaling cytokine cascade naive CD4"
+    ],
+    "relay": 0.0027551401723090027,
+    "reverse_relay": 0.001621959124929864,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-27",
+    "B": "IL-4",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented effect is OPPOSITE direction: IL-27 suppresses GATA3 and IL-4/Th2 responses rather than inducing IL-4 in NKT cells. The cytokines are antagonistically linked.",
+    "citations": [
+      "IL-27: Its Roles in the Induction and Inhibition of Inflammation \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC2480558/",
+      "IL-27 Limits Type 2 Immunopathology Following Parainfluenza Virus Infection \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5305264/"
+    ],
+    "search_queries_used": [
+      "IL-27 induces IL-4 NKT cells Th2"
+    ],
+    "relay": 0.002298218300656076,
+    "reverse_relay": 0.00043633971513852516,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "VEGF",
+    "B": "EGF",
+    "T": "NK CD56bright",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: EGF induces VEGF (and NRP-1) in cancer cells. No published evidence VEGF induces EGF in NK cells.",
+    "citations": [
+      "Induction of neuropilin-1 and VEGF by EGF in human gastric cancer cells \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2376351/"
+    ],
+    "search_queries_used": [
+      "VEGF induces EGF NK cells"
+    ],
+    "relay": 0.0019407615008983636,
+    "reverse_relay": 0.001898826046519702,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "CD27L",
+    "B": "IL-27",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "CD27/CD70 costimulation drives Th1 polarization and broad cytokine responses, but no published evidence that CD27L (CD70) induces IL-27 expression in monocytes.",
+    "citations": [],
+    "search_queries_used": [
+      "CD70 CD27L induces IL-27 monocyte expression"
+    ],
+    "relay": 0.0012640009600020186,
+    "reverse_relay": 0.00032275008785065753,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "GM-CSF",
+    "B": "IL-17A",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "GM-CSF promotes Th17 cell survival and IL-17 production in autoimmunity (via IL-6/IL-23-dependent pathway in DCs), but the canonical direction is Th17\u2192GM-CSF; the relationship is bidirectional in autoimmune feedback loops.",
+    "citations": [
+      "GM-CSF mediates autoimmunity by enhancing IL-6\u2013dependent Th17 cell development \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2556786/",
+      "The encephalitogenicity of TH17 cells is dependent on IL-1- and IL-23-induced production of GM-CSF \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3116521/"
+    ],
+    "search_queries_used": [
+      "GM-CSF induces IL-17A NKT Th17",
+      "\"GM-CSF\" induces IL-17 production directly"
+    ],
+    "relay": 0.00086699520395099,
+    "reverse_relay": 0.0005084418904758303,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "CD27L",
+    "B": "IL-9",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "CD70-CD27 costimulation broadens naive CD4 cytokine repertoire (Th1, Th2, IL-2, TNF-\u03b1) but no published evidence linking CD27L to IL-9 induction specifically.",
+    "citations": [],
+    "search_queries_used": [
+      "CD70 CD27L induces IL-9 CD4 T cells"
+    ],
+    "relay": 0.0005628260112047787,
+    "reverse_relay": 0.00039849026813016427,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-12",
+    "B": "IL-6",
+    "T": "NKT",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-12 and IL-6 cooperate in T cell priming/Th1 development but no published evidence that IL-12 induces IL-6 production in NKT cells.",
+    "citations": [],
+    "search_queries_used": [
+      "IL-12 induces IL-6 NKT cells expression",
+      "\"IL-12\" \"IL-6\" production induction T cell"
+    ],
+    "relay": 0.00030272849438692657,
+    "reverse_relay": 0.00013872718630698186,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "TL1A",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "Both TL1A and APRIL are TNF superfamily members but no published link between TL1A signaling and APRIL induction in MAIT cells or elsewhere.",
+    "citations": [],
+    "search_queries_used": [
+      "TL1A induces APRIL TNFSF13 expression"
+    ],
+    "relay": 0.00019601276512093516,
+    "reverse_relay": 0.00017778050189717402,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-15",
+    "T": "NK",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: IL-15 signaling via JAK-STAT5 drives VEGF-A expression in NK cells. No published evidence VEGF induces IL-15.",
+    "citations": [
+      "Transcription Factors Associated With IL-15 Cytokine Signaling During NK Cell Development \u2014 https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2021.610789/full",
+      "The Production of Pro-angiogenic VEGF-A Isoforms by Hypoxic Human NK Cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC7477355/"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-15 NK cells production"
+    ],
+    "relay": 6.127243230904484e-07,
+    "reverse_relay": 1.765593877629706e-07,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-27",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "Both IL-27 and IL-36\u03b1 act on CD4+ T cells independently (IL-27 inhibits Th17/induces IL-10; IL-36\u03b1 drives colitogenic Th cells) but no published evidence shows IL-27 induces IL-36\u03b1 expression.",
+    "citations": [
+      "Interleukin-27 in T Cell Immunity \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4346869/",
+      "IL-36 cytokines imprint a colitogenic phenotype on CD4+ T helper cells \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9038530/"
+    ],
+    "search_queries_used": [
+      "IL-27 induces IL-36 alpha CD4 T cells",
+      "\"IL-27\" \"IL-36\" cascade induction"
+    ],
+    "relay": 0.01914259612419528,
+    "reverse_relay": 0.011447248473615446,
+    "n_fwd": 4,
+    "n_rev": 4
+  },
+  {
+    "A": "VEGF",
+    "B": "Decorin",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: decorin induces VEGF and modulates VEGFR2; VEGF participates in decorin down-regulation (autocrine feedback) rather than induction. Not described in CD8 T cells.",
+    "citations": [
+      "Ectopic decorin expression up-regulates VEGF expression in mouse cerebral endothelial cells \u2014 https://pubmed.ncbi.nlm.nih.gov/18021292/",
+      "Decorin (Wikipedia) \u2014 https://en.wikipedia.org/wiki/Decorin"
+    ],
+    "search_queries_used": [
+      "VEGF induces decorin expression",
+      "VEGF Decorin proteoglycan TGF-beta CD8 T cells"
+    ],
+    "relay": 0.014980007704180025,
+    "reverse_relay": 0.013563897290314344,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-22",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "VEGF predominantly suppresses T cell function (via VEGFR2) and induces IL-6/IL-8/GRO-\u03b1 in endothelium, not leukocytes. No evidence VEGF induces IL-22 in MAIT cells; IL-22 induction in MAIT is driven by IL-7/IL-12/IL-18/IL-23.",
+    "citations": [
+      "VEGF directly suppresses activation of T cells from ascites \u2014 https://www.nature.com/articles/bjc2012468",
+      "VEGF MAIT search \u2014 https://immunenetwork.org/DOIx.php?id=10.4110%2Fin.2026.26.e8"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-22 T cells",
+      "VEGF MAIT cells cytokine production IL-22"
+    ],
+    "relay": 0.013148929852995934,
+    "reverse_relay": 0.01020499240016458,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-22",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL/TNFSF13 mainly acts on B cells (class switching, plasma cell survival, IgA+ Bregs) and was found to regulate IL-17/Th2 responses; no published evidence APRIL induces IL-22 in MAIT cells.",
+    "citations": [
+      "APRIL (TNFSF13) regulates collagen-induced arthritis, IL-17 production and Th2 response \u2014 https://pubmed.ncbi.nlm.nih.gov/19016524/"
+    ],
+    "search_queries_used": [
+      "APRIL TNFSF13 induces IL-22 MAIT cells"
+    ],
+    "relay": 0.009992798518855962,
+    "reverse_relay": 0.007359311998711035,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "LT-alpha2-beta1",
+    "B": "IL-9",
+    "T": "Treg",
+    "classification": "NOVEL",
+    "evidence_summary": "Tregs express LT\u03b11\u03b22 (membrane lymphotoxin) and use LT\u03b2R signaling for migration/tumor crosstalk, but no published evidence LT\u03b12\u03b21 induces IL-9 in Tregs.",
+    "citations": [
+      "Regulatory T cells crosstalk with tumor cells and endothelium through lymphotoxin signaling \u2014 https://www.nature.com/articles/s41467-024-54874-y"
+    ],
+    "search_queries_used": [
+      "lymphotoxin LT alpha2 beta1 induces IL-9 Treg",
+      "\"LT alpha beta\" induces IL-9 lymphotoxin"
+    ],
+    "relay": 0.008436375080542954,
+    "reverse_relay": 0.007763950335235374,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "IFN-beta",
+    "B": "IL-2",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "Type-I IFNs (IFN-\u03b1/\u03b2) act as 'signal 3' on CD8 T cells; IFN-\u03b1 subtypes induce significantly higher frequencies of IL-2-expressing CD8+ T cells (>2-fold increase) and synergize with IL-2 signaling for effector differentiation.",
+    "citations": [
+      "Diverse Immunomodulatory Effects of Individual IFN\u03b1 Subtypes on Virus-Specific CD8+ T Cell Responses \u2014 https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2019.02255/full",
+      "Regulation of Effector and Memory CD8 T Cell Differentiation by IL-2 \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6306427/"
+    ],
+    "search_queries_used": [
+      "IFN-beta induces IL-2 CD8 T cells"
+    ],
+    "relay": 0.007950251672531102,
+    "reverse_relay": 0.005772743725915651,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-9",
+    "B": "IFN-lambda1",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-29/IFN-\u03bb1 induction is canonically driven by viral/dsRNA stimuli through IRF/NF-\u03baB pathways. No published evidence IL-9 induces IFN-\u03bb1 in CD8 T cells.",
+    "citations": [
+      "Interleukin 29 (Wikipedia) \u2014 https://en.wikipedia.org/wiki/Interleukin_29"
+    ],
+    "search_queries_used": [
+      "IL-9 induces IFN-lambda IL-29 expression",
+      "IL-9 promotes IL-29 lambda interferon production"
+    ],
+    "relay": 0.007405978466255476,
+    "reverse_relay": 0.004381661569887001,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-22",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: IL-27 inhibits IL-22 production by upregulating SOCS1 in CD4+ T cells. No evidence IL-22 induces IL-27 in MAIT cells.",
+    "citations": [
+      "Interleukin-22 Influences the Th1/Th17 Axis \u2014 https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2021.618110/full",
+      "Identification of IL-27 as a novel regulator of MHC class I/II \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10561092/"
+    ],
+    "search_queries_used": [
+      "IL-22 induces IL-27 MAIT",
+      "\"IL-22 stimulates IL-27\" OR \"IL-22 induces IL-27\""
+    ],
+    "relay": 0.0061376725859981695,
+    "reverse_relay": 0.0058998222689884494,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-9",
+    "B": "CD30L",
+    "T": "HSPC",
+    "classification": "NOVEL",
+    "evidence_summary": "CD30L/CD153 is expressed on activated T/B/NK cells and is CD40-inducible; no published evidence IL-9 induces CD30L expression on HSPCs.",
+    "citations": [
+      "CD30 Is a CD40-Inducible Molecule \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC4621001/"
+    ],
+    "search_queries_used": [
+      "IL-9 induces CD30L CD153 HSPC hematopoietic"
+    ],
+    "relay": 0.005033812851424576,
+    "reverse_relay": 0.0036791243848497855,
+    "n_fwd": 6,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "Noggin",
+    "T": "CD8 Naive",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist not classically considered an immune cytokine. Noggin/BMP signaling affects T cell IL-2 transcription, but APRIL has no documented role in inducing Noggin in CD8 T cells.",
+    "citations": [
+      "Differential effects of inhibition of BMP signalling on T-cell activation \u2014 https://pubmed.ncbi.nlm.nih.gov/22144105/"
+    ],
+    "search_queries_used": [
+      "APRIL induces Noggin BMP T cells",
+      "APRIL induces noggin BMP antagonist immune"
+    ],
+    "relay": 0.003959999707801455,
+    "reverse_relay": 0.0032653645457359805,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "CD30L",
+    "B": "IL-17A",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "CD30L/CD30 signaling is critical for maintenance and activation of IL-17A-producing \u03b3\u03b4 T cells in mucosa-associated tissues; CD30 stimulation directly induces IL-17 production in human cells (in vitro RA studies). Documented for \u03b3\u03b4 rather than CD8 specifically.",
+    "citations": [
+      "CD30L/CD30 is critical for maintenance of IL-17A-producing \u03b3\u03b4 T cells \u2014 https://www.nature.com/articles/mi201318",
+      "CD30 Is Required for Activation of IL-17A-producing \u03b3\u03b4 T cells in Innate Immunity \u2014 https://journals.asm.org/doi/10.1128/iai.00887-13"
+    ],
+    "search_queries_used": [
+      "CD30L induces IL-17A T cells"
+    ],
+    "relay": 0.0034719927759868457,
+    "reverse_relay": 0.0021020335034193298,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-36Ra",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-36Ra is a negative regulator that blocks IL-36R signaling. No published evidence IL-36Ra induces IL-27 in MAIT cells; the relationship would be expected to be indirect (release of inhibition).",
+    "citations": [
+      "IL-36 cytokines in inflammatory and malignant diseases \u2014 https://link.springer.com/article/10.1007/s00018-021-03909-4"
+    ],
+    "search_queries_used": [
+      "IL-36Ra induces IL-27 MAIT cells"
+    ],
+    "relay": 0.002652012860671174,
+    "reverse_relay": 0.0008362584325385427,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IFN-lambda1",
+    "B": "IL-6",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-29/IFN-\u03bb1 up-regulates IL-6 production in PBMCs, macrophages, and synovial fibroblasts; IFN-\u03bb directly responds in CD8 T cells. Direct induction in CD8 T cells specifically is not as well documented but plausible.",
+    "citations": [
+      "IL-29 enhances Toll-like receptor-mediated IL-6 and IL-8 production \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3978693/",
+      "Modulation of the human cytokine response by IFN-\u03bb1/IL-29 \u2014 https://www.nature.com/articles/6364348"
+    ],
+    "search_queries_used": [
+      "IFN-lambda IL-29 induces IL-6 CD8 T cells",
+      "\"IFN-lambda\" \"IL-29\" CD8 T cell IL-6 induction"
+    ],
+    "relay": 0.0022933437805599207,
+    "reverse_relay": 0.0021943683915837085,
+    "n_fwd": 0,
+    "n_rev": 5
+  },
+  {
+    "A": "IL-19",
+    "B": "CD40L",
+    "T": "cDC",
+    "classification": "NOVEL",
+    "evidence_summary": "CD40L is upregulated by IL-2, IL-12, IL-15 and downregulated by IL-4, IL-10; CD40L is expressed on activated T cells, not classically on cDCs. No published evidence IL-19 induces CD40L on cDCs.",
+    "citations": [
+      "The role of CD40 and CD40L in Dendritic Cells \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2749083/"
+    ],
+    "search_queries_used": [
+      "IL-19 induces CD40L dendritic cells",
+      "IL-19 upregulates CD40L T cell help"
+    ],
+    "relay": 0.0017365306369640557,
+    "reverse_relay": 0.0013058852639238438,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "C5a",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "C5a promotes IL-22 and IL-17 expression and provides costimulatory/survival signals to CD4+ T cells; IL-36\u03b1 is produced by CD4+ T cells in inflammation. No direct evidence C5a induces IL-36\u03b1 specifically, but pathways converge on CD4 T cell inflammation.",
+    "citations": [
+      "Complement component C5a Promotes Expression of IL-22 and IL-17 from Human T cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3154861/",
+      "Elevated IL-36\u03b1 And CD4+IL-36\u03b1+T Cells in Graves' Disease \u2014 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6190875/"
+    ],
+    "search_queries_used": [
+      "C5a complement induces IL-36 alpha CD4 T cells"
+    ],
+    "relay": 0.0012040452842689375,
+    "reverse_relay": 0.0010353773468482297,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-4",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: IL-4 induces APRIL expression in macrophages via p38MAPK-CREB/Stat6. No published evidence APRIL induces IL-4 in NKT cells.",
+    "citations": [
+      "IL-4 stimulates mouse macrophages to express APRIL through p38MAPK and two different downstream molecules \u2014 https://www.sciencedirect.com/science/article/abs/pii/S1043466609001069",
+      "APRIL stimulates NF-\u03baB-mediated HoxC4 induction for AID expression in mouse B cells \u2014 https://pmc.ncbi.nlm.nih.gov/articles/PMC3723325/"
+    ],
+    "search_queries_used": [
+      "APRIL induces IL-4 NKT cells",
+      "APRIL stimulates IL-4 B cells immune"
+    ],
+    "relay": 0.000863108975021571,
+    "reverse_relay": 0.00014950586105019444,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-9",
+    "B": "IL-16",
+    "T": "NKT",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-9 acts on bronchial epithelial cells (BEAS-2B) in vitro to induce the T-cell chemoattractants IL-16 and RANTES; IL-16 can be induced by IL-4/IL-9/TNF/serotonin. Documented in epithelial cells, not NKT specifically.",
+    "citations": [
+      "Interleukin (IL)-4/IL-9 and Exogenous IL-16 Induce IL-16 Production by BEAS-2B Cells \u2014 https://www.sciencedirect.com/science/article/abs/pii/S0008874900917453",
+      "Role of interleukin-16 in human diseases \u2014 https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2025.1524026/full"
+    ],
+    "search_queries_used": [
+      "IL-9 induces IL-16 lymphocyte chemoattractant"
+    ],
+    "relay": 0.0005512685807266545,
+    "reverse_relay": 0.00014055925238170452,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-6",
+    "B": "Noggin",
+    "T": "CD14 Mono",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist not classically considered an immune cytokine. IL-6 has many monocyte effects (MDSC induction, MCP-1 induction) but no published evidence IL-6 induces Noggin expression in CD14+ monocytes.",
+    "citations": [
+      "IL-6 Induces Monocyte Chemotactic Protein-1 in PBMCs and U937 \u2014 https://ashpublications.org/blood/article/91/1/258/260347/Interleukin-6-Induces-Monocyte-Chemotactic-Protein"
+    ],
+    "search_queries_used": [
+      "IL-6 induces Noggin monocyte expression"
+    ],
+    "relay": 0.00029792931155251805,
+    "reverse_relay": 0.00019490458110450209,
+    "n_fwd": 3,
+    "n_rev": 2
+  },
+  {
+    "A": "IL-36-alpha",
+    "B": "TL1A",
+    "T": "NK CD56bright",
+    "classification": "NOVEL",
+    "evidence_summary": "TL1A is induced by IL-1\u03b2/TNF\u03b1 and synergizes with IL-12/IL-18 for NK IFN-\u03b3/cytotoxicity. IL-36\u03b1 drives Th1 polarization but no published evidence IL-36\u03b1 induces TL1A in NK CD56bright cells.",
+    "citations": [
+      "TL1A selectively enhances IL-12/IL-18-induced NK cell cytotoxicity \u2014 https://pubmed.ncbi.nlm.nih.gov/20349123/",
+      "IL-36 signaling amplifies Th1 responses \u2014 https://ashpublications.org/blood/article/120/17/3478/30630/IL-36-signaling-amplifies-Th1-responses-by"
+    ],
+    "search_queries_used": [
+      "IL-36 alpha induces TL1A TNFSF15 NK cells",
+      "\"IL-36\" \"TL1A\" induction NK cells"
+    ],
+    "relay": 0.00019301450026978537,
+    "reverse_relay": 0.0001850344065047078,
+    "n_fwd": 5,
+    "n_rev": 1
+  }
+]

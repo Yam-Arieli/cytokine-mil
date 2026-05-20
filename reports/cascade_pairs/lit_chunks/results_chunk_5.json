@@ -1,0 +1,173 @@
+[
+  {
+    "A": "IL-27",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "Both IL-27 and IL-36α act on CD4+ T cells independently (IL-27 inhibits Th17/induces IL-10; IL-36α drives colitogenic Th cells) but no published evidence shows IL-27 induces IL-36α expression.",
+    "citations": ["Interleukin-27 in T Cell Immunity — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4346869/", "IL-36 cytokines imprint a colitogenic phenotype on CD4+ T helper cells — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9038530/"],
+    "search_queries_used": ["IL-27 induces IL-36 alpha CD4 T cells", "\"IL-27\" \"IL-36\" cascade induction"]
+  },
+  {
+    "A": "VEGF",
+    "B": "Decorin",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: decorin induces VEGF and modulates VEGFR2; VEGF participates in decorin down-regulation (autocrine feedback) rather than induction. Not described in CD8 T cells.",
+    "citations": ["Ectopic decorin expression up-regulates VEGF expression in mouse cerebral endothelial cells — https://pubmed.ncbi.nlm.nih.gov/18021292/", "Decorin (Wikipedia) — https://en.wikipedia.org/wiki/Decorin"],
+    "search_queries_used": ["VEGF induces decorin expression", "VEGF Decorin proteoglycan TGF-beta CD8 T cells"]
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-22",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "VEGF predominantly suppresses T cell function (via VEGFR2) and induces IL-6/IL-8/GRO-α in endothelium, not leukocytes. No evidence VEGF induces IL-22 in MAIT cells; IL-22 induction in MAIT is driven by IL-7/IL-12/IL-18/IL-23.",
+    "citations": ["VEGF directly suppresses activation of T cells from ascites — https://www.nature.com/articles/bjc2012468", "VEGF MAIT search — https://immunenetwork.org/DOIx.php?id=10.4110%2Fin.2026.26.e8"],
+    "search_queries_used": ["VEGF induces IL-22 T cells", "VEGF MAIT cells cytokine production IL-22"]
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-22",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "APRIL/TNFSF13 mainly acts on B cells (class switching, plasma cell survival, IgA+ Bregs) and was found to regulate IL-17/Th2 responses; no published evidence APRIL induces IL-22 in MAIT cells.",
+    "citations": ["APRIL (TNFSF13) regulates collagen-induced arthritis, IL-17 production and Th2 response — https://pubmed.ncbi.nlm.nih.gov/19016524/"],
+    "search_queries_used": ["APRIL TNFSF13 induces IL-22 MAIT cells"]
+  },
+  {
+    "A": "LT-alpha2-beta1",
+    "B": "IL-9",
+    "T": "Treg",
+    "classification": "NOVEL",
+    "evidence_summary": "Tregs express LTα1β2 (membrane lymphotoxin) and use LTβR signaling for migration/tumor crosstalk, but no published evidence LTα2β1 induces IL-9 in Tregs.",
+    "citations": ["Regulatory T cells crosstalk with tumor cells and endothelium through lymphotoxin signaling — https://www.nature.com/articles/s41467-024-54874-y"],
+    "search_queries_used": ["lymphotoxin LT alpha2 beta1 induces IL-9 Treg", "\"LT alpha beta\" induces IL-9 lymphotoxin"]
+  },
+  {
+    "A": "IFN-beta",
+    "B": "IL-2",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "Type-I IFNs (IFN-α/β) act as 'signal 3' on CD8 T cells; IFN-α subtypes induce significantly higher frequencies of IL-2-expressing CD8+ T cells (>2-fold increase) and synergize with IL-2 signaling for effector differentiation.",
+    "citations": ["Diverse Immunomodulatory Effects of Individual IFNα Subtypes on Virus-Specific CD8+ T Cell Responses — https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2019.02255/full", "Regulation of Effector and Memory CD8 T Cell Differentiation by IL-2 — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6306427/"],
+    "search_queries_used": ["IFN-beta induces IL-2 CD8 T cells"]
+  },
+  {
+    "A": "IL-9",
+    "B": "IFN-lambda1",
+    "T": "CD8 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-29/IFN-λ1 induction is canonically driven by viral/dsRNA stimuli through IRF/NF-κB pathways. No published evidence IL-9 induces IFN-λ1 in CD8 T cells.",
+    "citations": ["Interleukin 29 (Wikipedia) — https://en.wikipedia.org/wiki/Interleukin_29"],
+    "search_queries_used": ["IL-9 induces IFN-lambda IL-29 expression", "IL-9 promotes IL-29 lambda interferon production"]
+  },
+  {
+    "A": "IL-22",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: IL-27 inhibits IL-22 production by upregulating SOCS1 in CD4+ T cells. No evidence IL-22 induces IL-27 in MAIT cells.",
+    "citations": ["Interleukin-22 Influences the Th1/Th17 Axis — https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2021.618110/full", "Identification of IL-27 as a novel regulator of MHC class I/II — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10561092/"],
+    "search_queries_used": ["IL-22 induces IL-27 MAIT", "\"IL-22 stimulates IL-27\" OR \"IL-22 induces IL-27\""]
+  },
+  {
+    "A": "IL-9",
+    "B": "CD30L",
+    "T": "HSPC",
+    "classification": "NOVEL",
+    "evidence_summary": "CD30L/CD153 is expressed on activated T/B/NK cells and is CD40-inducible; no published evidence IL-9 induces CD30L expression on HSPCs.",
+    "citations": ["CD30 Is a CD40-Inducible Molecule — https://pmc.ncbi.nlm.nih.gov/articles/PMC4621001/"],
+    "search_queries_used": ["IL-9 induces CD30L CD153 HSPC hematopoietic"]
+  },
+  {
+    "A": "APRIL",
+    "B": "Noggin",
+    "T": "CD8 Naive",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist not classically considered an immune cytokine. Noggin/BMP signaling affects T cell IL-2 transcription, but APRIL has no documented role in inducing Noggin in CD8 T cells.",
+    "citations": ["Differential effects of inhibition of BMP signalling on T-cell activation — https://pubmed.ncbi.nlm.nih.gov/22144105/"],
+    "search_queries_used": ["APRIL induces Noggin BMP T cells", "APRIL induces noggin BMP antagonist immune"]
+  },
+  {
+    "A": "CD30L",
+    "B": "IL-17A",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "CD30L/CD30 signaling is critical for maintenance and activation of IL-17A-producing γδ T cells in mucosa-associated tissues; CD30 stimulation directly induces IL-17 production in human cells (in vitro RA studies). Documented for γδ rather than CD8 specifically.",
+    "citations": ["CD30L/CD30 is critical for maintenance of IL-17A-producing γδ T cells — https://www.nature.com/articles/mi201318", "CD30 Is Required for Activation of IL-17A-producing γδ T cells in Innate Immunity — https://journals.asm.org/doi/10.1128/iai.00887-13"],
+    "search_queries_used": ["CD30L induces IL-17A T cells"]
+  },
+  {
+    "A": "IL-36Ra",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "IL-36Ra is a negative regulator that blocks IL-36R signaling. No published evidence IL-36Ra induces IL-27 in MAIT cells; the relationship would be expected to be indirect (release of inhibition).",
+    "citations": ["IL-36 cytokines in inflammatory and malignant diseases — https://link.springer.com/article/10.1007/s00018-021-03909-4"],
+    "search_queries_used": ["IL-36Ra induces IL-27 MAIT cells"]
+  },
+  {
+    "A": "IFN-lambda1",
+    "B": "IL-6",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-29/IFN-λ1 up-regulates IL-6 production in PBMCs, macrophages, and synovial fibroblasts; IFN-λ directly responds in CD8 T cells. Direct induction in CD8 T cells specifically is not as well documented but plausible.",
+    "citations": ["IL-29 enhances Toll-like receptor-mediated IL-6 and IL-8 production — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3978693/", "Modulation of the human cytokine response by IFN-λ1/IL-29 — https://www.nature.com/articles/6364348"],
+    "search_queries_used": ["IFN-lambda IL-29 induces IL-6 CD8 T cells", "\"IFN-lambda\" \"IL-29\" CD8 T cell IL-6 induction"]
+  },
+  {
+    "A": "IL-19",
+    "B": "CD40L",
+    "T": "cDC",
+    "classification": "NOVEL",
+    "evidence_summary": "CD40L is upregulated by IL-2, IL-12, IL-15 and downregulated by IL-4, IL-10; CD40L is expressed on activated T cells, not classically on cDCs. No published evidence IL-19 induces CD40L on cDCs.",
+    "citations": ["The role of CD40 and CD40L in Dendritic Cells — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2749083/"],
+    "search_queries_used": ["IL-19 induces CD40L dendritic cells", "IL-19 upregulates CD40L T cell help"]
+  },
+  {
+    "A": "C5a",
+    "B": "IL-36-alpha",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "C5a promotes IL-22 and IL-17 expression and provides costimulatory/survival signals to CD4+ T cells; IL-36α is produced by CD4+ T cells in inflammation. No direct evidence C5a induces IL-36α specifically, but pathways converge on CD4 T cell inflammation.",
+    "citations": ["Complement component C5a Promotes Expression of IL-22 and IL-17 from Human T cells — https://pmc.ncbi.nlm.nih.gov/articles/PMC3154861/", "Elevated IL-36α And CD4+IL-36α+T Cells in Graves' Disease — https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6190875/"],
+    "search_queries_used": ["C5a complement induces IL-36 alpha CD4 T cells"]
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-4",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "Documented direction is reverse: IL-4 induces APRIL expression in macrophages via p38MAPK-CREB/Stat6. No published evidence APRIL induces IL-4 in NKT cells.",
+    "citations": ["IL-4 stimulates mouse macrophages to express APRIL through p38MAPK and two different downstream molecules — https://www.sciencedirect.com/science/article/abs/pii/S1043466609001069", "APRIL stimulates NF-κB-mediated HoxC4 induction for AID expression in mouse B cells — https://pmc.ncbi.nlm.nih.gov/articles/PMC3723325/"],
+    "search_queries_used": ["APRIL induces IL-4 NKT cells", "APRIL stimulates IL-4 B cells immune"]
+  },
+  {
+    "A": "IL-9",
+    "B": "IL-16",
+    "T": "NKT",
+    "classification": "KNOWN_DIRECTIONAL",
+    "evidence_summary": "IL-9 acts on bronchial epithelial cells (BEAS-2B) in vitro to induce the T-cell chemoattractants IL-16 and RANTES; IL-16 can be induced by IL-4/IL-9/TNF/serotonin. Documented in epithelial cells, not NKT specifically.",
+    "citations": ["Interleukin (IL)-4/IL-9 and Exogenous IL-16 Induce IL-16 Production by BEAS-2B Cells — https://www.sciencedirect.com/science/article/abs/pii/S0008874900917453", "Role of interleukin-16 in human diseases — https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2025.1524026/full"],
+    "search_queries_used": ["IL-9 induces IL-16 lymphocyte chemoattractant"]
+  },
+  {
+    "A": "IL-6",
+    "B": "Noggin",
+    "T": "CD14 Mono",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist not classically considered an immune cytokine. IL-6 has many monocyte effects (MDSC induction, MCP-1 induction) but no published evidence IL-6 induces Noggin expression in CD14+ monocytes.",
+    "citations": ["IL-6 Induces Monocyte Chemotactic Protein-1 in PBMCs and U937 — https://ashpublications.org/blood/article/91/1/258/260347/Interleukin-6-Induces-Monocyte-Chemotactic-Protein"],
+    "search_queries_used": ["IL-6 induces Noggin monocyte expression"]
+  },
+  {
+    "A": "IL-36-alpha",
+    "B": "TL1A",
+    "T": "NK CD56bright",
+    "classification": "NOVEL",
+    "evidence_summary": "TL1A is induced by IL-1β/TNFα and synergizes with IL-12/IL-18 for NK IFN-γ/cytotoxicity. IL-36α drives Th1 polarization but no published evidence IL-36α induces TL1A in NK CD56bright cells.",
+    "citations": ["TL1A selectively enhances IL-12/IL-18-induced NK cell cytotoxicity — https://pubmed.ncbi.nlm.nih.gov/20349123/", "IL-36 signaling amplifies Th1 responses — https://ashpublications.org/blood/article/120/17/3478/30630/IL-36-signaling-amplifies-Th1-responses-by"],
+    "search_queries_used": ["IL-36 alpha induces TL1A TNFSF15 NK cells", "\"IL-36\" \"TL1A\" induction NK cells"]
+  }
+]

@@ -1,0 +1,125 @@
+Oelen 2022 pathogen experiment — SA + CA pipeline
+Output directory: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oelen_sa_ca/run_20260405_120832_pid3431285
+Started: 20260405_120832_pid3431285
+
+Device:        cuda
+Training seed: 42
+Val donors:    ['donor_6.0', 'donor_95.0']
+
+============================================================
+Loading data
+============================================================
+Manifest entries: 960
+HVGs:             4000
+Conditions: ['24hCA', '24hMTB', '24hPA', 'UT']
+Donors:     24 total
+  Train donors (22): ['donor_10.0', 'donor_102.0', 'donor_103.0', 'donor_104.0', 'donor_105.0', 'donor_107.0', 'donor_108.0', 'donor_109.0', 'donor_110.0', 'donor_119.0', 'donor_120.0', 'donor_121.0', 'donor_122.0', 'donor_123.0', 'donor_124.0', 'donor_125.0', 'donor_126.0', 'donor_19.0', 'donor_43.0', 'donor_49.0', 'donor_7.0', 'donor_74.0']
+  Val   donors (2):   ['donor_6.0', 'donor_95.0']
+  Train tubes: 880  |  Val tubes: 80
+
+Classes (91):
+   0  24hCA  [MED]
+   1  24hMTB  [HARD]
+   2  24hPA  [EASY]
+   3  UT  [CONTROL]
+
+Preloading tube datasets...
+Train tubes loaded: 880
+Val   tubes loaded: 80
+Cells: 365  |  Cell types: 5
+
+============================================================
+Stage 1 — Encoder pre-training (cell-type classification)
+============================================================
+Encoder saved: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oelen_sa_ca/run_20260405_120832_pid3431285/encoder_stage1_42.pt
+
+============================================================
+Stage 2 — Single-layer MIL training (encoder frozen)
+============================================================
+Stage 2 model saved: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oelen_sa_ca/run_20260405_120832_pid3431285/mil_stage2_42.pt
+Train records: 880
+Val   records: 80
+Stage 2 dynamics saved (dynamics_stage2.pkl).
+
+============================================================
+Stage 3 — CA-only training
+============================================================
+Trainable parameters (CA only): 16512
+Total parameters:               3157088
+Initial CA weight norm:         1.285269
+
+n_epochs:      100  (fixed override, independent of config)
+lr:            0.0002
+momentum:      0.95
+log_every:     1
+training_seed: 42
+
+SA entropy variance check passed: var=0.00e+00 < 1e-6
+Train records: 880
+Val   records: 80
+Model saved: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oelen_sa_ca/run_20260405_120832_pid3431285/stage3_ca_model_42.pt
+Dynamics saved: dynamics_stage3.pkl
+
+============================================================
+Dynamics analysis — Stage 2 (single-layer SA)
+============================================================
+
+Condition learnability ranking — Stage 2
+Metric: AUC of mean p_correct_trajectory across pseudo-tubes, aggregated to donor level (median across pseudo-tubes per donor, then mean across donors)
+
+Rank  Condition     Train AUC   Val AUC  Difficulty
+-------------------------------------------------------
+   1.  UT               96.673    97.136  CONTROL
+   2.  24hCA            93.938    95.283  MED
+   3.  24hMTB           85.432    62.281  HARD
+   4.  24hPA            83.405    75.010  EASY
+
+============================================================
+Dynamics analysis — Stage 3 CA-only
+============================================================
+
+Condition learnability ranking — Stage 3 CA-only
+Metric: AUC of mean p_correct_trajectory across pseudo-tubes, aggregated to donor level (median across pseudo-tubes per donor, then mean across donors)
+
+Rank  Condition     Train AUC   Val AUC  Difficulty
+-------------------------------------------------------
+   1.  UT               98.998    98.999  CONTROL
+   2.  24hCA            98.834    98.986  MED
+   3.  24hPA            98.318    95.217  EASY
+   4.  24hMTB           98.284    83.270  HARD
+
+Stage 2 vs Stage 3 rank correlation: Spearman rho = 0.800  (p=0.200)
+Stable (rho > 0.7): True
+
+------------------------------------------------------------
+Condition confusion entropy ranking — Stage 3 CA-only
+Metric: AUC of H_confusion(C,t) = -sum_{k!=C} q_k(t) * log(q_k(t)), where q_k(t) is the renormalized off-diagonal mean softmax score across all pseudo-tubes of cytokine C at epoch t. Low = confusion concentrated on similar cytokines (similarity confound). High = confusion spread randomly (genuine difficulty).
+
+Condition       Train AUC(H_c)  Difficulty
+----------------------------------------
+  24hCA                   73.152  MED
+  UT                      23.149  CONTROL
+  24hMTB                  22.671  HARD
+  24hPA                   18.899  EASY
+
+============================================================
+Biological validation — expected ordering: PA > CA > MTB
+============================================================
+  24hPA  (EASY):  98.318
+  24hCA  (MED):   98.834
+  24hMTB (HARD):  98.284
+  PA > CA:  False   (expected: True)
+  CA > MTB: True  (expected: True)
+  PA > MTB: True  (expected: True)
+  Ordering checks passed: 2/3
+
+============================================================
+Saving figures...
+============================================================
+  Saved: learning_curves_stage_2_sa_42.png
+  Saved: learning_curves_stage_3_ca-only_42.png
+  Saved: sa_vs_ca_entropy_stage3_ca_42.png
+  Saved: ca_weight_norm_stage3_ca_42.png
+
+All results saved to: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oelen_sa_ca/run_20260405_120832_pid3431285
+Finished: 20260405_121941

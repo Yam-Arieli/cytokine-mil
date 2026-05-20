@@ -1,0 +1,162 @@
+[
+  {
+    "A": "IFN-beta",
+    "B": "IFN-gamma",
+    "T": "CD16 Mono",
+    "relay": 0.02268996730560571,
+    "n_fwd": 3,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-2",
+    "B": "IFN-gamma",
+    "T": "CD8 Naive",
+    "relay": 0.017593628449869142,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "Decorin",
+    "B": "IL-8",
+    "T": "CD8 Naive",
+    "relay": 0.013547586721526698,
+    "n_fwd": 3,
+    "n_rev": 5
+  },
+  {
+    "A": "IL-6",
+    "B": "Decorin",
+    "T": "CD8 Naive",
+    "relay": 0.012574220687220077,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "TNF-alpha",
+    "B": "IL-9",
+    "T": "Treg",
+    "relay": 0.009694415765491916,
+    "n_fwd": 3,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-27",
+    "B": "VEGF",
+    "T": "CD4 Naive",
+    "relay": 0.008153122165022394,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "GM-CSF",
+    "B": "TSLP",
+    "T": "NKT",
+    "relay": 0.007739661879459054,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-17A",
+    "B": "IL-36Ra",
+    "T": "NKT",
+    "relay": 0.007240799378497387,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "IL-9",
+    "B": "APRIL",
+    "T": "CD8 Naive",
+    "relay": 0.00606892183551951,
+    "n_fwd": 4,
+    "n_rev": 3
+  },
+  {
+    "A": "CD30L",
+    "B": "VEGF",
+    "T": "CD14 Mono",
+    "relay": 0.004747655270432389,
+    "n_fwd": 5,
+    "n_rev": 3
+  },
+  {
+    "A": "Decorin",
+    "B": "IL-27",
+    "T": "MAIT",
+    "relay": 0.003909209515890358,
+    "n_fwd": 5,
+    "n_rev": 1
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-27",
+    "T": "MAIT",
+    "relay": 0.003388844629919398,
+    "n_fwd": 5,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "FasL",
+    "T": "CD4 Naive",
+    "relay": 0.002346165209680568,
+    "n_fwd": 4,
+    "n_rev": 2
+  },
+  {
+    "A": "APRIL",
+    "B": "EGF",
+    "T": "CD8 Naive",
+    "relay": 0.00212710238479121,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-36Ra",
+    "B": "VEGF",
+    "T": "MAIT",
+    "relay": 0.0014614968358574627,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "TL1A",
+    "B": "IL-13",
+    "T": "CD14 Mono",
+    "relay": 0.0011296838107042442,
+    "n_fwd": 2,
+    "n_rev": 3
+  },
+  {
+    "A": "IL-16",
+    "B": "VEGF",
+    "T": "MAIT",
+    "relay": 0.0007881107868488509,
+    "n_fwd": 2,
+    "n_rev": 4
+  },
+  {
+    "A": "APRIL",
+    "B": "CD27L",
+    "T": "NKT",
+    "relay": 0.00038438106153540827,
+    "n_fwd": 4,
+    "n_rev": 1
+  },
+  {
+    "A": "CD27L",
+    "B": "VEGF",
+    "T": "MAIT",
+    "relay": 0.00023457907650093575,
+    "n_fwd": 1,
+    "n_rev": 4
+  },
+  {
+    "A": "IL-12",
+    "B": "VEGF",
+    "T": "CD16 Mono",
+    "relay": 0.0001246787904765311,
+    "n_fwd": 5,
+    "n_rev": 3
+  }
+]

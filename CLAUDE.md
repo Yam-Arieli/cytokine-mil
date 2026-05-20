@@ -7,11 +7,28 @@
 
 AB-MIL model classifies which cytokine was applied to a pseudo-tube of PBMCs.
 Training dynamics (per-cytokine learning curves, attention entropy, instance-level
-confidence) are analyzed to infer the temporal hierarchy of cytokine signaling cascades.
+confidence) are analyzed to infer cytokine signaling axes — pairs of cytokines that
+share signaling biology — and the cellular relays through which they couple.
 
-**Central hypothesis:** cytokines learned early induce strong, direct, canonical
-responses; cytokines learned late induce subtle, pleiotropic, or multicellular cascades.
-This is a hypothesis to be tested — not a prior injected into the model.
+**Central hypothesis (axis discovery):** cytokines that share a signaling axis produce
+overlapping single-cell transcriptional signatures in PBMCs, detectable via cross-cytokine
+prediction (alignment), latent-space centroid geometry (geo), and cell-type ablation.
+The cellular relay (the cell type that mediates A's effect on B's signature) can be
+identified by per-cell-type ablation.
+
+**Directional cascade inference is at chance under single-layer attention** (2026-05-20
+literature review: 49% correct direction on 39 documented pairs; see
+`reports/cascade_pairs/literature_review.md` §8). The geo refined readout is algebraically
+symmetric by design, and a single-cell-type ablation in 24-h snapshot data cannot
+distinguish "T expresses B *because* A drove it" from "T expresses B *and* contributes
+to A's signature". Two-layer attention v2 (§5.5) is the architectural fix — the SA head
+identifies direct responders while the CA head identifies cascade relays; the asymmetry
+between SA and CA is what encodes direction.
+
+**Original directional hypothesis (deprecated for single-layer attention; retained for v2):**
+cytokines learned early induce strong, direct, canonical responses; cytokines learned
+late induce subtle, pleiotropic, or multicellular cascades. This is a hypothesis to be
+tested with v2 — not a prior injected into the model.
 
 ---
 
@@ -664,11 +681,18 @@ function signatures, validation experiments (Exp 0–5), and precise output labe
 
 ## 20. Latent Space Cytokine Geometry (`analysis/latent_geometry.py`)
 
-Detects cascade relationships as per-cell-type directional bias of cell embeddings
-toward other cytokine centroids. Run on 20-cytokine subset first. GO/NO-GO gate:
-Exp 0 (cytokine alignment score vs null). Contingency path: AuxDecoder (Exp 3).
-See `/latent-geometry` skill for full experiment specs (Exp 0–3), math, function
-signatures, attention proxy check results (2/5 FAIL → uniform KL), and precise output labels.
+Detects cytokine-pair coupling as per-cell-type directional bias of cell embeddings
+toward other cytokine centroids. **Direction-agnostic on single-layer attention** —
+the readout is symmetric by construction (§20.1) and the empirical 2026-05-20 lit
+review showed directional inference is at chance (49% / 51%). Outputs should be
+treated as **cytokine axis** calls (unordered pairs with a relay cell type), not
+directed cascades, until two-layer attention v2 (§5.5) is trained and the SA/CA
+asymmetry is wired in.
+
+Run on 20-cytokine subset first. GO/NO-GO gate: Exp 0 (cytokine alignment score vs
+null). Contingency path: AuxDecoder (Exp 3). See `/latent-geometry` skill for full
+experiment specs (Exp 0–3), math, function signatures, attention proxy check
+results (2/5 FAIL → uniform KL), and precise output labels.
 
 ### 20.1 Refined readout (current default)
 
@@ -717,3 +741,23 @@ Public API in `cytokine_mil.analysis.latent_geometry`:
 Deprecated (kept for backwards compatibility behind `--legacy-asymmetry`):
 - `compute_asymmetry_matrix`
 - `build_latent_cascade_graph`
+
+### 20.2 Axis reframing (current reporting default)
+
+Because directional inference is at chance under single-layer attention, the
+default reporter for downstream consumption is `scripts/report_cytokine_axes.py`,
+which collapses `cascade_call`'s directional output into direction-agnostic axis
+calls:
+
+- **axis_a, axis_b**: unordered canonical pair (`a ≤ b` lexicographically).
+- **axis_strength**: `max(pooled_relay_a→b, pooled_relay_b→a)`.
+- **relay_T_candidates**: top-3 most-frequent argmax cell types across seeds.
+- **literature_status**: PRE_REGISTERED / KNOWN_DIRECTIONAL / KNOWN_COREGULATED /
+  PARTIAL / NOVEL / NAME_AMBIGUOUS — joined from
+  `reports/cascade_pairs/literature_review_aggregate.json`.
+- **literature_direction**: tag indicating whether literature says A→B (`a_to_b`),
+  B→A (`b_to_a`), both (`bidir`), antagonist/family coregulation
+  (`coregulated_other`), or no literature support (`no_lit`).
+
+Headline reporting language: "discovered cytokine coupling axes" — *not*
+"discovered cascades". Cascade language returns when v2 is trained.

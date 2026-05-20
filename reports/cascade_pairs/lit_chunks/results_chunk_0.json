@@ -1,0 +1,233 @@
+[
+  {
+    "A": "IFN-beta",
+    "B": "IFN-omega",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IFN-beta and IFN-omega are both type I interferons that bind the same IFNAR receptor and are typically co-induced by viral signals via IRF3/IRF7, but IFN-beta is not documented as a direct upstream inducer of IFN-omega in CD8 T cells.",
+    "citations": [
+      "Shared and Unique Features of Human Interferon-Beta and Interferon-Alpha Subtypes — https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2020.605673/full",
+      "Type I Interferon Signaling Pathways — https://www.rndsystems.com/pathways/type-i-interferon-signaling-pathways"
+    ],
+    "search_queries_used": ["IFN-beta induces IFN-omega type I interferon"]
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-20",
+    "T": "CD14 Mono",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence that VEGF induces IL-20 in monocytes. VEGF induces MCP-1, IL-6, and IL-8 in vascular cells/monocytes, but IL-20 was not identified as a downstream target.",
+    "citations": [],
+    "search_queries_used": [
+      "VEGF induces IL-20 monocyte",
+      "VEGF IL-20 upregulation immune cells"
+    ]
+  },
+  {
+    "A": "IFN-lambda1",
+    "B": "IL-27",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No direct evidence found that IFN-lambda1 (IL-29) induces IL-27 in MAIT or other immune cells. IFN-lambda1 induces ELR(-) CXC chemokines and inhibits Th2 responses, but IL-27 induction was not described.",
+    "citations": [],
+    "search_queries_used": [
+      "IFN-lambda1 IL-29 induces IL-27 MAIT cells",
+      "IFN-lambda induces IL-27 dendritic cells",
+      "\"IL-29\" OR \"IFN-lambda\" induces IL-27"
+    ]
+  },
+  {
+    "A": "APRIL",
+    "B": "VEGF",
+    "T": "CD14 Mono",
+    "classification": "PARTIAL",
+    "evidence_summary": "APRIL and VEGF-A are both elevated in disease (e.g., extracellular vesicles in TNBC, gliomas) and are correlated prognostic biomarkers, but no mechanistic link showing APRIL directly induces VEGF in monocytes was found.",
+    "citations": [
+      "A Retrospective Exploratory Analysis for Serum Extracellular Vesicles Reveals APRIL (TNFSF13), CXCL13, and VEGF-A as Prognostic Biomarkers — https://www.mdpi.com/1422-0067/24/21/15576"
+    ],
+    "search_queries_used": ["APRIL TNFSF13 induces VEGF monocyte"]
+  },
+  {
+    "A": "APRIL",
+    "B": "IFN-lambda1",
+    "T": "pDC",
+    "classification": "NOVEL",
+    "evidence_summary": "Both APRIL and IFN-lambda1 are associated with plasmacytoid dendritic cells, but there is no published evidence that APRIL induces IFN-lambda1 in pDCs. IFN-lambda induction in pDCs is documented for TLR9 ligands (e.g., HHV-6B), not APRIL.",
+    "citations": [],
+    "search_queries_used": ["APRIL TNFSF13 induces IFN-lambda1 IL-29 plasmacytoid dendritic cells"]
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-9",
+    "T": "CD14 Mono",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The documented direction is the reverse: IL-9 induces VEGF secretion from mast cells (PLOS One 2012). No evidence VEGF induces IL-9 in monocytes; reverse direction is published.",
+    "citations": [
+      "IL-9 Induces VEGF Secretion from Human Mast Cells — https://pmc.ncbi.nlm.nih.gov/articles/PMC3297631/"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-9 production T cells",
+      "\"VEGF\" induces \"IL-9\" mast cells"
+    ]
+  },
+  {
+    "A": "Noggin",
+    "B": "IL-36-alpha",
+    "T": "HSPC",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist, not a classical immune cytokine. No evidence of a Noggin → IL-36-alpha axis in HSPCs in the immune literature.",
+    "citations": [],
+    "search_queries_used": ["Noggin IL-36 alpha HSPC hematopoietic stem cell"]
+  },
+  {
+    "A": "IL-6",
+    "B": "APRIL",
+    "T": "CD8 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "APRIL and IL-6 are co-regulated in inflammation and both contribute to plasma cell survival, with positive correlations in arthritis models. No mechanistic evidence of IL-6 directly inducing APRIL in CD8 naive T cells was found.",
+    "citations": [
+      "APRIL (TNFSF13) regulates collagen induced arthritis, IL-17 production and TH2 response — https://pmc.ncbi.nlm.nih.gov/articles/PMC2755626/"
+    ],
+    "search_queries_used": ["IL-6 induces APRIL TNFSF13 expression"]
+  },
+  {
+    "A": "IL-21",
+    "B": "IL-27",
+    "T": "CD8 Naive",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "The well-documented direction is the reverse: IL-27 induces IL-21 in CD8+ T cells (and in Tfh/Tr1 differentiation). However, IL-21 enhancement of IL-27 in B cells has also been reported, making the relationship bidirectional but with the canonical cascade being IL-27 → IL-21.",
+    "citations": [
+      "IL-27 induction of IL-21 from human CD8+ T cells induces granzyme B in an autocrine manner — https://pmc.ncbi.nlm.nih.gov/articles/PMC7293547/",
+      "BATF3-dependent induction of IL-27 in B cells — https://www.biorxiv.org/content/10.1101/2020.06.26.117010.full.pdf"
+    ],
+    "search_queries_used": [
+      "IL-21 induces IL-27 T cell differentiation",
+      "\"IL-21\" induces \"IL-27\" OR \"EBI3\"",
+      "\"IL-21\" induces \"EBI3\" T cell IL-27"
+    ]
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-35",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "No literature directly linking APRIL induction of IL-35 in CD4 naive T cells. APRIL induces IL-10-producing IgA+ Bregs (which in turn induce Tregs/IL-35-producing populations) but the direct A→B axis was not found.",
+    "citations": [],
+    "search_queries_used": ["APRIL induces IL-35 regulatory T cell"]
+  },
+  {
+    "A": "IL-16",
+    "B": "IL-8",
+    "T": "CD8 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "IL-16 is known to modulate surface receptor and cytokine release in macrophages/DCs, and IL-16 promotes inflammatory cell recruitment to similar tissues as IL-8, but a direct IL-16→IL-8 cascade in CD8 naive T cells was not found.",
+    "citations": [
+      "Recombinant interleukin-16 selectively modulates surface receptor expression and cytokine release in macrophages and dendritic cells — https://pmc.ncbi.nlm.nih.gov/articles/PMC2326843/"
+    ],
+    "search_queries_used": [
+      "IL-16 induces IL-8 CXCL8 chemokine production T cells",
+      "\"IL-16\" \"CXCL8\" OR \"IL-8\" upregulation"
+    ]
+  },
+  {
+    "A": "C5a",
+    "B": "CD30L",
+    "T": "ILC",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence that C5a induces CD30L (TNFSF8) expression in ILCs. C5a is documented in neutrophil priming and IL-17/IL-23 regulation but not CD30L induction in ILCs.",
+    "citations": [],
+    "search_queries_used": [
+      "C5a induces CD30L TNFSF8 expression",
+      "\"C5a\" complement induces TNF superfamily TNFSF NK cells ILC"
+    ]
+  },
+  {
+    "A": "VEGF",
+    "B": "IL-4",
+    "T": "NKT",
+    "classification": "PARTIAL",
+    "evidence_summary": "VEGF enhances TH2-mediated sensitization/inflammation in lung (Lee et al., Nature Medicine 2004) and VEGF inhibition decreases IL-4 production, supporting indirect VEGF→IL-4 enhancement. However, direct evidence in NKT cells specifically was not found, and other reports suggest VEGF skews toward Th1.",
+    "citations": [
+      "Vascular endothelial growth factor (VEGF) induces remodeling and enhances TH2-mediated sensitization and inflammation in the lung — https://www.nature.com/articles/nm1105"
+    ],
+    "search_queries_used": [
+      "VEGF induces IL-4 NKT cells Th2",
+      "\"VEGF\" induces \"IL-4\" T helper Th2 differentiation"
+    ]
+  },
+  {
+    "A": "GITRL",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence linking GITRL (TNFSF18) to APRIL induction in MAIT cells. GITRL regulates Treg/effector T cell responses; APRIL induction was not described downstream of GITR triggering.",
+    "citations": [],
+    "search_queries_used": ["GITRL TNFSF18 induces APRIL expression"]
+  },
+  {
+    "A": "VEGF",
+    "B": "GM-CSF",
+    "T": "CD4 Naive",
+    "classification": "NOVEL",
+    "evidence_summary": "VEGF and GM-CSF operate via distinct pathways with mostly opposing effects on dendritic cell function (VEGF suppresses, GM-CSF promotes maturation). No literature describes VEGF inducing GM-CSF in CD4 naive T cells.",
+    "citations": [],
+    "search_queries_used": ["VEGF GM-CSF crosstalk T cells dendritic cells"]
+  },
+  {
+    "A": "IL-16",
+    "B": "APRIL",
+    "T": "MAIT",
+    "classification": "NOVEL",
+    "evidence_summary": "No published evidence that IL-16 induces APRIL expression. IL-16 and APRIL are linked to B cell biology separately but no direct cascade in MAIT or other cells was found.",
+    "citations": [],
+    "search_queries_used": ["IL-16 induces APRIL B cell activation"]
+  },
+  {
+    "A": "IL-12",
+    "B": "IL-9",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "IL-12 is listed among cytokines that can increase IL-9 production from CD4+ T cells under certain conditions, but the canonical Th9 differentiation pathway involves TGF-β + IL-4 (not IL-12, which classically drives Th1/IFN-γ).",
+    "citations": [
+      "Th9 cells: differentiation and disease — https://pmc.ncbi.nlm.nih.gov/articles/PMC3982928/"
+    ],
+    "search_queries_used": ["IL-12 induces IL-9 Th9 T cell differentiation"]
+  },
+  {
+    "A": "Noggin",
+    "B": "CD40L",
+    "T": "NK",
+    "classification": "NAME_AMBIGUOUS",
+    "evidence_summary": "Noggin is a BMP antagonist, not a classical immune cytokine. No evidence linking Noggin to CD40L induction on NK cells in immune literature. CD40L on NK is regulated by IL-12/IFN-γ.",
+    "citations": [
+      "Regulation of CD40L expression on natural killer cells by interleukin-12 and interferon gamma — https://pubmed.ncbi.nlm.nih.gov/11129327/"
+    ],
+    "search_queries_used": ["Noggin CD40L NK cells immune induction"]
+  },
+  {
+    "A": "IL-36Ra",
+    "B": "IL-6",
+    "T": "NKT",
+    "classification": "KNOWN_COREGULATED",
+    "evidence_summary": "IL-36Ra is an antagonist that suppresses (not induces) IL-6 by inhibiting IL-36 signaling at IL-36R. The documented relationship is IL-36 agonists → IL-6 induction; IL-36Ra reduces IL-6. Thus IL-36Ra → IL-6 induction is the opposite of documented biology.",
+    "citations": [
+      "Protective effect of interleukin-36 receptor antagonist on liver injury — https://pmc.ncbi.nlm.nih.gov/articles/PMC7374990/",
+      "Interleukin(IL)-36α and IL-36γ Induce Proinflammatory Mediators — https://pmc.ncbi.nlm.nih.gov/articles/PMC4585048/"
+    ],
+    "search_queries_used": ["IL-36 receptor antagonist IL-36Ra IL-6 induction"]
+  },
+  {
+    "A": "APRIL",
+    "B": "IL-21",
+    "T": "CD4 Naive",
+    "classification": "PARTIAL",
+    "evidence_summary": "APRIL and IL-21 cooperate in B cell differentiation (APRIL+IL-21 induces IgA class switching and IL-10 in Bregs), but no direct evidence that APRIL induces IL-21 production in CD4 naive T cells was found. IL-21 is mainly induced by IL-6 and IL-27 in Tfh/Tr1 contexts.",
+    "citations": [
+      "APRIL Induces a Novel Subset of IgA+ Regulatory B Cells — https://pmc.ncbi.nlm.nih.gov/articles/PMC6587076/"
+    ],
+    "search_queries_used": [
+      "APRIL induces IL-21 production T cell",
+      "\"APRIL\" induces IL-21 plasma B cell production"
+    ]
+  }
+]
