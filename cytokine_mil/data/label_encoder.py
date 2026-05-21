@@ -61,10 +61,28 @@ class CytokineLabel:
 
     @classmethod
     def load(cls, path: str) -> "CytokineLabel":
+        """
+        Load a saved CytokineLabel from JSON. Handles two serialization formats:
+
+        1. ``{cyt_name: idx}`` mapping — saved by ``CytokineLabel.save()``.
+        2. ``{"cytokines": [cyt_name, ...]}`` ordered list — saved by
+           ``scripts/train_oesinghaus_full.py`` and ``train_synthetic_*``.
+           Assumes index = position in list, PBS at index 90 by convention.
+        """
         encoder = cls()
         with open(path) as f:
-            encoder._label_to_idx = json.load(f)
-        encoder._idx_to_label = {v: k for k, v in encoder._label_to_idx.items()}
+            data = json.load(f)
+        if isinstance(data, dict) and "cytokines" in data and isinstance(
+            data["cytokines"], list
+        ):
+            # Ordered-list format
+            cytos = data["cytokines"]
+            encoder._label_to_idx = {c: i for i, c in enumerate(cytos)}
+            encoder._idx_to_label = {i: c for i, c in enumerate(cytos)}
+        else:
+            # Direct {cyt_name: idx} mapping
+            encoder._label_to_idx = data
+            encoder._idx_to_label = {v: k for k, v in encoder._label_to_idx.items()}
         return encoder
 
 
