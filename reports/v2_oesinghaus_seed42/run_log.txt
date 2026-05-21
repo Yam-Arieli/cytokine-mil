@@ -1,0 +1,61 @@
+Stage 3 CA-only — full Oesinghaus 91-class  |  seed=42
+Loading Stage 2 base from: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oesinghaus_full_v2/seed_42
+Output directory:          /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oesinghaus_stage3_ca/seed_42
+Started: 20260520_213407_pid201104
+
+Device: cuda
+Stage 3 epochs: 100
+LR: 0.0002  momentum: 0.95
+Stage 3 CA-only — full Oesinghaus 91-class  |  seed=42
+Loading Stage 2 base from: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oesinghaus_full_v2/seed_42
+Output directory:          /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oesinghaus_stage3_ca/seed_42
+Started: 20260521_151212_pid697626
+
+Device: cuda
+Stage 3 epochs: 100
+LR: 0.0002  momentum: 0.95
+Classes: 91
+HVGs: 4000
+Preloading datasets...
+Train tubes: 9100
+Val tubes:   1820
+Cells: 39909  Cell types: 18
+
+============================================================
+Loading Stage 2 model
+============================================================
+Loaded /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oesinghaus_full_v2/seed_42/model_stage2.pt
+
+============================================================
+Stage 3 — CA-only training
+============================================================
+Trainable parameters (CA only): 16512
+Total parameters:               3158765
+Initial CA weight norm:         1.272023
+[Stage 3 CA] Epoch   1/100 | loss=0.3835 | CA_norm=1.291603
+[Stage 3 CA] Epoch   2/100 | loss=0.3037 | CA_norm=1.315443
+[Stage 3 CA] Epoch   3/100 | loss=0.2651 | CA_norm=1.339755
+[Stage 3 CA] Epoch   4/100 | loss=0.2427 | CA_norm=1.360924
+[Stage 3 CA] Epoch   5/100 | loss=0.2293 | CA_norm=1.377723
+[Stage 3 CA] Epoch  10/100 | loss=0.1985 | CA_norm=1.453761
+[Stage 3 CA] Epoch  20/100 | loss=0.1672 | CA_norm=1.592650
+[Stage 3 CA] Epoch  30/100 | loss=0.1448 | CA_norm=1.737509
+[Stage 3 CA] Epoch  40/100 | loss=0.1309 | CA_norm=1.859641
+[Stage 3 CA] Epoch  50/100 | loss=0.1219 | CA_norm=1.961326
+[Stage 3 CA] Epoch  60/100 | loss=0.1152 | CA_norm=2.051884
+[Stage 3 CA] Epoch  70/100 | loss=0.1092 | CA_norm=2.136901
+[Stage 3 CA] Epoch  80/100 | loss=0.1045 | CA_norm=2.217324
+[Stage 3 CA] Epoch  90/100 | loss=0.1008 | CA_norm=2.294108
+[Stage 3 CA] Epoch 100/100 | loss=0.0967 | CA_norm=2.368052
+SA entropy variance check: var=0.00e+00 (PASS)
+Train records: 9100
+Val records:   1820
+Model saved: stage3_ca_model_42.pt
+dynamics_stage3.pkl saved
+
+Saving figures...
+  Saved: sa_vs_ca_entropy_stage3_ca_42.png
+  Saved: ca_weight_norm_stage3_ca_42.png
+
+All results saved to: /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/oesinghaus_stage3_ca/seed_42
+Finished: 20260521_163736
