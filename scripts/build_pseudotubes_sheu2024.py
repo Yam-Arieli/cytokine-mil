@@ -97,17 +97,39 @@ def _read_bd_rhapsody_csv(path: str) -> pd.DataFrame:
     return df
 
 
-def _extract_batch_id(filename: str) -> int:
+def _infer_batch_id_from_overlap(gsm_cell_indices: set, batch_cell_sets: dict) -> int:
     """
-    Extract the batch number from a BD Rhapsody filename like
-    `GSM7025466_Combined_SampleTag1-Rev-Primer1_DBEC_MolsPerCell.csv.gz`.
+    Infer the batch_id of a BD Rhapsody count file by overlapping its
+    Cell_Index set with each metadata batch's Cell_Index set.
 
-    The batch id is the integer following `SampleTag` in the filename.
+    Returns the batch_id with the largest overlap. Raises if the best overlap
+    is below `min_overlap_fraction` of the GSM's cell count, indicating
+    a missing or wrong-format mapping.
+
+    This replaces the previous regex-based filename parser, which failed on
+    GSE224518's `-2019sample-Rev-Primer*` and `_2_` GSM filenames. The
+    metadata's `batch` column is the source of truth; filenames are unreliable.
+
+    Args:
+        gsm_cell_indices: Set of integer Cell_Index values in the GSM file
+                         (without any batch prefix).
+        batch_cell_sets: Dict {batch_id: set of int Cell_Index values present
+                         in the metadata for that batch, with prefix stripped}.
     """
-    m = re.search(r"SampleTag(\d+)-Rev-Primer", filename)
-    if not m:
-        raise ValueError(f"Cannot extract batch id from filename: {filename}")
-    return int(m.group(1))
+    best_batch = None
+    best_overlap = 0
+    for batch_id, batch_set in batch_cell_sets.items():
+        overlap = len(gsm_cell_indices & batch_set)
+        if overlap > best_overlap:
+            best_batch = batch_id
+            best_overlap = overlap
+    if best_batch is None or best_overlap < max(1, len(gsm_cell_indices) * 0.5):
+        raise ValueError(
+            f"Could not infer batch_id (best overlap {best_overlap} / "
+            f"{len(gsm_cell_indices)} cells). Either the file is from a "
+            f"batch not present in metadata or the prefix scheme has changed."
+        )
+    return best_batch
 
 
 def load_sheu_anndata(raw_dir: str) -> ad.AnnData:
@@ -140,23 +162,37 @@ def load_sheu_anndata(raw_dir: str) -> ad.AnnData:
     # Drop Multiplet and Undetermined sample tags
     meta = meta[~meta["Sample_Tag"].isin(["Multiplet", "Undetermined"])].copy()
 
-    # 2) Locate all *_DBEC_MolsPerCell.csv.gz files
-    count_files = sorted(raw_dir.glob("GSM*_Combined_SampleTag*_DBEC_MolsPerCell.csv.gz"))
+    # 2) Locate all *_DBEC_MolsPerCell.csv.gz files. Glob is broader than
+    #    `SampleTag*` to also catch GSE224518's `_2_` re-runs and `-2019sample-`
+    #    re-deposits whose filenames don't follow the SampleTagN-Rev-PrimerN
+    #    convention used by the first 10 GSMs.
+    count_files = sorted(raw_dir.glob("GSM*_Combined_*_DBEC_MolsPerCell.csv.gz"))
     if not count_files:
         raise FileNotFoundError(f"No BD Rhapsody count files found under {raw_dir}")
 
-    # 3) Read each batch, prefix Cell_Index with batch id, concat
+    # 3) Build a per-batch Cell_Index set from metadata for content-based
+    #    batch_id inference (replaces the brittle filename regex).
+    #    Metadata's Cell_Index is `f"{batch}_{cell_int}"`; we split off the int.
+    batch_cell_sets: dict[int, set] = {}
+    for bid, sub in meta.groupby("batch"):
+        suffixes = sub["Cell_Index"].astype(str).str.rsplit("_", n=1).str[-1]
+        batch_cell_sets[int(bid)] = set(suffixes.astype(int))
+
+    # 4) Read each GSM count file, infer its batch_id by overlap, prefix
+    #    Cell_Index with batch id, concat.
     parts = []
     var_names: Optional[list] = None
     for fpath in count_files:
-        batch_id = _extract_batch_id(fpath.name)
         df = _read_bd_rhapsody_csv(str(fpath))
         if var_names is None:
             var_names = [c for c in df.columns if c != "Cell_Index"]
+        cell_ints = set(df["Cell_Index"].astype(int))
+        batch_id = _infer_batch_id_from_overlap(cell_ints, batch_cell_sets)
         df["Cell_Index"] = df["Cell_Index"].astype(int).astype(str)
         df["Cell_Index"] = f"{batch_id}_" + df["Cell_Index"]
         df["__batch__"] = batch_id
         parts.append(df)
+        print(f"  {fpath.name} -> batch {batch_id} ({len(df)} cells)")
     full = pd.concat(parts, axis=0, ignore_index=True)
 
     # 4) Join with metadata on Cell_Index
