@@ -36,6 +36,11 @@ Thumbs.db
 *.h5ad
 *.h5
 manifest.json
+data/
+*.tar
+*.tar.gz
+*.mtx.gz
+*.tsv.gz
 
 # Experiment outputs (regeneratable artifacts — pkl, pt, figures)
 results/
