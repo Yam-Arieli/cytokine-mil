@@ -10,38 +10,61 @@ Training dynamics (per-stimulus learning curves, attention entropy, instance-lev
 confidence) are analyzed to infer cytokine signaling axes — pairs of stimuli that share
 signaling biology — and the cellular relays through which they couple.
 
-**Central hypothesis (axis discovery):** stimuli that share a signaling axis produce
-overlapping single-cell transcriptional signatures, detectable via cross-stimulus
-prediction (alignment), latent-space centroid geometry (geo), and cell-type ablation.
-The cellular relay (the cell type that mediates A's effect on B's signature) can be
-identified by per-cell-type ablation.
+**Central hypothesis (axis discovery, validated on Oesinghaus):** stimuli that share a
+signaling axis produce overlapping single-cell transcriptional signatures, detectable
+via cross-stimulus prediction (alignment), latent-space centroid geometry (geo), and
+cell-type ablation. The cellular relay (the cell type that mediates A's effect on B's
+signature) can be identified by per-cell-type ablation.
 
-**Primary dataset: Sheu et al. 2024 (GSE224518)** — mouse bone-marrow-derived macrophages
-(BMDMs), 6 TLR/cytokine stimuli (LPS, Pam3CSK4, polyIC, TNF, CpG, IFN-β), sampled at
-0/15min/30min/1h/3h/5h/8h, >100K cells. Temporal resolution means cascade direction is
-testable directly from the data's own time dimension, not solely from training-dynamics
-inference. Phase 1 trains on the 3h time point (single-snapshot); phase 2 (if phase 1
-gate is GREEN) extends to composite time labels `cytokine@time_point`. See §21.
+### Project status (2026-05-22)
 
-**Secondary dataset: Zhang et al. 2022 (GSE181475, probable)** — human CD14+ monocytes,
-4 trained stimuli + LPS at 4h. Sanity replication only; not a primary gate.
+The project has produced one completed contribution and is opening a second, additive,
+line of work. **All prior work, code, and results remain in the repo and on `main`.**
 
-**Oesinghaus 2024 (retained for Path A):** 24h PBMC snapshot, 91 cytokines. Directional
-cascade inference failed three independent checks: (1) geo readout is algebraically
-symmetric by construction (§20.1); (2) literature review 2026-05-20 found 49% correct
-direction on 39 documented pairs (chance), see `reports/cascade_pairs/literature_review.md`
-§8; (3) Stage 3 CA-only sanity check on full 91-class data confirmed SA/CA entropy
-separation (~4 nat gap) but no held-out validation AUC gain — bottleneck is data, not
-architecture (see §5.5). Oesinghaus continues as Path A (axis-discovery writeup, already
-committed to main); direction claims are not made from Oesinghaus alone.
+**Completed contribution — axis discovery on Oesinghaus 24h PBMC (91 cytokines):**
+121 cytokine coupling axes recovered (17 textbook directional + 2 pre-registered + 29
+coregulated + 13 partial + 54 novel; ~50% lit-supported vs ~1% chance baseline). Result
+is publication-grade and committed to `main` (`reports/cascade_pairs/cytokine_axes_report.md`).
+The full geo / alignment / ablation pipeline, the PBS-RC refinement (§20.1), and the
+literature-validation infrastructure (`reports/cascade_pairs/literature_review.md`) were
+built and validated against this dataset. Path A (axis-discovery writeup) is in progress
+and **independent of the new dataset line** — its narrative, figures, and statistics do
+not change.
 
-**Two-layer attention v2 (§5.5): TERMINATED 2026-05-22.** Cascade direction will be
-tested via Sheu 2024 time-resolved data instead of architectural asymmetry.
+**Open contribution — cascade direction inference (in progress on Sheu 2024):**
+Directional cascade inference from Oesinghaus alone failed three independent checks:
+(1) the geo asymmetry score is algebraically symmetric by construction (§20.1); (2)
+literature review found 49% correct direction on 39 documented pairs — chance (see
+`reports/cascade_pairs/literature_review.md` §8); (3) Stage 3 CA-only sanity check on
+Oesinghaus confirmed SA/CA entropy separation (~4 nat gap) but no held-out validation
+AUC gain (`reports/v2_sanity_check/stage3_ca_oesinghaus_results.md`). Diagnosis: the
+bottleneck is data, not architecture — 24h is past the point where primary and secondary
+cascade signatures separate temporally. The direction question is being moved to a
+dataset with the time resolution to answer it directly; this does **not** retract or
+weaken the axis-discovery result above.
 
-**Original directional hypothesis:** cytokines learned early induce strong, direct,
-canonical responses; cytokines learned late induce subtle, pleiotropic, or multicellular
-cascades. This hypothesis can now be tested empirically using Sheu's actual time dimension
-— it is not a prior injected into the model.
+**Datasets used (all retained, complementary roles):**
+
+- **Oesinghaus 2024 (24h PBMC, 91 cytokines)** — basis for the completed axis-discovery
+  contribution (Path A). Continues to anchor the axis-discovery writeup. Not retired.
+- **Sheu 2024 (mouse BMDM time-course, GSE224518, 7 stimuli + Unstim, 8 time points
+  including 24hr in M1_IFNg)** — primary testbed for direction inference. Targeted
+  500-gene immune-response panel, 12 biological contexts (M0/M1/M2 BMDMs + BMDM strain
+  variants + 5 PM strain backgrounds), 2 replicates per condition, ~295K well-annotated
+  cells. The time axis itself is the validation signal: textbook cascades A→B should
+  show late-A signatures overlapping with directly-applied B signatures (LPS→TNF,
+  LPS→IFN-β, polyIC→IFN-β, …). See §2.5 and §21.
+- **Zhang 2022 (human CD14+ monocytes, ~4K cells, 4 trainers + LPS at 4h)** — secondary
+  human sanity check. Lower priority. Run only after Sheu phase 1 results are in.
+
+**Two-layer attention v2 (§5.5):** paused, not retired. Architecture is preserved in
+code. The Oesinghaus sanity check showed the SA/CA mechanism works but the dataset isn't
+right for it. v2 remains a candidate architecture if a future dataset's structure
+motivates reactivation.
+
+**Original directional hypothesis** (cytokines learned early → direct/canonical
+responses; learned late → subtle/pleiotropic/multicellular cascades) becomes empirically
+testable on Sheu's actual time dimension. Not injected as a prior into the model.
 
 ---
 
@@ -221,15 +244,19 @@ class CytokineABMIL(nn.Module):
 
 ### 5.5. Two-Layer Attention (v2 architecture)
 
-**Status (2026-05-22): TERMINATED.** Stage 3 CA-only sanity check on full Oesinghaus
-91-class data (seeds 42, 123; see `reports/v2_sanity_check/stage3_ca_oesinghaus_results.md`)
-confirmed the SA/CA architectural mechanism works (~4-nat entropy gap, exceeds the Oelen
-prior) but does not deliver held-out validation AUC gain (median val delta ~0). Diagnosis:
-the bottleneck is data, not architecture — Oesinghaus is a 24h snapshot and the temporal
-asymmetry needed for direction inference is washed out. Remaining 6 seeds of Stage 3 CA
-on Oesinghaus are cancelled. Cascade direction will be tested via Sheu 2024 time-resolved
-data (§2.5) instead. The section below is retained as a reference for the architecture; it
-should not be used for new training runs.
+**Status (2026-05-22): PAUSED, not deprecated.** Stage 3 CA-only sanity check on full
+Oesinghaus 91-class data (seeds 42, 123; see
+`reports/v2_sanity_check/stage3_ca_oesinghaus_results.md`) confirmed the SA/CA
+architectural mechanism works (~4-nat entropy gap, exceeds the Oelen prior) but does not
+deliver held-out validation AUC gain (median val delta ~0) on Oesinghaus. Diagnosis: the
+Oesinghaus 24h-snapshot data is the bottleneck, not the architecture. Remaining 6 seeds
+of Stage 3 CA on Oesinghaus are cancelled. Cascade direction is being tested via Sheu
+2024 time-resolved data (§2.5) instead.
+
+The architecture, code, and `use_two_layer_attention` config switch are **preserved**.
+If a future dataset's structure motivates reactivation — e.g., one where SA and CA can
+leverage shared statistical strength across heads — v2 is a candidate to revisit. The
+section below documents the architecture for that case.
 
 Two-layer SA+CA attention for cascade specialization. Controlled by
 `model.use_two_layer_attention` in `configs/default.yaml`. See `/v2-two-layer-attention`
@@ -840,24 +867,53 @@ Headline reporting language: "discovered cytokine coupling axes" — *not*
 
 ## 21. Phase 1 Axis-Discovery Gate (Sheu 2024)
 
-Phase 1 success is defined by recovery of pre-registered textbook TLR cascade pairs from
-the trained Sheu Stage 2 model (3 seeds: 42, 123, 7). After training, run
-`scripts/run_latent_geometry.py` then `scripts/report_cytokine_axes.py`.
+**Purpose:** method validation. Does the axis-discovery pipeline, already validated on
+Oesinghaus (121 axes, ~50% lit-supported, §0), recover textbook TLR cascade pairs from
+a Sheu Stage 2 model trained on the 3h time point? This is a **sanity check that the
+pipeline transfers to the new dataset**, not the directional-inference experiment itself
+(that is phase 2 if this gate is GREEN). The Oesinghaus axis-discovery result is
+**unaffected** by this gate — it stands independently.
 
-**Pre-registered expected axes (chosen before any analysis):**
-1. `LPS — TNF` (TLR4 → NF-κB → autocrine TNF) — MUST recover
-2. `polyIC — IFNb` (TLR3 → IRF3 → type-I IFN) — MUST recover
-3. `Pam3CSK4 — CpG` (both MyD88-dependent, no TRIF) — SHOULD recover
-4. `LPS — polyIC` (both engage TRIF, both induce type-I IFN) — SHOULD recover
+After training Sheu Stage 2 (3 seeds: 42, 123, 7), run `scripts/run_latent_geometry.py`
+then `scripts/report_cytokine_axes.py`.
+
+**Pre-registered expected axes** (chosen before analysis, based on shared TLR adaptor /
+autocrine cascade biology — see commit message 2026-05-22 for the receptor-by-receptor
+rationale):
+
+**MUST recover** (failure ⇒ pipeline broken on this dataset OR signal absent in 3h BMDM):
+1. `LPS — TNF` (TLR4 → NF-κB → autocrine TNF loop)
+2. `polyIC — IFNb` (TLR3/TRIF → IRF3 → type-I IFN — cleanest cascade in the panel)
+
+**SHOULD recover** (textbook but secondary; partial failure is informative, not fatal):
+3. `LPS — IFNb` (LPS engages TRIF arm in addition to MyD88)
+4. `Pam3CSK4 — CpG` (both MyD88-only, no TRIF arm)
+5. `LPSlo — Pam3CSK4` (both MyD88-biased; tests whether low-dose LPS phenotype is
+   correctly distinguished from full LPS)
+
+**MUST NOT call** (false positives ⇒ pipeline over-calls cascades that have no biology):
+- `Pam3CSK4 — IFNb` (TLR2 has no TRIF arm; no IRF3 / type-I IFN induction)
+- `CpG — IFNb` (TLR9 → IFN-α is plasmacytoid-DC-restricted; macrophages produce
+  minimal type-I IFN through this route)
+- `TNF — IFNb` (no cross-induction in macrophages)
 
 **Quantitative pass criterion (go/no-go for phase 2 time-axis work):**
-- ≥3 of 4 pre-registered axes must clear:
-  - BH-FDR ≤ 0.05 on the donor-level Wilcoxon (`latent_geometry.test_directional_significance`), AND
-  - Axis-ranking Spearman ρ ≥ 0.7 across all 3 seeds (matches `cascade_graph_min_seed_rho: 0.7` in `configs/default.yaml`)
 
-**Outcomes:**
-- **GREEN** (≥3 pass): start phase 2 — time-axis extension via composite-label encoding `cytokine@time_point` + new `analysis/temporal_confusion.py`.
-- **AMBER** (2 pass): re-run with `direction_mode: cell_type` and `n_per_cell_type: 50`; if still amber, write up partial result and continue Path A only.
-- **RED** (≤1 pass): cascade signal not recoverable from 3h BMDM with this architecture; try 1h or 5h time-point subsets before reconsidering phase 2.
+For each pre-registered axis (positive and negative):
+- BH-FDR ≤ 0.05 on the donor-level Wilcoxon (`latent_geometry.test_directional_significance`)
+- Axis-ranking Spearman ρ ≥ 0.7 across all 3 seeds (matches `cascade_graph_min_seed_rho: 0.7`)
 
-Verdict written to `reports/sheu2024/AXIS_GATE_VERDICT.md`.
+**Composite verdict:**
+- **GREEN**: 2 of 2 MUST pass + ≥2 of 3 SHOULD pass + 0 of 3 MUST-NOT called → start
+  phase 2 (time-axis extension via composite-label encoding `cytokine@time_point` +
+  new `analysis/temporal_confusion.py`; the 0.25h/0.5h vs 3h/5h/8h asymmetry is the
+  actual direction test).
+- **AMBER**: 1 of 2 MUST pass OR 1 of 3 MUST-NOT called → re-run with `direction_mode:
+  cell_type` and `n_per_cell_type: 50`; if still amber, write up partial result and
+  defer the direction question (axis discovery on Oesinghaus is the standing result).
+- **RED**: 0 of 2 MUST OR ≥2 MUST-NOT called → cascade signal not recoverable from 3h
+  BMDM with this architecture; try 1h or 5h time-point subsets before reconsidering
+  phase 2.
+
+Verdict written to `reports/sheu2024/AXIS_GATE_VERDICT.md`. **In any outcome, the
+Oesinghaus axis-discovery result is independent of this gate** — Path A continues.
