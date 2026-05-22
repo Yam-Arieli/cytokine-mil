@@ -126,17 +126,51 @@ Oesinghaus_pseudotubes/
     ...
 ```
 
-### §2.5 Sheu 2024 dataset (primary, phase 1+)
+### §2.5 Sheu 2024 dataset (primary for direction inference, phase 1+)
 
-- **Source:** Sheu et al., Molecular Cell 2024; GEO accession: GSE224518
-- **Raw path:** `/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024/raw/`
-- **Pseudo-tube path:** `/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/`
+- **Source:** Sheu et al., Molecular Cell 2024; GEO accession: GSE224518.
+- **Platform:** BD Rhapsody targeted scRNA-seq (500 immune-response mouse genes) with
+  MULTI-seq / sample-tag hashing. 13 GSM accessions are multiplexed sequencing libraries
+  demultiplexed by `GSE224518_samptag.all_cellannotations_metadata.txt.gz` into the full
+  experimental design.
+- **Raw path (cluster):** `/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024/raw/`
+- **Pseudo-tube path (cluster):** `/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/`
 - **Manifest:** `…/Sheu2024_pseudotubes/manifest.json`
-- **HVG list:** `…/Sheu2024_pseudotubes/hvg_list.json`
-- **Active classes (phase 1, 3h time point):** `PBS`, `LPS`, `Pam3CSK4`, `polyIC`, `TNF`, `CpG`, `IFNb` — 7 active classes. PBS = index 90 (all unstim/0h cells pooled and relabeled `"PBS"`). Unused indices remain; `n_classes` stays at 91.
-- **Cell types:** Leiden clusters on BMDMs at 0h, labeled `BMDM_c0`, `BMDM_c1`, `BMDM_c2` (expect 2–3 states).
-- **Donor / replicate count:** to be verified from GEO metadata before first run. Pipeline assumes ≥3 (10 train + 2 val design); minimum 3 for any split.
-- **Phase 1 time-point subset:** keep only `time_point ∈ {"0h", "3h"}`. 3h is early enough that the cascade is not washed out and late enough for secondary responses (TNF/IFN feedback) to be transcriptionally visible.
+- **HVG list:** `…/Sheu2024_pseudotubes/hvg_list.json` (n_hvgs = 500 — full targeted panel; HVG selection is a no-op for this dataset)
+
+**Active classes (phase 1, 3h time point):** `PBS`, `LPS`, `LPSlo`, `Pam3CSK4`, `polyIC`,
+`TNF`, `CpG`, `IFNb` — **8 active classes** (7 stimuli + Unstim relabeled as PBS).
+PBS = index 90 (all unstim/0h cells across pseudo-donors pooled and relabeled to literal
+`"PBS"` so PBS-RC code in `analysis/pbs_rc.py:59` works unchanged). Unused indices
+remain; `n_classes` stays at 91 in code, 8 in practice.
+
+**Pseudo-donor scheme (replaces the biological-donor convention for this dataset):**
+Sheu has only 2 biological replicates per condition, so the cytokine-MIL pipeline's
+≥3-donor design is satisfied by pooling **(biological context × replicate)** pairs as
+pseudo-donors. At 3hr, 7 pseudo-donors exist with well-annotated cells:
+
+| Pseudo-donor                | Cells at 3hr | Split  |
+|----------------------------|--------------|--------|
+| `M0_rep1`                   | 46,451       | train  |
+| `M0_rep2`                   | 8,897        | train  |
+| `M1_IFNg_rep1`              | 7,177        | train  |
+| `PM_B6.HFD_rep1`            | 3,062        | train  |
+| `PM_B6.LFD_rep1`            | 6,367        | train  |
+| `M2_IL4_rep1`               | 6,243        | **val**|
+| `PM_B6.old_rep1`            | 10,909       | **val**|
+
+The val split tests cross-context generalization — one new polarization (IL-4-primed,
+not represented in train) and one new mouse-condition background (aged peritoneal macs).
+Both M0 reps remain in train so the §21 "M0 first" secondary check is well-defined.
+
+**Cell types:** Global Leiden clustering on 0h Unstim cells pooled across all pseudo-donors,
+labeled `mac_c0`, `mac_c1`, … (expect 2–4 clusters). Post-stim cells assigned to nearest
+0h cluster centroid in PCA space. Same label space across all pseudo-donors so within-tube
+stratified sampling means the same thing everywhere.
+
+**Phase 1 time-point subset:** keep only `time_point ∈ {"0hr", "3hr"}`. 3hr is the
+earliest time point where both M0 reps are present and where secondary responses
+(TNF/IFN feedback) are transcriptionally visible. 0hr cells provide the PBS baseline.
 
 ### §2.6 Zhang 2022 dataset (secondary)
 
@@ -668,8 +702,11 @@ aux_decoder:
 - **Run multiple seeds** before drawing conclusions about learnability ordering.
 - **State directional predictions before unblinding** dynamics results.
 - **Hold out Donor2 and Donor3.** Never use val donors during training or optimizer steps. (Oesinghaus-specific; see below for Sheu/Zhang.)
-- **Sheu dataset val donors:** to be confirmed once GEO metadata is parsed; placeholder `donor_2, donor_3` in `configs/sheu2024.yaml`. Verify against actual replicate IDs before first cluster run.
-- **Zhang dataset val donors:** TBD pending donor-count verification. If <3 donors, fall back to plate-id-as-donor and skip the seed-stability gate.
+- **Sheu val pseudo-donors:** `M2_IL4_rep1`, `PM_B6.old_rep1`. Phase 1 train set is 5
+  pseudo-donors: `M0_rep1`, `M0_rep2`, `M1_IFNg_rep1`, `PM_B6.HFD_rep1`, `PM_B6.LFD_rep1`.
+  Pseudo-donor = `(type × replicate)` because Sheu has only 2 biological reps per
+  condition; see §2.5.
+- **Zhang val donors:** TBD pending donor-count verification. If <3 donors, fall back to plate-id-as-donor and skip the seed-stability gate.
 
 ---
 
@@ -900,17 +937,31 @@ rationale):
 **Quantitative pass criterion (go/no-go for phase 2 time-axis work):**
 
 For each pre-registered axis (positive and negative):
-- BH-FDR ≤ 0.05 on the donor-level Wilcoxon (`latent_geometry.test_directional_significance`)
+- BH-FDR ≤ 0.05 on the pseudo-donor-level Wilcoxon (`latent_geometry.test_directional_significance`)
+  computed across the 5 train pseudo-donors `M0_rep1, M0_rep2, M1_IFNg_rep1,
+  PM_B6.HFD_rep1, PM_B6.LFD_rep1`
 - Axis-ranking Spearman ρ ≥ 0.7 across all 3 seeds (matches `cascade_graph_min_seed_rho: 0.7`)
 
+**Primary analysis: all 5 train pseudo-donors pooled.** Cross-context variation (M0 vs
+PM strain backgrounds) may dominate latent geometry. To control for this, a secondary
+analysis is pre-registered.
+
+**Secondary analysis: M0-only sub-check.** Re-run `latent_geometry` restricted to the
+two M0 pseudo-donors (`M0_rep1`, `M0_rep2`) for the same pre-registered axis list.
+The 2-donor Wilcoxon is severely underpowered; this is not a separate gate but a
+direction-of-effect check — at minimum, the sign of the per-pseudo-donor bias
+projection for the MUST axes should agree across `M0_rep1` and `M0_rep2`.
+
 **Composite verdict:**
-- **GREEN**: 2 of 2 MUST pass + ≥2 of 3 SHOULD pass + 0 of 3 MUST-NOT called → start
-  phase 2 (time-axis extension via composite-label encoding `cytokine@time_point` +
-  new `analysis/temporal_confusion.py`; the 0.25h/0.5h vs 3h/5h/8h asymmetry is the
-  actual direction test).
-- **AMBER**: 1 of 2 MUST pass OR 1 of 3 MUST-NOT called → re-run with `direction_mode:
-  cell_type` and `n_per_cell_type: 50`; if still amber, write up partial result and
-  defer the direction question (axis discovery on Oesinghaus is the standing result).
+- **GREEN**: 2 of 2 MUST pass + ≥2 of 3 SHOULD pass + 0 of 3 MUST-NOT called (primary)
+  AND M0-only sub-check agrees in sign for both MUST axes (secondary) → start phase 2
+  (time-axis extension via composite-label encoding `cytokine@time_point` + new
+  `analysis/temporal_confusion.py`; the 0.25h/0.5h vs 3h/5h/8h asymmetry is the actual
+  direction test).
+- **AMBER**: 1 of 2 MUST pass OR 1 of 3 MUST-NOT called OR M0-only sub-check
+  disagrees → re-run with `direction_mode: cell_type` and `n_per_cell_type: 50`; if
+  still amber, write up partial result and defer the direction question (axis discovery
+  on Oesinghaus is the standing result).
 - **RED**: 0 of 2 MUST OR ≥2 MUST-NOT called → cascade signal not recoverable from 3h
   BMDM with this architecture; try 1h or 5h time-point subsets before reconsidering
   phase 2.
