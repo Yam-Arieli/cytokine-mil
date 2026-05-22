@@ -1,0 +1,79 @@
+# Sheu 2024 BMDM time-course — phase 1 axis-discovery experiment config.
+#
+# See CLAUDE.md §2.5 for the dataset block and §21 for the phase 1 gate.
+# This file mirrors configs/default.yaml; deltas only on Sheu-specific fields.
+
+data:
+  manifest_path: /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json
+  hvg_path:      /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/hvg_list.json
+  n_hvgs: 500                    # = full Sheu targeted panel; HVG selection is a no-op
+  n_per_cell_type: 30
+  min_cells_threshold: 10
+  n_pseudo_tubes: 10
+
+  # Pseudo-donor convention: f"{type}_{replicate}" per CLAUDE.md §2.5.
+  # Phase 1 val pseudo-donors (held out, observer-only): cross-context generalization test.
+  val_donors:
+    - M2_IL4_rep1
+    - PM_B6.old_rep1
+
+  # Subset filters applied at the adapter (scripts/build_pseudotubes_sheu2024.py).
+  # Listed here for transparency; not consumed by the trainer.
+  time_point_phase1: "3hr"
+  active_classes:
+    - PBS
+    - LPS
+    - LPSlo
+    - Pam3CSK4   # known to GEO as P3CSK
+    - polyIC     # known to GEO as PIC
+    - TNF
+    - CpG
+    - IFNb
+
+model:
+  embedding_dim: 128
+  attention_hidden_dim: 64
+  n_classes: 91                  # PBS_INDEX=90 contract preserved (label_encoder.py:11)
+                                 # 7 active stim + PBS = 8 indices used; 83 unused
+  use_two_layer_attention: false
+
+training:
+  stage1_epochs: 50              # encoder pre-training on global Leiden cell types
+  stage2_epochs: 100             # MIL with frozen encoder
+  stage3_epochs: 0               # phase 1: no Stage 3
+  optimizer: sgd
+  momentum: 0.9
+  lr: 0.003                      # smaller than default — 500-gene targeted panel has higher SNR per gene
+  lr_scheduler: null
+  lr_warmup_epochs: 5
+  # v2 KL / aux not used in phase 1 (use_two_layer_attention=false)
+  kl_lambda: 0.0
+  aux_loss_weight: 0.0
+
+dynamics:
+  log_every_n_epochs: 1
+  random_seeds: [42, 123, 7]     # phase 1 axis-stability gate runs all three
+  confusion_late_epoch_fraction: 0.3
+  confusion_fdr_alpha: 0.05
+  cascade_graph_min_seed_rho: 0.7   # matches §21 Spearman criterion
+
+latent_geometry:
+  direction_mode: global
+  alpha: 0.05                    # BH-FDR alpha for the §21 axis gate
+  bonferroni_n_cell_types: 3     # = expected # of Leiden mac clusters; tighten after run
+  use_per_donor: true
+
+# Phase 1 axis-discovery gate (mirror of CLAUDE.md §21 for runtime access)
+phase1_gate:
+  must_recover:
+    - [LPS, TNF]
+    - [polyIC, IFNb]
+  should_recover:
+    - [LPS, IFNb]
+    - [Pam3CSK4, CpG]
+    - [LPSlo, Pam3CSK4]
+  must_not_call:
+    - [Pam3CSK4, IFNb]
+    - [CpG, IFNb]
+    - [TNF, IFNb]
+  composite_green: "2/2 MUST + ≥2/3 SHOULD + 0/3 MUST-NOT + M0-only sign agreement"
