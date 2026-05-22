@@ -5,30 +5,43 @@
 
 ## 0. Project Overview
 
-AB-MIL model classifies which cytokine was applied to a pseudo-tube of PBMCs.
-Training dynamics (per-cytokine learning curves, attention entropy, instance-level
-confidence) are analyzed to infer cytokine signaling axes — pairs of cytokines that
-share signaling biology — and the cellular relays through which they couple.
+AB-MIL model classifies which stimulus was applied to a pseudo-tube of immune cells.
+Training dynamics (per-stimulus learning curves, attention entropy, instance-level
+confidence) are analyzed to infer cytokine signaling axes — pairs of stimuli that share
+signaling biology — and the cellular relays through which they couple.
 
-**Central hypothesis (axis discovery):** cytokines that share a signaling axis produce
-overlapping single-cell transcriptional signatures in PBMCs, detectable via cross-cytokine
+**Central hypothesis (axis discovery):** stimuli that share a signaling axis produce
+overlapping single-cell transcriptional signatures, detectable via cross-stimulus
 prediction (alignment), latent-space centroid geometry (geo), and cell-type ablation.
 The cellular relay (the cell type that mediates A's effect on B's signature) can be
 identified by per-cell-type ablation.
 
-**Directional cascade inference is at chance under single-layer attention** (2026-05-20
-literature review: 49% correct direction on 39 documented pairs; see
-`reports/cascade_pairs/literature_review.md` §8). The geo refined readout is algebraically
-symmetric by design, and a single-cell-type ablation in 24-h snapshot data cannot
-distinguish "T expresses B *because* A drove it" from "T expresses B *and* contributes
-to A's signature". Two-layer attention v2 (§5.5) is the architectural fix — the SA head
-identifies direct responders while the CA head identifies cascade relays; the asymmetry
-between SA and CA is what encodes direction.
+**Primary dataset: Sheu et al. 2024 (GSE224518)** — mouse bone-marrow-derived macrophages
+(BMDMs), 6 TLR/cytokine stimuli (LPS, Pam3CSK4, polyIC, TNF, CpG, IFN-β), sampled at
+0/15min/30min/1h/3h/5h/8h, >100K cells. Temporal resolution means cascade direction is
+testable directly from the data's own time dimension, not solely from training-dynamics
+inference. Phase 1 trains on the 3h time point (single-snapshot); phase 2 (if phase 1
+gate is GREEN) extends to composite time labels `cytokine@time_point`. See §21.
 
-**Original directional hypothesis (deprecated for single-layer attention; retained for v2):**
-cytokines learned early induce strong, direct, canonical responses; cytokines learned
-late induce subtle, pleiotropic, or multicellular cascades. This is a hypothesis to be
-tested with v2 — not a prior injected into the model.
+**Secondary dataset: Zhang et al. 2022 (GSE181475, probable)** — human CD14+ monocytes,
+4 trained stimuli + LPS at 4h. Sanity replication only; not a primary gate.
+
+**Oesinghaus 2024 (retained for Path A):** 24h PBMC snapshot, 91 cytokines. Directional
+cascade inference failed three independent checks: (1) geo readout is algebraically
+symmetric by construction (§20.1); (2) literature review 2026-05-20 found 49% correct
+direction on 39 documented pairs (chance), see `reports/cascade_pairs/literature_review.md`
+§8; (3) Stage 3 CA-only sanity check on full 91-class data confirmed SA/CA entropy
+separation (~4 nat gap) but no held-out validation AUC gain — bottleneck is data, not
+architecture (see §5.5). Oesinghaus continues as Path A (axis-discovery writeup, already
+committed to main); direction claims are not made from Oesinghaus alone.
+
+**Two-layer attention v2 (§5.5): TERMINATED 2026-05-22.** Cascade direction will be
+tested via Sheu 2024 time-resolved data instead of architectural asymmetry.
+
+**Original directional hypothesis:** cytokines learned early induce strong, direct,
+canonical responses; cytokines learned late induce subtle, pleiotropic, or multicellular
+cascades. This hypothesis can now be tested empirically using Sheu's actual time dimension
+— it is not a prior injected into the model.
 
 ---
 
@@ -90,6 +103,29 @@ Oesinghaus_pseudotubes/
     ...
 ```
 
+### §2.5 Sheu 2024 dataset (primary, phase 1+)
+
+- **Source:** Sheu et al., Molecular Cell 2024; GEO accession: GSE224518
+- **Raw path:** `/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024/raw/`
+- **Pseudo-tube path:** `/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/`
+- **Manifest:** `…/Sheu2024_pseudotubes/manifest.json`
+- **HVG list:** `…/Sheu2024_pseudotubes/hvg_list.json`
+- **Active classes (phase 1, 3h time point):** `PBS`, `LPS`, `Pam3CSK4`, `polyIC`, `TNF`, `CpG`, `IFNb` — 7 active classes. PBS = index 90 (all unstim/0h cells pooled and relabeled `"PBS"`). Unused indices remain; `n_classes` stays at 91.
+- **Cell types:** Leiden clusters on BMDMs at 0h, labeled `BMDM_c0`, `BMDM_c1`, `BMDM_c2` (expect 2–3 states).
+- **Donor / replicate count:** to be verified from GEO metadata before first run. Pipeline assumes ≥3 (10 train + 2 val design); minimum 3 for any split.
+- **Phase 1 time-point subset:** keep only `time_point ∈ {"0h", "3h"}`. 3h is early enough that the cascade is not washed out and late enough for secondary responses (TNF/IFN feedback) to be transcriptionally visible.
+
+### §2.6 Zhang 2022 dataset (secondary)
+
+- **Source:** Zhang et al., JCI 2022; GEO accession: GSE181475 (probable — verify before first run)
+- **Raw path:** `/cs/labs/mornitzan/yam.arieli/datasets/Zhang2022/raw/`
+- **Pseudo-tube path:** `/cs/labs/mornitzan/yam.arieli/datasets/Zhang2022_pseudotubes/`
+- **Manifest:** `…/Zhang2022_pseudotubes/manifest.json`
+- **HVG list:** `…/Zhang2022_pseudotubes/hvg_list.json`
+- **Active classes:** `PBS`, `betaglucan`, `uricacid`, `oxLDL`, `MDP`, `LPS` — 6 active classes.
+- **Cell types:** Leiden clusters on CD14+ monocytes (expect 2–4 states).
+- **Known limitation:** ≤3 donors may break the seed-stability gate. If <3 donors, fall back to plate-id-as-donor and **explicitly flag in the run summary**. Zhang's phase-1 verdict is "consistent / inconsistent with Sheu" only — not a primary gate.
+
 ---
 
 ## 3. Preprocessing Decisions
@@ -122,6 +158,8 @@ Steps 2–4 applied post-hoc via `notebooks/preprocess_tubes.ipynb`. HVGs estima
 - **PBS = class index 90** during training. Excluded from biological interpretation; tracked as a sanity check.
 
 **Statistical caveat:** pseudo-tubes from the same donor are highly correlated — effective N = 12 (donors), not 120. All statistical comparisons must aggregate to donor level first.
+
+**Multi-dataset adapter convention:** Sheu and Zhang adapter scripts (`scripts/build_pseudotubes_sheu2024.py`, `scripts/build_pseudotubes_zhang2022.py`) relabel each dataset's resting/unstim condition to the literal string `"PBS"` at the adapter boundary. This keeps the PBS-index-90 contract (`cytokine_mil/data/label_encoder.py:11`, `label_encoder.py:33`) and PBS-RC computation (`cytokine_mil/analysis/pbs_rc.py:59`, which hard-checks `cytokine == "PBS"`) working unchanged. **No edits to the `cytokine_mil/` package itself in phase 1.**
 
 ---
 
@@ -182,6 +220,16 @@ class CytokineABMIL(nn.Module):
 ```
 
 ### 5.5. Two-Layer Attention (v2 architecture)
+
+**Status (2026-05-22): TERMINATED.** Stage 3 CA-only sanity check on full Oesinghaus
+91-class data (seeds 42, 123; see `reports/v2_sanity_check/stage3_ca_oesinghaus_results.md`)
+confirmed the SA/CA architectural mechanism works (~4-nat entropy gap, exceeds the Oelen
+prior) but does not deliver held-out validation AUC gain (median val delta ~0). Diagnosis:
+the bottleneck is data, not architecture — Oesinghaus is a 24h snapshot and the temporal
+asymmetry needed for direction inference is washed out. Remaining 6 seeds of Stage 3 CA
+on Oesinghaus are cancelled. Cascade direction will be tested via Sheu 2024 time-resolved
+data (§2.5) instead. The section below is retained as a reference for the architecture; it
+should not be used for new training runs.
 
 Two-layer SA+CA attention for cascade specialization. Controlled by
 `model.use_two_layer_attention` in `configs/default.yaml`. See `/v2-two-layer-attention`
@@ -446,12 +494,24 @@ cytokine_mil/               <- repo root
 │
 ├── scripts/
 │   ├── build_pseudotubes.py
+│   ├── build_pseudotubes_sheu2024.py  <- Sheu 2024 adapter (Section 2.5)
+│   ├── build_pseudotubes_zhang2022.py <- Zhang 2022 adapter (Section 2.6)
 │   ├── synthetic_cascade_control.py   <- Experiment 0 go/no-go gate (Section 19.5)
 │   ├── train_oesinghaus_full.py       <- full 91-class confusion dynamics training
+│   ├── train_sheu2024_stage12.py      <- Sheu Stage 1+2 trainer (Section 21)
+│   ├── train_zhang2022_stage12.py     <- Zhang Stage 1+2 trainer (Section 2.6)
 │   ├── train_aux_decoder.py           <- trains AuxDecoder on frozen MIL model (Section 20.5)
 │   └── check_attention_cell_types.py  <- attention proxy check (Section 20.8)
 ├── configs/
-│   └── default.yaml
+│   ├── default.yaml
+│   ├── sheu2024.yaml                  <- per-dataset config for Sheu (Section 21)
+│   └── zhang2022.yaml                 <- per-dataset config for Zhang (Section 2.6)
+├── slurm/
+│   ├── run_sheu2024.slurm             <- sbatch wrapper (Section 21)
+│   └── run_zhang2022.slurm            <- sbatch wrapper (Section 2.6)
+├── reports/
+│   └── sheu2024/
+│       └── AXIS_GATE_VERDICT.md       <- phase 1 go/no-go verdict (Section 21)
 ├── notebooks/
 │   ├── experiment.ipynb
 │   ├── experiment_subset.ipynb     <- 10-cytokine subset (fixed EASY/HARD groups)
@@ -461,7 +521,9 @@ cytokine_mil/               <- repo root
 │   └── preprocess_tubes.ipynb
 └── tests/
     ├── make_demo_data.py
-    └── test_demo.py
+    ├── test_demo.py
+    ├── make_demo_data_sheu.py  <- Sheu demo fixture (Section 12)
+    └── test_demo_sheu.py       <- round-trips Sheu adapter through PseudoTubeDataset + CytokineLabel
 ```
 
 ---
@@ -478,8 +540,15 @@ Real data is on the cluster; use simulated demo data locally.
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/test_demo.py -v
+pytest tests/test_demo.py tests/test_demo_sheu.py -v
 ```
+
+**Sheu demo spec (`tests/make_demo_data_sheu.py`):**
+- 6 stimuli + PBS = 7 classes, mirroring Sheu's active classes at 3h
+- 3 donors, 1 tube per (donor, stimulus) — PBS cells pooled from all donors per Sheu adapter convention
+- 3 cell types (`BMDM_c0`, `BMDM_c1`, `BMDM_c2`), 20 cells each → 60 cells/tube; 200 simulated genes (log-normalized)
+- Writes `.h5ad` files + `manifest.json` mirroring Sheu pseudo-tube structure
+- `cytokine` column uses Sheu stimulus names; `"PBS"` string for control
 
 **Tests cover:**
 - Label encoder roundtrip and PBS index
@@ -496,6 +565,9 @@ pytest tests/test_demo.py -v
 - Both C_SA_i(t) and C_CA_i(t) confidence trajectories logged correctly when using v2
 - Confusion trajectory tensor shape is (K, K, T) and diagonal is excluded from asymmetry scores
 - `compute_asymmetry_score` output is antisymmetric: Asym[A,B] = -Asym[B,A] (see Section 19)
+- Sheu demo manifest has `"PBS"` string in `cytokine` field for all control entries
+- `PseudoTubeDataset` loads Sheu demo manifest and returns correct shapes (60 cells, 200 genes)
+- `split_manifest_by_donor` on Sheu demo produces donor-disjoint train/val sets
 
 ---
 
@@ -568,7 +640,9 @@ aux_decoder:
 - **Inspect loss curves.** Enable LR warmup if early-epoch loss is erratic.
 - **Run multiple seeds** before drawing conclusions about learnability ordering.
 - **State directional predictions before unblinding** dynamics results.
-- **Hold out Donor2 and Donor3.** Never use val donors during training or optimizer steps.
+- **Hold out Donor2 and Donor3.** Never use val donors during training or optimizer steps. (Oesinghaus-specific; see below for Sheu/Zhang.)
+- **Sheu dataset val donors:** to be confirmed once GEO metadata is parsed; placeholder `donor_2, donor_3` in `configs/sheu2024.yaml`. Verify against actual replicate IDs before first cluster run.
+- **Zhang dataset val donors:** TBD pending donor-count verification. If <3 donors, fall back to plate-id-as-donor and skip the seed-stability gate.
 
 ---
 
@@ -761,3 +835,29 @@ calls:
 
 Headline reporting language: "discovered cytokine coupling axes" — *not*
 "discovered cascades". Cascade language returns when v2 is trained.
+
+---
+
+## 21. Phase 1 Axis-Discovery Gate (Sheu 2024)
+
+Phase 1 success is defined by recovery of pre-registered textbook TLR cascade pairs from
+the trained Sheu Stage 2 model (3 seeds: 42, 123, 7). After training, run
+`scripts/run_latent_geometry.py` then `scripts/report_cytokine_axes.py`.
+
+**Pre-registered expected axes (chosen before any analysis):**
+1. `LPS — TNF` (TLR4 → NF-κB → autocrine TNF) — MUST recover
+2. `polyIC — IFNb` (TLR3 → IRF3 → type-I IFN) — MUST recover
+3. `Pam3CSK4 — CpG` (both MyD88-dependent, no TRIF) — SHOULD recover
+4. `LPS — polyIC` (both engage TRIF, both induce type-I IFN) — SHOULD recover
+
+**Quantitative pass criterion (go/no-go for phase 2 time-axis work):**
+- ≥3 of 4 pre-registered axes must clear:
+  - BH-FDR ≤ 0.05 on the donor-level Wilcoxon (`latent_geometry.test_directional_significance`), AND
+  - Axis-ranking Spearman ρ ≥ 0.7 across all 3 seeds (matches `cascade_graph_min_seed_rho: 0.7` in `configs/default.yaml`)
+
+**Outcomes:**
+- **GREEN** (≥3 pass): start phase 2 — time-axis extension via composite-label encoding `cytokine@time_point` + new `analysis/temporal_confusion.py`.
+- **AMBER** (2 pass): re-run with `direction_mode: cell_type` and `n_per_cell_type: 50`; if still amber, write up partial result and continue Path A only.
+- **RED** (≤1 pass): cascade signal not recoverable from 3h BMDM with this architecture; try 1h or 5h time-point subsets before reconsidering phase 2.
+
+Verdict written to `reports/sheu2024/AXIS_GATE_VERDICT.md`.
