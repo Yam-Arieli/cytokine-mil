@@ -84,14 +84,30 @@ def _log(msg=""):
     print(msg, flush=True)
 
 
-def _load_label_encoder(run_dir: Path) -> CytokineLabel:
+class _DynamicLabelEncoder:
+    """CytokineLabel-shaped wrapper with n_classes() inferred from the map.
+
+    The package CytokineLabel.n_classes() is hardcoded to 91 (PBS_INDEX+1).
+    For the slim Sheu encoder (n=8) that hardcode is wrong and causes the
+    gate to allocate a 91-class head when it should build an 8-class one.
+    """
+    def __init__(self, label_to_idx):
+        self._label_to_idx = dict(label_to_idx)
+        self._idx_to_label = {v: k for k, v in self._label_to_idx.items()}
+    def encode(self, c): return self._label_to_idx[c]
+    def decode(self, i): return self._idx_to_label[i]
+    def n_classes(self): return len(self._label_to_idx)
+    @property
+    def cytokines(self):
+        return [self._idx_to_label[i] for i in sorted(self._idx_to_label)]
+
+
+def _load_label_encoder(run_dir: Path):
     with open(run_dir / "label_encoder.json") as f:
         data = json.load(f)
     cytokines_list = data["cytokines"]
-    le = CytokineLabel()
-    le._label_to_idx = {cyt: i for i, cyt in enumerate(cytokines_list)}
-    le._idx_to_label = {i: cyt for i, cyt in enumerate(cytokines_list)}
-    return le
+    label_to_idx = {cyt: i for i, cyt in enumerate(cytokines_list)}
+    return _DynamicLabelEncoder(label_to_idx)
 
 
 def _infer_n_cell_types(state_dict: dict) -> int:
@@ -101,18 +117,30 @@ def _infer_n_cell_types(state_dict: dict) -> int:
     raise ValueError("Cannot infer n_cell_types from state dict.")
 
 
+def _infer_dims_from_state(state_dict: dict):
+    """Read embed_dim and attention_hidden_dim from the checkpoint shapes.
+
+    `encoder.down2.fc2.weight` has shape (embed_dim, embed_dim).
+    `attention.V.weight` has shape (attention_hidden_dim, embed_dim).
+    """
+    embed_dim = state_dict["encoder.down2.fc2.weight"].shape[0]
+    attn_hidden = state_dict["attention.V.weight"].shape[0]
+    return embed_dim, attn_hidden
+
+
 def _load_model(run_dir: Path, label_enc, gene_names, device: str):
     state_dict = torch.load(run_dir / "model_stage2.pt", map_location="cpu")
     n_cell_types = _infer_n_cell_types(state_dict)
+    embed_dim, attn_hidden = _infer_dims_from_state(state_dict)
     encoder = build_encoder(
         n_input_genes=len(gene_names),
         n_cell_types=n_cell_types,
-        embed_dim=128,
+        embed_dim=embed_dim,
     )
     model = build_mil_model(
         encoder,
-        embed_dim=128,
-        attention_hidden_dim=64,
+        embed_dim=embed_dim,
+        attention_hidden_dim=attn_hidden,
         n_classes=label_enc.n_classes(),
         encoder_frozen=True,
     )
