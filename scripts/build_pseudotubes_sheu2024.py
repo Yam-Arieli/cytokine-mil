@@ -63,8 +63,8 @@ TIME_POINTS_KEEP = {"0hr", "3hr"}
 # Active stimuli at 3hr (PBS class produced via relabeling, not present as a literal stimulus)
 ACTIVE_STIMULI_3HR = {"LPS", "LPSlo", "P3CSK", "PIC", "TNF", "CpG", "IFNb"}
 
-# Default val pseudo-donors per CLAUDE.md §15
-VAL_PSEUDO_DONORS_DEFAULT = ["M2_IL4_rep1", "PM_B6.old_rep1"]
+# Default val pseudo-donor (single — only 4 are downloadable; see CLAUDE.md §2.5).
+VAL_PSEUDO_DONORS_DEFAULT = ["M2_IL4_rep1"]
 
 SAMPTAG_METADATA_FILENAME = "GSE224518_samptag.all_cellannotations_metadata.txt.gz"
 

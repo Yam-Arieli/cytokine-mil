@@ -147,21 +147,38 @@ remain; `n_classes` stays at 91 in code, 8 in practice.
 **Pseudo-donor scheme (replaces the biological-donor convention for this dataset):**
 Sheu has only 2 biological replicates per condition, so the cytokine-MIL pipeline's
 ≥3-donor design is satisfied by pooling **(biological context × replicate)** pairs as
-pseudo-donors. At 3hr, 7 pseudo-donors exist with well-annotated cells:
+pseudo-donors.
 
-| Pseudo-donor                | Cells at 3hr | Split  |
-|----------------------------|--------------|--------|
-| `M0_rep1`                   | 46,451       | train  |
-| `M0_rep2`                   | 8,897        | train  |
-| `M1_IFNg_rep1`              | 7,177        | train  |
-| `PM_B6.HFD_rep1`            | 3,062        | train  |
-| `PM_B6.LFD_rep1`            | 6,367        | train  |
-| `M2_IL4_rep1`               | 6,243        | **val**|
-| `PM_B6.old_rep1`            | 10,909       | **val**|
+**Important data-availability note (verified 2026-05-22 against the actual GEO
+deposit, not just the metadata):** the samptag metadata references 16 biological
+batches, but only batches **1–13** are deposited as GSM files. Batches 14–16
+(which contain the **PM_B6** peritoneal-macrophage samples) are referenced in
+metadata but were not deposited. The PM_B6 samples are therefore not downloadable
+and the planned pseudo-donor `PM_B6.old_rep1` is unavailable.
 
-The val split tests cross-context generalization — one new polarization (IL-4-primed,
-not represented in train) and one new mouse-condition background (aged peritoneal macs).
-Both M0 reps remain in train so the §21 "M0 first" secondary check is well-defined.
+After filtering to time_point ∈ {0hr, 3hr} and pooling Unstim/0hr as PBS, the
+**4 pseudo-donors actually available at 3hr** are:
+
+| Pseudo-donor      | Cells at 3hr | Split | Available stimuli at 3hr                              |
+|-------------------|-------------:|:------|:------------------------------------------------------|
+| `M0_rep1`         | 46,451       | train | LPS, LPSlo, P3CSK, polyIC, TNF, CpG  (**no IFNb**)    |
+| `M0_rep2`         |  8,897       | train | LPS, P3CSK, polyIC, TNF, CpG, IFNb   (no LPSlo)        |
+| `M1_IFNg_rep1`    |  7,177       | train | LPS, P3CSK, polyIC, TNF, CpG, IFNb   (no LPSlo)        |
+| `M2_IL4_rep1`     |  6,243       | **val** | LPS, P3CSK, polyIC, TNF, CpG, IFNb (no LPSlo)        |
+
+Plus all 0hr Unstim cells across these 4 pseudo-donors are pooled as the PBS class
+(see "Cell types" below for which 0hr cells exist).
+
+**Uneven per-donor class coverage is by Sheu's experimental design** — different
+multiplexing rounds covered different stimulus subsets. The pipeline supports
+this: axis-discovery tests use whatever pseudo-donors have both endpoints of a
+given axis. `polyIC—IFNb` is tested against 3 train donors that have both stimuli;
+`LPSlo—P3CSK` is tested against the 1 donor that has LPSlo. Statistical power
+varies by axis but the MUST axes (`LPS—TNF`, `polyIC—IFNb`) are well-supported.
+
+The val pseudo-donor `M2_IL4_rep1` tests cross-polarization generalization
+(IL-4-primed alternative-activation macrophages, not represented in train).
+Both M0 reps remain in train so the §21 M0-only secondary check is well-defined.
 
 **Cell types:** Global Leiden clustering on 0h Unstim cells pooled across all pseudo-donors,
 labeled `mac_c0`, `mac_c1`, … (expect 2–4 clusters). Post-stim cells assigned to nearest
@@ -702,10 +719,12 @@ aux_decoder:
 - **Run multiple seeds** before drawing conclusions about learnability ordering.
 - **State directional predictions before unblinding** dynamics results.
 - **Hold out Donor2 and Donor3.** Never use val donors during training or optimizer steps. (Oesinghaus-specific; see below for Sheu/Zhang.)
-- **Sheu val pseudo-donors:** `M2_IL4_rep1`, `PM_B6.old_rep1`. Phase 1 train set is 5
-  pseudo-donors: `M0_rep1`, `M0_rep2`, `M1_IFNg_rep1`, `PM_B6.HFD_rep1`, `PM_B6.LFD_rep1`.
-  Pseudo-donor = `(type × replicate)` because Sheu has only 2 biological reps per
-  condition; see §2.5.
+- **Sheu val pseudo-donor:** `M2_IL4_rep1` (single val; only 4 pseudo-donors
+  are downloadable at 3hr — see §2.5 for the GEO-deposit gap). Train set: 3
+  pseudo-donors — `M0_rep1`, `M0_rep2`, `M1_IFNg_rep1`. Pseudo-donor =
+  `(type × replicate)` because Sheu has only 2 biological reps per condition.
+  Per-donor class coverage is uneven by design (M0_rep1 has no IFNb;
+  M0_rep2 / M1 / M2 have no LPSlo).
 - **Zhang val donors:** TBD pending donor-count verification. If <3 donors, fall back to plate-id-as-donor and skip the seed-stability gate.
 
 ---

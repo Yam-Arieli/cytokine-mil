@@ -62,8 +62,9 @@ MANIFEST_PATH = "/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/man
 HVG_PATH      = "/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/hvg_list.json"
 OUTPUT_BASE   = Path(__file__).parent.parent / "results" / "sheu2024_full"
 
-# Pseudo-donor val split per CLAUDE.md §15.
-VAL_PSEUDO_DONORS = ["M2_IL4_rep1", "PM_B6.old_rep1"]
+# Pseudo-donor val split per CLAUDE.md §15. Single val pseudo-donor — only 4
+# pseudo-donors are downloadable at 3hr (GEO batches 14-16 missing).
+VAL_PSEUDO_DONORS = ["M2_IL4_rep1"]
 
 # Phase 1 training hyperparameters
 EMBED_DIM            = 128

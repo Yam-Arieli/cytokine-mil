@@ -12,10 +12,11 @@ data:
   n_pseudo_tubes: 10
 
   # Pseudo-donor convention: f"{type}_{replicate}" per CLAUDE.md §2.5.
-  # Phase 1 val pseudo-donors (held out, observer-only): cross-context generalization test.
+  # Phase 1 val pseudo-donor (single — only 4 are downloadable at 3hr; see §2.5
+  # for the GEO-deposit gap, batches 14-16 missing). Train: M0_rep1, M0_rep2,
+  # M1_IFNg_rep1. Per-donor class coverage is uneven by Sheu's experimental design.
   val_donors:
     - M2_IL4_rep1
-    - PM_B6.old_rep1
 
   # Subset filters applied at the adapter (scripts/build_pseudotubes_sheu2024.py).
   # Listed here for transparency; not consumed by the trainer.
