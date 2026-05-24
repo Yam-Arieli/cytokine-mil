@@ -71,6 +71,12 @@ def _parse_args():
     p.add_argument("--direction_mode", default="global",
                    choices=["global", "cell_type"])
     p.add_argument("--device", default="cpu")
+    p.add_argument("--relax_gate", action="store_true",
+                   help="Add a relaxed-readout section to the verdict that "
+                        "skips Bonferroni-over-T and BH-FDR (uses raw min-over-T "
+                        "Wilcoxon p at alpha) and reports per-donor effect sizes "
+                        "+ sign-agreement for the pre-registered positive axes. "
+                        "Strict §21 gate is still reported alongside.")
     return p.parse_args()
 
 
@@ -288,6 +294,94 @@ def _format_axis_row(name, axes_per_seed, kind):
     return f"| {name} | {sig_str} | {call_str} | {relay_str} | {pass_mark} |", pass_flag
 
 
+# ---------------------------------------------------------------------------
+# Relaxed readout (raw min-over-T p, per-donor effect sizes, sign-agreement)
+# ---------------------------------------------------------------------------
+
+
+def _axis_raw_min_p_per_seed(sig, a, b):
+    """Direction-agnostic raw min-over-T Wilcoxon p (no Bonferroni, no BH).
+
+    p_axis = min over T of min(p_fwd[A,B,T], p_fwd[B,A,T])  (one-sided greater).
+    """
+    candidates = []
+    for (ca, cb, ct), p in sig["p_fwd"].items():
+        if {ca, cb} == {a, b}:
+            candidates.append(float(p))
+    if not candidates:
+        return float("nan")
+    return float(np.nanmin(candidates))
+
+
+def _axis_effect_size(sig, a, b):
+    """Aggregate per-donor effect size over the best-cell-type direction.
+
+    Returns dict with:
+      best_T : the T at which raw p is smallest (across both orientations)
+      direction : 'A->B' or 'B->A'
+      b_per_donor : np.array of per-donor scores at that (orientation, T)
+      mean_b : mean across donors
+      sign_agreement : fraction of donors with sign matching the mean's sign
+    """
+    best = None
+    for (ca, cb, ct), p in sig["p_fwd"].items():
+        if {ca, cb} != {a, b}:
+            continue
+        if best is None or p < best[0]:
+            best = (p, ca, cb, ct)
+    if best is None:
+        return None
+    p, ca, cb, ct = best
+    b_vals = np.asarray(sig["b_fwd"].get((ca, cb, ct), []), dtype=float)
+    if b_vals.size == 0:
+        return None
+    mean_b = float(np.mean(b_vals))
+    sgn = np.sign(mean_b) if mean_b != 0 else 0.0
+    if sgn == 0:
+        agree = 0.5
+    else:
+        agree = float(np.mean(np.sign(b_vals) == sgn))
+    return {
+        "best_T": ct,
+        "direction": f"{ca}->{cb}",
+        "n_donors": int(b_vals.size),
+        "b_per_donor": b_vals.tolist(),
+        "mean_b": mean_b,
+        "raw_p": float(p),
+        "sign_agreement": agree,
+    }
+
+
+def _relaxed_axis_row(name, seed_results, axis_a, axis_b, alpha, kind):
+    """Return (markdown row, pass_flag) for an axis under the relaxed gate.
+
+    Relaxed positive criterion: raw min-over-T p ≤ alpha in every seed AND
+    sign-agreement ≥ 2/3 of donors in every seed.
+    Relaxed must-not criterion: no seed satisfies the positive criterion.
+    """
+    p_per_seed = [_axis_raw_min_p_per_seed(r["sig"], axis_a, axis_b)
+                  for r in seed_results]
+    eff_per_seed = [_axis_effect_size(r["sig"], axis_a, axis_b)
+                    for r in seed_results]
+    sign_per_seed = [(eff["sign_agreement"] if eff else float("nan"))
+                     for eff in eff_per_seed]
+    mean_b_per_seed = [(eff["mean_b"] if eff else float("nan"))
+                       for eff in eff_per_seed]
+
+    positive_each = [
+        (not np.isnan(p)) and p <= alpha and
+        (not np.isnan(sa)) and sa >= 2.0 / 3.0
+        for p, sa in zip(p_per_seed, sign_per_seed)
+    ]
+    pass_flag = (all(positive_each) if kind != "must_not" else not any(positive_each))
+
+    p_str = " / ".join(f"{p:.3g}" for p in p_per_seed)
+    sa_str = " / ".join(f"{s:.2f}" for s in sign_per_seed)
+    b_str = " / ".join(f"{b:+.4f}" for b in mean_b_per_seed)
+    pass_mark = "PASS" if pass_flag else "FAIL"
+    return (f"| {name} | {p_str} | {b_str} | {sa_str} | {pass_mark} |", pass_flag)
+
+
 def _apply_verdict(must_pass, should_pass, must_not_pass):
     """§21 composite verdict."""
     n_must = sum(must_pass)
@@ -306,8 +400,42 @@ def _label_pair(a, b):
     return f"{aa} — {bb}"
 
 
+def _write_relaxed_section(seed_results, alpha):
+    """Markdown lines for the relaxed-gate section."""
+    lines = []
+    lines.append("## Relaxed gate (raw min-over-T Wilcoxon p, no Bonferroni, no BH)")
+    lines.append("")
+    lines.append(f"_Pass criterion: raw p ≤ {alpha} in **every** seed AND per-donor "
+                 f"sign-agreement ≥ 2/3 in every seed._")
+    lines.append("")
+    lines.append("| axis | raw min p per seed | mean per-donor b per seed | sign-agreement per seed | gate |")
+    lines.append("|---|---|---|---|---|")
+    must_pass = []
+    for a, b in PREREG_MUST:
+        row, ok = _relaxed_axis_row(_label_pair(a, b), seed_results, a, b, alpha, "must")
+        lines.append(row)
+        must_pass.append(ok)
+    should_pass = []
+    for a, b in PREREG_SHOULD:
+        row, ok = _relaxed_axis_row(_label_pair(a, b), seed_results, a, b, alpha, "should")
+        lines.append(row)
+        should_pass.append(ok)
+    must_not_pass = []
+    for a, b in PREREG_MUST_NOT:
+        row, ok = _relaxed_axis_row(_label_pair(a, b), seed_results, a, b, alpha, "must_not")
+        lines.append(row)
+        must_not_pass.append(ok)
+    lines.append("")
+    lines.append(f"- Relaxed MUST passed: **{sum(must_pass)} / 2**")
+    lines.append(f"- Relaxed SHOULD passed: **{sum(should_pass)} / 3**")
+    lines.append(f"- Relaxed MUST-NOT violations: **{sum(1 for p in must_not_pass if not p)} / 3**")
+    lines.append("")
+    return lines, must_pass, should_pass, must_not_pass
+
+
 def _write_verdict(seed_results, rho_info, out_dir: Path, alpha: float,
-                   min_seed_rho: float, direction_mode: str):
+                   min_seed_rho: float, direction_mode: str,
+                   relax_gate: bool = False):
     out_dir.mkdir(parents=True, exist_ok=True)
     md = out_dir / "AXIS_GATE_VERDICT.md"
 
@@ -378,6 +506,19 @@ def _write_verdict(seed_results, rho_info, out_dir: Path, alpha: float,
     lines.append(f"Spearman ρ ≥ {min_seed_rho} on every pair: **{'PASS' if rho_pass else 'FAIL'}**")
     lines.append("")
 
+    # Optional relaxed section (raw min-over-T p, effect sizes, sign-agreement)
+    relaxed_summary = None
+    if relax_gate:
+        rl_lines, rl_must, rl_should, rl_must_not = _write_relaxed_section(
+            seed_results, alpha,
+        )
+        lines.extend(rl_lines)
+        relaxed_summary = {
+            "must_pass": rl_must,
+            "should_pass": rl_should,
+            "must_not_pass": rl_must_not,
+        }
+
     # Verdict
     verdict = _apply_verdict(must_pass, should_pass, must_not_pass)
     lines.append("## Verdict")
@@ -407,15 +548,18 @@ def _write_verdict(seed_results, rho_info, out_dir: Path, alpha: float,
 
     # Also save the per-seed structured outputs.
     pkl = out_dir / "axis_gate_results.pkl"
+    payload = {
+        "seed_results": seed_results,
+        "rho_info": rho_info,
+        "verdict": verdict,
+        "must_pass": must_pass,
+        "should_pass": should_pass,
+        "must_not_pass": must_not_pass,
+    }
+    if relaxed_summary is not None:
+        payload["relaxed_summary"] = relaxed_summary
     with open(pkl, "wb") as f:
-        pickle.dump({
-            "seed_results": seed_results,
-            "rho_info": rho_info,
-            "verdict": verdict,
-            "must_pass": must_pass,
-            "should_pass": should_pass,
-            "must_not_pass": must_not_pass,
-        }, f)
+        pickle.dump(payload, f)
     _log(f"Detailed results saved to: {pkl}")
     return verdict
 
@@ -442,6 +586,7 @@ def main():
         alpha=args.alpha,
         min_seed_rho=args.min_seed_rho,
         direction_mode=args.direction_mode,
+        relax_gate=args.relax_gate,
     )
     _log(f"\nFinal verdict: {verdict}")
 

@@ -24,4 +24,5 @@ export MPLCONFIGDIR=/cs/labs/mornitzan/yam.arieli/.matplotlib_cache
     --alpha 0.05 \
     --min_seed_rho 0.7 \
     --direction_mode global \
+    --relax_gate \
     --device cpu

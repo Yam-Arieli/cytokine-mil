@@ -66,18 +66,22 @@ OUTPUT_BASE   = Path(__file__).parent.parent / "results" / "sheu2024_full"
 # pseudo-donors are downloadable at 3hr (GEO batches 14-16 missing).
 VAL_PSEUDO_DONORS = ["M2_IL4_rep1"]
 
-# Phase 1 training hyperparameters
-EMBED_DIM            = 128
-ATTENTION_HIDDEN_DIM = 64
-STAGE1_EPOCHS        = 50
-STAGE1_LR            = 0.01
+# Phase 1 training hyperparameters — narrowed (2026-05-24) after first-pass
+# overfit (Stage-2 train loss 0.005 on ~230 tubes / 8 active classes).
+# Slim label encoder (8 classes, no padded 91-d head) eliminates the 83
+# unused logits; smaller dims + lower LR + shorter schedule fight memorisation.
+EMBED_DIM            = 32
+ATTENTION_HIDDEN_DIM = 16
+STAGE1_EPOCHS        = 30
+STAGE1_LR            = 0.003
 STAGE1_MOMENTUM      = 0.9
-STAGE2_EPOCHS        = 100
-STAGE2_LR            = 0.003
+STAGE2_EPOCHS        = 40
+STAGE2_LR            = 0.0005
 STAGE2_MOMENTUM      = 0.9
 LR_WARMUP            = 5
 LOG_EVERY            = 1
 SEED                 = 42
+SLIM_LABEL_ENCODER   = True   # use 8-class head (PBS at idx 0) instead of 91-d
 
 # Pre-registered axis-discovery gate (informational; the gate itself is run
 # post-training by scripts/run_latent_geometry.py + report_cytokine_axes.py).
@@ -146,7 +150,52 @@ def _parse_args():
     p.add_argument("--val_donors", nargs="*", default=VAL_PSEUDO_DONORS,
                    help="Pseudo-donor names to hold out for val (default: "
                         f"{VAL_PSEUDO_DONORS}).")
+    p.add_argument("--slim_label_encoder", action="store_true",
+                   default=SLIM_LABEL_ENCODER,
+                   help="Use a slim N-class label encoder (PBS at idx 0) instead "
+                        "of the global 91-d head with PBS pinned at 90. Default "
+                        f"{SLIM_LABEL_ENCODER} for Sheu phase 1 retrain.")
+    p.add_argument("--no_slim_label_encoder", dest="slim_label_encoder",
+                   action="store_false",
+                   help="Force the legacy 91-d label encoder (PBS at 90).")
     return p.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Slim label encoder — drop-in replacement matching CytokineLabel's surface
+# ---------------------------------------------------------------------------
+
+class _SlimSheuLabel:
+    """N-class label encoder where N == # distinct cytokines in the manifest.
+
+    PBS is mapped to index 0; other cytokines are sorted alphabetically and
+    assigned 1..N-1. Used to eliminate the 83 unused logits in the default
+    91-d head, which were a meaningful overparameterisation for Sheu's 8
+    active classes.
+
+    Carries the same surface as CytokineLabel (`encode`, `decode`,
+    `n_classes()`, `cytokines`, `_idx_to_label`, `_label_to_idx`) so that
+    the rest of the pipeline (PseudoTubeDataset, build_mil_model,
+    run_sheu_axis_gate.py) sees no difference.
+    """
+
+    def __init__(self, cytokines):
+        non_pbs = sorted(c for c in cytokines if c != "PBS")
+        names = ["PBS"] + non_pbs
+        self._label_to_idx = {c: i for i, c in enumerate(names)}
+        self._idx_to_label = {i: c for i, c in enumerate(names)}
+
+    @classmethod
+    def fit(cls, manifest):
+        return cls({e["cytokine"] for e in manifest})
+
+    def encode(self, c): return self._label_to_idx[c]
+    def decode(self, i): return self._idx_to_label[i]
+    def n_classes(self): return len(self._label_to_idx)
+
+    @property
+    def cytokines(self):
+        return [self._idx_to_label[i] for i in sorted(self._idx_to_label)]
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +309,14 @@ def main():
     # Label encoder (PBS pinned at 90; active classes occupy 0..N-1)
     # ------------------------------------------------------------------
     all_active = sorted({e["cytokine"] for e in manifest if e["cytokine"] != "PBS"})
-    label_enc = CytokineLabel().fit(manifest)
-    log(f"  {label_enc.n_classes()}-dim output (PBS at 90)")
+    if args.slim_label_encoder:
+        label_enc = _SlimSheuLabel.fit(manifest)
+        log(f"  Slim label encoder: {label_enc.n_classes()}-dim output "
+            f"(PBS at idx 0, alphabetical sort thereafter)")
+    else:
+        label_enc = CytokineLabel().fit(manifest)
+        log(f"  Legacy label encoder: {label_enc.n_classes()}-dim output "
+            f"(PBS at 90)")
     log(f"  Active stimuli: {all_active}")
 
     with open(out_dir / "label_encoder.json", "w") as fh:
