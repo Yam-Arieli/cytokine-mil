@@ -222,13 +222,18 @@ def load_sheu_anndata(raw_dir: str) -> ad.AnnData:
     return adata
 
 
-def filter_phase1_subset(adata: ad.AnnData) -> ad.AnnData:
+def filter_phase1_subset(
+    adata: ad.AnnData,
+    time_points_keep=None,
+) -> ad.AnnData:
     """
-    Phase 1: keep only `time_point in {0hr, 3hr}` and active stimuli (+ Unstim).
-    Cells with stimuli outside the active set are dropped.
+    Phase 1: keep only `time_point in time_points_keep` (default {0hr, 3hr})
+    and active stimuli (+ Unstim). Cells with stimuli outside the active set
+    are dropped.
     """
+    keep_tp = set(time_points_keep) if time_points_keep else TIME_POINTS_KEEP
     keep_stimuli = ACTIVE_STIMULI_3HR | {"Unstim"}
-    mask = adata.obs["time_point"].isin(TIME_POINTS_KEEP) & adata.obs["cytokine"].isin(keep_stimuli)
+    mask = adata.obs["time_point"].isin(keep_tp) & adata.obs["cytokine"].isin(keep_stimuli)
     return adata[mask.values].copy()
 
 
@@ -438,6 +443,9 @@ def parse_args():
     p.add_argument("--n_pseudo_tubes", type=int, default=N_PSEUDO_TUBES)
     p.add_argument("--n_hvgs", type=int, default=N_HVGS, help="No-op for Sheu (panel is 500 genes)")
     p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("--time_points", nargs="+", default=None,
+                   help=f"Time points to keep (default: {sorted(TIME_POINTS_KEEP)}). "
+                        "Use e.g. --time_points 0hr 1hr to retarget at 1hr.")
     return p.parse_args()
 
 
@@ -453,8 +461,9 @@ def main():
     print(f"  Loaded: {adata.n_obs} cells x {adata.n_vars} genes")
     print(f"  Pseudo-donors present: {sorted(adata.obs['pseudo_donor'].unique())}")
 
-    print("\nStep 2: Phase-1 filter (time_point in {0hr, 3hr}, active stimuli + Unstim)")
-    adata = filter_phase1_subset(adata)
+    tp_keep = set(args.time_points) if args.time_points else TIME_POINTS_KEEP
+    print(f"\nStep 2: Phase-1 filter (time_point in {sorted(tp_keep)}, active stimuli + Unstim)")
+    adata = filter_phase1_subset(adata, time_points_keep=tp_keep)
     print(f"  After phase-1 filter: {adata.n_obs} cells")
 
     print("\nStep 3: QC (min_genes=20 — targeted panel is small)")
