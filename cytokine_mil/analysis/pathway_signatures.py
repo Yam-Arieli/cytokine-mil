@@ -23,6 +23,7 @@ Gene symbols are mouse (Sheu BMDM data).
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
