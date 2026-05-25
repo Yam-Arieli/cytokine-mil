@@ -987,3 +987,64 @@ projection for the MUST axes should agree across `M0_rep1` and `M0_rep2`.
 
 Verdict written to `reports/sheu2024/AXIS_GATE_VERDICT.md`. **In any outcome, the
 Oesinghaus axis-discovery result is independent of this gate** — Path A continues.
+
+---
+
+## 22. Pair-level EDA Benchmark (`analysis/eda_pair_benchmark.py`, `analysis/eda_pair_plots.py`)
+
+**Motivation:** all eight prior cascade-direction checks (§0 status block) shared
+the same method bundle: encoder embedding + PBS-RC + dot-product readout on
+per-donor centroids. The decision after 2026-05-25 was to *invert* the workflow:
+stop designing methods from cascade-signal assumptions, build a labeled-pair
+benchmark from Sheu §21, compute a wide statistic battery directly on
+normalized expression, and let the data show where (if anywhere) the cascade
+signature lives.
+
+**Labeled pairs** (constants in `eda_pair_benchmark.py`):
+
+| Status | Pair | Reason |
+|---|---|---|
+| positive (MUST) | `LPS — TNF` | TLR4 → NF-κB → autocrine TNF |
+| positive (MUST) | `PIC — IFNb` | TLR3/TRIF → IRF3 → type-I IFN |
+| positive (SHOULD) | `LPS — IFNb` | LPS engages TRIF arm |
+| positive (SHOULD) | `P3CSK — CpG` | both MyD88-only |
+| positive (SHOULD) | `LPSlo — P3CSK` | both MyD88-biased |
+| negative (MUST-NOT) | `P3CSK — IFNb` | TLR2 has no TRIF arm |
+| negative (MUST-NOT) | `CpG — IFNb` | TLR9 IFN restricted to pDC |
+| negative (MUST-NOT) | `TNF — IFNb` | no cross-induction in macrophages |
+
+**Statistic battery** (computed per ordered (A, B) pair per cell type T, vs PBS):
+
+*Symmetric / similarity:* `centroid_distance`, `log2fc_spearman`, `de_jaccard`,
+`var_ratio_AB`.
+
+*Asymmetric (cascade-relevant by construction):*
+`frac_A_closer_to_B`, `frac_B_closer_to_A`, `reciprocal_asymmetry`,
+`mean_sigB_in_A`, `mean_sigA_in_B`, `sigB_in_A_norm`, `sigA_in_B_norm`,
+`signature_asymmetry`, `frac_A_with_high_sigB`, `frac_B_with_high_sigA`,
+`tail_asymmetry`, `kl_A_to_B_along_AB`, `kl_B_to_A_along_AB`, `kl_asymmetry`.
+
+*Heterogeneity / mixture (within-tube shape, not means):*
+`var_A_along_AB`, `var_B_along_AB`, `bimodality_A_along_AB`,
+`bimodality_B_along_AB`.
+
+**Discrimination test:** for each statistic, AUC of ranking the 5 labeled
+positives above the 3 labeled negatives, on the per-unordered-pair `max`
+aggregator (across ordered directions and cell types). Permutation null:
+shuffle the positive/negative labels n_permutations times; report the 0.95
+quantile per statistic as the discrimination floor.
+
+**Plots** (under `<out_dir>/plots/`):
+- `statistic_heatmap.pdf` — labeled pairs × statistics, z-scored per column
+- `auc_bars.pdf` — AUC per statistic with permutation null overlay
+- `signature_scatter/<A>__<B>.pdf` — per-cell (s_A, s_B) scatter faceted by cell type
+- `projection_density/<A>__<B>.pdf` — overlaid histograms on û_{A→B}, faceted by cell type
+
+**Driver:** `scripts/run_sheu_eda_benchmark.py` + `slurm/run_sheu_eda.slurm`.
+Default output dir on cluster: `results/sheu_eda/`. Entire pipeline runs in
+minutes on a single CPU node; no model training, no checkpoints needed.
+
+**Interpretation rule:** statistics with AUC > permutation null upper quantile
+are candidates. Inspect (1) what they actually measure (variance? signature
+tail? KL?) and (2) which labeled pairs they get right vs wrong. Then sharpen
+the next round of methods from the data, not from priors.
