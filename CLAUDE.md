@@ -1048,3 +1048,78 @@ minutes on a single CPU node; no model training, no checkpoints needed.
 are candidates. Inspect (1) what they actually measure (variance? signature
 tail? KL?) and (2) which labeled pairs they get right vs wrong. Then sharpen
 the next round of methods from the data, not from priors.
+
+**Outcome of first run on Sheu 3hr (2026-05-25):** No statistic clears the
+permutation null (best empirical p ≈ 0.064). Visual scatters reveal the
+confounder: in the 500-gene targeted Sheu panel, top-DE-up signatures of
+every stimulus correlate strongly with every other stimulus' top-DE-up,
+because the panel is curated to immune-response genes. Empirical signatures
+aren't pathway-specific in this panel. The strongest *direction* of effects
+in the heatmap is "cascade pairs are more similar" (lower centroid distance)
+— a similarity signal, not a direction signal. Conclusion driving §23: try
+curated, adaptor-specific gene sets.
+
+---
+
+## 23. Pathway-Signature Cascade Analysis (`analysis/pathway_signatures.py`, `analysis/pathway_plots.py`)
+
+**Motivation:** §22 showed that empirical top-DE signatures collapse onto a
+correlated diagonal in the 500-gene Sheu panel — the panel is curated to
+immune-response genes that all move together on activation, so signature
+overlap is by construction. §23 replaces these with **literature-curated,
+signaling-adaptor-specific gene sets**, then asks how much of each pathway's
+signature appears in tubes that are NOT directly stimulated through that
+pathway. That's a direction-relevant readout if the curated genes are
+adaptor-specific.
+
+**Curated pathway library** (mouse symbols; constants in `pathway_signatures.py`):
+
+| Pathway | Marker genes | Primary stimuli | Cascade-induced from |
+|---|---|---|---|
+| `IRF3_direct` | `Ifnb1, Ccl5, Cxcl10, Ifit2, Ifit3` | PIC, LPS (TRIF arm) | — |
+| `IFNAR_induced` | `Isg15, Mx1, Mx2, Oas1a, Oas2, Oas3, Ifit1, Rsad2, Stat1, Irf7, Usp18` | IFNb | PIC, LPS (autocrine IFN-β) |
+| `NFkB_canonical` | `Tnf, Il1b, Il6, Nfkbia, Nfkbid, Tnfaip3, Cxcl1, Cxcl2, Ccl3, Ccl4, Birc3` | LPS, LPSlo, P3CSK, CpG, TNF | — |
+| `TNFR_autocrine` | `Tnfaip3, Nfkbid, Birc3` | TNF | LPS, LPSlo, P3CSK, CpG (autocrine TNF) |
+
+**Cascade penetration** (in `compute_penetration`):
+```
+penetration(A → P, B) = (mean(s_P, A-tube) − mean(s_P, PBS))
+                      / (mean(s_P, B-tube) − mean(s_P, PBS))
+```
+Where B is the primary stimulus for pathway P. `s_P(cell) = mean(cell, pathway_genes)`
+(no per-cell control subtraction — random control genes from a 500-gene
+immune panel carry their own pathway signal and bias the subtraction; the
+PBS baseline at tube level already removes resting-state activity).
+Penetration ≈ 1 means A fully recapitulates B's pathway; ≈ 0 means A doesn't
+engage P; intermediate = partial cascade. Asymmetric by construction.
+
+**Pre-registered binary test (`ifnar_binary_test`):**
+- Pathway: `IFNAR_induced`, primary: `IFNb`
+- Positives (predicted high penetration): `PIC, LPS, LPSlo, IFNb`
+- Negatives (predicted ~0 penetration): `P3CSK, CpG, TNF`
+- AUC=1.0 has empirical p < 1/35 ≈ 0.029 (passes 0.05).
+- Computed per cell type; "clean separation" = all positives > all negatives.
+
+**Magnitude cascade test (`magnitude_cascade_test`):**
+For cascade pairs that share a pathway (e.g., LPS→TNF on `NFkB_canonical`),
+predict `s(A) > s(B) > s(PBS)` because A engages B's pathway directly *plus*
+gets autocrine boost from cascade B.
+
+**Files:**
+- `cytokine_mil/analysis/pathway_signatures.py`
+- `cytokine_mil/analysis/pathway_plots.py`
+- `scripts/run_sheu_pathway_signatures.py`
+- `slurm/run_sheu_pathway.slurm`
+
+**Outputs (default `results/sheu_pathway/`):**
+- `resolved_pathways.json` — which curated genes are present in the panel
+- `penetration_long.parquet` — (pathway × primary × A × cell_type) → penetration
+- `ifnar_binary_summary.csv` + `ifnar_binary_summary.pdf` — the pre-registered test
+- `magnitude_lps_tnf.csv` — does LPS > TNF > PBS on NF-κB hold?
+- `plots/penetration_heatmap.pdf` — full penetration matrix faceted by cell type
+- `plots/pathway_strip_<pathway>.pdf` — per-pathway violins across stimuli (visual sanity)
+
+**Runtime safety:** at startup the script reports which curated genes are
+present in the panel per pathway. Pathways with < 3 curated genes resolved
+are skipped. If no pathway resolves (e.g., wrong gene-symbol case),
+the script aborts cleanly.
