@@ -16,9 +16,10 @@ via cross-stimulus prediction (alignment), latent-space centroid geometry (geo),
 cell-type ablation. The cellular relay (the cell type that mediates A's effect on B's
 signature) can be identified by per-cell-type ablation.
 
-### Project status (2026-05-25)
+### Project status (2026-05-26, after adversarial audit)
 
-The project has produced **two** positive contributions on independent lines of work.
+The project has produced **one** publication-grade contribution and **one** narrower
+methodology contribution after a self-audit revised earlier claims downward.
 **All prior work, code, and results remain in the repo and on `main`.**
 
 **Path A — axis discovery on Oesinghaus 24h PBMC (91 cytokines):**
@@ -31,34 +32,64 @@ built and validated against this dataset. Path A (axis-discovery writeup) is in 
 and **independent of the cascade-direction work** — its narrative, figures, and
 statistics do not change.
 
-**Path B — cascade direction inference on Sheu 2024 (positive result, 2026-05-25):**
+**Path B — cascade direction inference on Sheu 2024 (REVISED 2026-05-26):**
 After eight independent failed checks of the encoder + PBS-RC + dot-product-on-centroid
-method bundle (see "Cumulative failed checks" below), an inverted methodology
-**recovered cascade direction on Sheu 2024 BMDM 3hr data**:
+method bundle (see "Cumulative failed checks" below), a new methodology was developed
+on Sheu 2024 BMDM 3hr data:
 
-> no encoder → literature-curated, signaling-adaptor-specific gene set (§23) → per-cell
-> pathway score → tube-level **cascade-penetration ratio** against PBS baseline
+> no encoder → **two** literature-curated, signaling-adaptor-specific gene sets paired
+> per cascade (one for the upstream stimulus's primary pathway P_A, one for the
+> downstream's primary pathway P_B) → per-cell pathway scores → **directional asymmetry
+> score** `(s_A − s_B on P_A) − (s_A − s_B on P_B)`
 
-**4 of 5 pre-registered cascade-direction tests pass Bonferroni α = 0.01:** one binary
-IFNAR test (PIC, LPS, LPSlo, IFNb vs P3CSK, CpG, TNF — AUC=1.00 in `mac_c2`, clean
-separation) and four magnitude tests on NF-κB (LPS, LPSlo, P3CSK, CpG all
-produce more NF-κB activity than direct TNF, consistent with autocrine TNF cascade).
-The fifth test (binary IFNAR) is at the combinatorial design floor (`p = 0.05` for 3 vs 3
-with perfect ordering) and would pass cleanly if LPSlo had cleared the
-`min_cells = 10` threshold in `mac_c2`. Time-trajectory analysis (1hr vs 3hr) confirms
-the cascade kinetics: PIC and LPS penetration of IFNAR rises sharply from 1h to 3h
-(sign flip in `mac_c3`), while cascade-negatives stay flat — exactly the textbook
-autocrine IFN-β buildup timeline.
+The original 2026-05-25 draft of the writeup claimed "4 of 5 pre-registered tests pass
+Bonferroni α=0.01". An adversarial audit conducted 2026-05-26 (`scripts/run_pathway_audit.py`)
+**falsified three of those four claims**:
+- Audit 1 (cytokine-label permutation null on the binary IFNAR test): observed AUC=1.00
+  in mac_c2 has empirical `p = 0.096`, not 0.05 — does NOT clear permutation null.
+- Audit 2 (random-pathway null): 200 random 9-gene sets give AUC distributions whose
+  Q95 = 1.0 in mac_c2 — the curated IFNAR signature is NOT more discriminative than
+  random gene sets of the same size. The single-pathway AUC test reads "activation
+  level", not "pathway specificity".
+- Audit 3 (donor-level Wilcoxon signed-rank, replacing the per-cell Mann-Whitney): the
+  original `p ≈ 10⁻¹³¹` magnitude p-values were fictional inflations from pseudo-
+  replication. Honest donor-level p ≈ 0.0625 at the design floor (n=4 donors paired).
+  Plus in `mac_c3`, mean s_NFkB(TNF) < mean s_NFkB(PBS) — the baseline assumption
+  breaks in the cell type that gave the original magnitude result.
 
-Full writeup: `reports/sheu2024_pathway/cascade_direction_results.md`.
+**The audit's fourth test — directional asymmetry between paired pathways — does pass**
+for the textbook TLR3-TRIF and TLR4-TRIF → IFN-β cascades:
 
-**Revised diagnosis (2026-05-25):** the previous diagnosis ("the bottleneck is data,
-not architecture") was incomplete. The bottleneck was **both data and method**. The 24h
-Oesinghaus snapshot is past primary/secondary separation (data bottleneck), AND the
-encoder + PBS-RC + dot-product-on-centroid readout is algebraically symmetric / overly
-collapsed onto a "stim vs PBS" axis (method bottleneck). Fixing only one of the two
-fails. The current positive result fixes both simultaneously — time-resolved BMDM 3hr
-data and a curated-pathway penetration readout.
+| Cascade | mac_c2 directional_score | mac_c3 directional_score |
+|---|---:|---:|
+| PIC → IFNb | +1.87 | +1.67 |
+| LPS → IFNb | +2.35 | +2.02 |
+
+PIC and LPS engage IRF3-direct genes (their own primary pathway) MORE than IFNb does;
+IFNb engages IFNAR-induced ISGs (its primary pathway) MORE than PIC or LPS do. This
+asymmetric two-pathway pattern is the cascade fingerprint. It distinguishes
+cascade-source stimuli from direct ligand. Random or reverse-direction cascades would
+NOT produce `asym_PA > 0 AND asym_PB < 0` simultaneously.
+
+The NF-κB → TNF cascade test (LPS/LPSlo/P3CSK/CpG → TNF) **fails** by this methodology:
+the two paired pathways (NFkB_canonical and TNFR_autocrine) overlap too heavily for the
+asymmetry test to discriminate. This is a methodology limitation.
+
+**Defensible Path B claim (post-audit):** "A directional asymmetric signature of the
+textbook TLR3-TRIF and TLR4-TRIF → IFN-β cascades is detectable in 3h BMDM single-cell
+snapshots via two paired curated pathway signatures, when the two pathways are
+transcriptionally distinct." This is a methodology demonstration on two cascades, not a
+general-purpose cascade-direction inference tool. Full revised writeup:
+`reports/sheu2024_pathway/cascade_direction_results.md`.
+
+**Revised diagnosis (2026-05-26):** the diagnosis evolved in two steps:
+1. (2026-05-25) The 2026-05-22 reading "the bottleneck is data, not architecture" was
+   too narrow — the bottleneck was BOTH data AND method. The first pathway-signature
+   single-pathway AUC test seemed to fix both.
+2. (2026-05-26, after audit) The single-pathway AUC framing also failed. The
+   **two-paired-pathways directional asymmetry** framing is what actually has
+   discriminative power. Path B's methodological contribution is the asymmetry-score
+   construction, not the single-pathway penetration ratio.
 
 **Cumulative failed checks (kept for historical record):** the eight failed
 cascade-direction tests of the old method bundle were:
@@ -1094,7 +1125,19 @@ curated, adaptor-specific gene sets.
 
 ---
 
-## 23. Pathway-Signature Cascade Analysis (`analysis/pathway_signatures.py`, `analysis/pathway_plots.py`)
+## 23. Pathway-Signature Cascade Analysis (`analysis/pathway_signatures.py`, `analysis/pathway_plots.py`, `analysis/pathway_audit.py`)
+
+> **⚠ Audit revision (2026-05-26):** the single-pathway penetration test
+> described in this section was audited via `scripts/run_pathway_audit.py`
+> and found to be **statistically unreliable**: random gene sets of the
+> same size give similar AUC, the per-cell Mann-Whitney p-values were
+> inflated by pseudo-replication, and the binary-AUC test does not clear
+> a cytokine-label permutation null. **The defensible methodology is the
+> two-paired-pathways directional asymmetry score** (Audit 4 in
+> `pathway_audit.py`), which compares each cascade's upstream and
+> downstream pathway signatures jointly. See
+> `reports/sheu2024_pathway/cascade_direction_results.md` for the revised
+> result and §24 below for the asymmetry methodology specification.
 
 **Motivation:** §22 showed that empirical top-DE signatures collapse onto a
 correlated diagonal in the 500-gene Sheu panel — the panel is curated to
@@ -1156,3 +1199,100 @@ gets autocrine boost from cascade B.
 present in the panel per pathway. Pathways with < 3 curated genes resolved
 are skipped. If no pathway resolves (e.g., wrong gene-symbol case),
 the script aborts cleanly.
+
+---
+
+## 24. Directional Asymmetry Cascade Test (`analysis/pathway_audit.py`)
+
+Post-audit primary methodology for cascade-direction inference. Distinct from
+§23's single-pathway penetration test — that one was retired after the
+2026-05-26 audit (it reads "activation level" rather than "pathway
+specificity"; see §23 audit note).
+
+### 24.1 Construction
+
+For a candidate cascade A → B with two transcriptionally distinct paired
+pathways (`P_A` = the pathway A engages directly; `P_B` = the pathway B
+engages directly), compute per cell type T:
+
+1. Per-cell pathway scores: `s_X_on_PY = mean expression of P_Y genes`
+   for X ∈ {A, B, PBS} on Y ∈ {A, B}. Four core means: `s_A_on_PA`,
+   `s_A_on_PB`, `s_B_on_PA`, `s_B_on_PB`. Plus PBS baselines on each.
+2. PBS-normalised: subtract `s_PBS_on_PY` from each tube's score on P_Y.
+3. Two asymmetries:
+   - `asym_PA = s_A_on_PA_norm − s_B_on_PA_norm` — does A engage P_A more
+     than B does? Cascade A→B predicts **positive** (A's own pathway,
+     B has no upstream signal).
+   - `asym_PB = s_A_on_PB_norm − s_B_on_PB_norm` — does A engage P_B more
+     than B does? Cascade A→B predicts **negative** or **≈0** (both engage
+     P_B, but B is direct → maximum; A is partial via autocrine).
+4. `directional_score = asym_PA − asym_PB`. **Positive ⇒ A→B cascade
+   consistent with biology. Negative ⇒ reverse direction would be implied.
+   ~0 ⇒ no cascade asymmetry detected.**
+
+### 24.2 Critical preconditions
+
+The test only works when:
+- **P_A and P_B are transcriptionally distinct.** If the two curated gene
+  sets overlap (e.g., NFkB_canonical and TNFR_autocrine — both are NF-κB
+  targets), the asymmetry test fails not because the cascade is absent but
+  because the two pathways are not discriminable. The audit confirmed this:
+  IFN cascades (IRF3-direct ↔ IFNAR-induced) discriminate cleanly;
+  NF-κB → TNFR cascades cluster on the diagonal in audit-4 plots.
+- **PBS baseline is stable across cell types.** If the cell type has
+  unusual constitutive expression on one of the pathways (mac_c3 had
+  elevated PBS s_NFkB > s_TNF), the asymmetry is corrupted. Sanity check
+  PBS baselines per cell type before interpreting.
+- **Stimulus identities map correctly to P_A and P_B.** Misassignment of
+  primary pathway will flip the directional_score sign.
+
+### 24.3 Pre-registered positives from Sheu 2026-05-26 audit
+
+| Cascade | P_A | P_B | mac_c2 directional_score | mac_c3 directional_score |
+|---|---|---|---:|---:|
+| PIC → IFNb | IRF3_direct | IFNAR_induced | +1.87 | +1.67 |
+| LPS → IFNb | IRF3_direct | IFNAR_induced | +2.35 | +2.02 |
+
+NF-κB cascades (LPS/LPSlo/P3CSK/CpG → TNF, with P_A=NFkB_canonical and
+P_B=TNFR_autocrine) gave directional_score values in [-0.10, +0.84],
+mostly small magnitudes — **not** clean cascade evidence. The two paired
+pathways overlap.
+
+### 24.4 Public API
+
+```python
+from cytokine_mil.analysis.pathway_audit import directional_asymmetry_test
+
+df = directional_asymmetry_test(
+    cells_by_pair,              # {(cytokine, cell_type) -> (N, G) array}
+    pathway_idx_dict,            # {"IRF3_direct": ndarray, "IFNAR_induced": ...}
+    A="PIC", B="IFNb",
+    P_A="IRF3_direct", P_B="IFNAR_induced",
+    pbs_label="PBS",
+    min_cells=10,
+)
+# Returns DataFrame with columns: cell_type, sA_on_PA_norm, sB_on_PA_norm,
+# sA_on_PB_norm, sB_on_PB_norm, asym_PA, asym_PB, directional_score, interpretation
+```
+
+### 24.5 Honest power discussion
+
+For Sheu 3hr the test gives 4 observations (2 cascade pairs × 2 informative
+cell types). Each is a single number, not a sample of cells, so per-cell
+inflation is not a concern — but inference across observations is
+underpowered. The honest claim is "consistent positive directional_score
+pattern across the four pre-registered observations, with magnitudes
++1.7 to +2.4". A donor-level extension (computing directional_score per
+pseudo-donor then signed-rank across the 3-4 donors) is the next rigour
+upgrade.
+
+### 24.6 What this methodology does NOT do
+
+- Does not prove causation. Asymmetric signature is consistent with cascade
+  direction but interventional data (e.g., IFNAR knockout) is needed to
+  close the causal loop.
+- Does not generalise to overlapping pathway pairs (NF-κB family
+  cascades). Failure mode is silent — directional_score just drifts to ~0.
+- Does not work on stimuli without a defined `P_A` (cytokine cascades
+  where the upstream stimulus engages JAK-STAT directly, e.g., IL-2 → ?
+  in Oesinghaus, have no obvious upstream P_A to use).
