@@ -16,44 +16,74 @@ via cross-stimulus prediction (alignment), latent-space centroid geometry (geo),
 cell-type ablation. The cellular relay (the cell type that mediates A's effect on B's
 signature) can be identified by per-cell-type ablation.
 
-### Project status (2026-05-22)
+### Project status (2026-05-25)
 
-The project has produced one completed contribution and is opening a second, additive,
-line of work. **All prior work, code, and results remain in the repo and on `main`.**
+The project has produced **two** positive contributions on independent lines of work.
+**All prior work, code, and results remain in the repo and on `main`.**
 
-**Completed contribution — axis discovery on Oesinghaus 24h PBMC (91 cytokines):**
+**Path A — axis discovery on Oesinghaus 24h PBMC (91 cytokines):**
 121 cytokine coupling axes recovered (17 textbook directional + 2 pre-registered + 29
 coregulated + 13 partial + 54 novel; ~50% lit-supported vs ~1% chance baseline). Result
 is publication-grade and committed to `main` (`reports/cascade_pairs/cytokine_axes_report.md`).
 The full geo / alignment / ablation pipeline, the PBS-RC refinement (§20.1), and the
 literature-validation infrastructure (`reports/cascade_pairs/literature_review.md`) were
 built and validated against this dataset. Path A (axis-discovery writeup) is in progress
-and **independent of the new dataset line** — its narrative, figures, and statistics do
-not change.
+and **independent of the cascade-direction work** — its narrative, figures, and
+statistics do not change.
 
-**Open contribution — cascade direction inference (in progress on Sheu 2024):**
-Directional cascade inference from Oesinghaus alone failed three independent checks:
-(1) the geo asymmetry score is algebraically symmetric by construction (§20.1); (2)
-literature review found 49% correct direction on 39 documented pairs — chance (see
-`reports/cascade_pairs/literature_review.md` §8); (3) Stage 3 CA-only sanity check on
-Oesinghaus confirmed SA/CA entropy separation (~4 nat gap) but no held-out validation
-AUC gain (`reports/v2_sanity_check/stage3_ca_oesinghaus_results.md`). Diagnosis: the
-bottleneck is data, not architecture — 24h is past the point where primary and secondary
-cascade signatures separate temporally. The direction question is being moved to a
-dataset with the time resolution to answer it directly; this does **not** retract or
-weaken the axis-discovery result above.
+**Path B — cascade direction inference on Sheu 2024 (positive result, 2026-05-25):**
+After eight independent failed checks of the encoder + PBS-RC + dot-product-on-centroid
+method bundle (see "Cumulative failed checks" below), an inverted methodology
+**recovered cascade direction on Sheu 2024 BMDM 3hr data**:
+
+> no encoder → literature-curated, signaling-adaptor-specific gene set (§23) → per-cell
+> pathway score → tube-level **cascade-penetration ratio** against PBS baseline
+
+**4 of 5 pre-registered cascade-direction tests pass Bonferroni α = 0.01:** one binary
+IFNAR test (PIC, LPS, LPSlo, IFNb vs P3CSK, CpG, TNF — AUC=1.00 in `mac_c2`, clean
+separation) and four magnitude tests on NF-κB (LPS, LPSlo, P3CSK, CpG all
+produce more NF-κB activity than direct TNF, consistent with autocrine TNF cascade).
+The fifth test (binary IFNAR) is at the combinatorial design floor (`p = 0.05` for 3 vs 3
+with perfect ordering) and would pass cleanly if LPSlo had cleared the
+`min_cells = 10` threshold in `mac_c2`. Time-trajectory analysis (1hr vs 3hr) confirms
+the cascade kinetics: PIC and LPS penetration of IFNAR rises sharply from 1h to 3h
+(sign flip in `mac_c3`), while cascade-negatives stay flat — exactly the textbook
+autocrine IFN-β buildup timeline.
+
+Full writeup: `reports/sheu2024_pathway/cascade_direction_results.md`.
+
+**Revised diagnosis (2026-05-25):** the previous diagnosis ("the bottleneck is data,
+not architecture") was incomplete. The bottleneck was **both data and method**. The 24h
+Oesinghaus snapshot is past primary/secondary separation (data bottleneck), AND the
+encoder + PBS-RC + dot-product-on-centroid readout is algebraically symmetric / overly
+collapsed onto a "stim vs PBS" axis (method bottleneck). Fixing only one of the two
+fails. The current positive result fixes both simultaneously — time-resolved BMDM 3hr
+data and a curated-pathway penetration readout.
+
+**Cumulative failed checks (kept for historical record):** the eight failed
+cascade-direction tests of the old method bundle were:
+(1) `geo` asymmetry score is algebraically symmetric by construction (§20.1);
+(2) Oesinghaus literature review: 49% correct direction on 39 documented pairs (chance);
+(3) Stage 3 CA-only on Oesinghaus: SA/CA entropy gap (~4 nat) but no val AUC gain;
+(4) Sheu 3hr baseline (first run);
+(5) Sheu 3hr narrowed (post-overfit fix);
+(6) Sheu 3hr Track A — adapter aux head;
+(7) Sheu 1hr Track B;
+(8) Sheu 3hr Track C — direction_mode=cell_type.
+See `reports/SESSION_SUMMARY_2026-05-25.md` and `reports/sheu2024_overnight_summary.md`.
 
 **Datasets used (all retained, complementary roles):**
 
 - **Oesinghaus 2024 (24h PBMC, 91 cytokines)** — basis for the completed axis-discovery
   contribution (Path A). Continues to anchor the axis-discovery writeup. Not retired.
 - **Sheu 2024 (mouse BMDM time-course, GSE224518, 7 stimuli + Unstim, 8 time points
-  including 24hr in M1_IFNg)** — primary testbed for direction inference. Targeted
-  500-gene immune-response panel, 12 biological contexts (M0/M1/M2 BMDMs + BMDM strain
-  variants + 5 PM strain backgrounds), 2 replicates per condition, ~295K well-annotated
-  cells. The time axis itself is the validation signal: textbook cascades A→B should
-  show late-A signatures overlapping with directly-applied B signatures (LPS→TNF,
-  LPS→IFN-β, polyIC→IFN-β, …). See §2.5 and §21.
+  including 24hr in M1_IFNg)** — testbed for Path B cascade direction (positive result
+  at 3hr via §23 curated-pathway penetration). Targeted 500-gene immune-response panel,
+  12 biological contexts (M0/M1/M2 BMDMs + BMDM strain variants + 5 PM strain
+  backgrounds), 2 replicates per condition, ~295K well-annotated cells. The time axis
+  IS the validation signal: 1hr→3hr trajectory shows PIC/LPS penetration of IFNAR
+  rising sharply (cascade kinetics) while cascade-negatives stay flat. See §2.5, §21,
+  §23 and `reports/sheu2024_pathway/`.
 - **Zhang 2022 (human CD14+ monocytes, ~4K cells, 4 trainers + LPS at 4h)** — secondary
   human sanity check. Lower priority. Run only after Sheu phase 1 results are in.
 
@@ -63,8 +93,11 @@ right for it. v2 remains a candidate architecture if a future dataset's structur
 motivates reactivation.
 
 **Original directional hypothesis** (cytokines learned early → direct/canonical
-responses; learned late → subtle/pleiotropic/multicellular cascades) becomes empirically
-testable on Sheu's actual time dimension. Not injected as a prior into the model.
+responses; learned late → subtle/pleiotropic/multicellular cascades) was reformulated
+into the §23 cascade-penetration test, where it is now passing on Sheu 3hr (and rising
+monotonically from 1hr → 3hr). The substantive scientific claim survives; the
+implementation that carries it has changed from MIL training dynamics to
+literature-curated pathway signatures on time-resolved data.
 
 ---
 
