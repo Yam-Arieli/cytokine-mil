@@ -36,11 +36,13 @@ from cytokine_mil.analysis.pathway_signatures import (
     STIMULUS_PRIMARY_PATHWAYS,
     IFNAR_POSITIVE_STIMULI,
     IFNAR_NEGATIVE_STIMULI,
+    PREREG_CASCADE_TESTS,
     resolve_all_pathways,
     pick_control_genes,
     compute_all_penetrations,
     ifnar_binary_test,
     magnitude_cascade_test,
+    run_preregistered_battery,
 )
 from cytokine_mil.analysis.pathway_plots import (
     plot_penetration_heatmap,
@@ -121,7 +123,7 @@ def main() -> None:
     else:
         print("  (no rows — IFNAR_induced pathway not resolved or no cell types)")
 
-    # 5) Magnitude test for LPS -> TNF on NF-κB
+    # 5) Magnitude test for LPS -> TNF on NF-κB (back-compat per-cell-type table)
     print("\n[test] LPS > TNF > PBS on NFkB_canonical (cascade magnitude check)", flush=True)
     mag = magnitude_cascade_test(penetration_df, "NFkB_canonical", "LPS", "TNF")
     mag.to_csv(out_dir / "magnitude_lps_tnf.csv", index=False)
@@ -129,6 +131,24 @@ def main() -> None:
         print(mag.to_string(index=False))
     else:
         print("  (NFkB_canonical pathway not resolved)")
+
+    # 5b) Pre-registered battery (5 tests: 1 binary IFNAR + 4 magnitude NFkB)
+    print("\n[battery] running pre-registered cascade test battery "
+          f"({len(PREREG_CASCADE_TESTS)} tests, Bonferroni α={0.05/len(PREREG_CASCADE_TESTS):.4f})",
+          flush=True)
+    battery = run_preregistered_battery(
+        cells_by_pair, resolved, penetration_df,
+        alpha=0.05, min_cells=args.min_cells,
+    )
+    battery["summary"].to_csv(out_dir / "preregistered_battery_summary.csv", index=False)
+    if not battery["magnitude_per_test"].empty:
+        battery["magnitude_per_test"].to_csv(out_dir / "magnitude_per_test.csv", index=False)
+    print("\n[battery] summary:")
+    print(battery["summary"].to_string(index=False))
+    n_pass_alpha = int(battery["summary"]["pass_alpha"].sum())
+    n_pass_bonf = int(battery["summary"]["pass_bonferroni"].sum())
+    print(f"\n[battery] {n_pass_alpha}/{len(battery['summary'])} tests pass α=0.05")
+    print(f"[battery] {n_pass_bonf}/{len(battery['summary'])} tests pass Bonferroni α=0.05/{len(PREREG_CASCADE_TESTS)}")
 
     # 6) Plots
     print("\n[plot] penetration heatmap, per-pathway strip plots, binary summary", flush=True)

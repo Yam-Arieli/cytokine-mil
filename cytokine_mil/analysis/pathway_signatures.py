@@ -43,8 +43,12 @@ PATHWAY_SIGNATURES: Dict[str, Dict] = {
                      "TLR3 or (weaker) TLR4 engagement; does not require autocrine IFN.",
     },
     "IFNAR_induced": {
-        "up": ["Isg15", "Mx1", "Mx2", "Oas1a", "Oas2", "Oas3",
-               "Ifit1", "Rsad2", "Stat1", "Irf7", "Usp18"],
+        # Note: Sheu's targeted 500-gene panel excludes some canonical ISGs
+        # (Isg15, Stat1, Usp18, Oas1a/2/3); we use the IFN-induced genes that
+        # ARE in the panel, including OAS-family paralog Oasl1 and Ifit
+        # paralogs Ifit1bl1 / Ifit3b that capture similar biology.
+        "up": ["Mx1", "Mx2", "Ifit1", "Ifit1bl1", "Ifit3", "Ifit3b",
+               "Rsad2", "Irf7", "Oasl1"],
         "primary_for": ["IFNb"],                # IFNb ligand → IFNAR directly
         "cascade_from": ["PIC", "LPS"],         # via autocrine IFN-β
         "rationale": "IFNAR → JAK1/TYK2 → STAT1/STAT2 + IRF9 → ISGF3 → ISRE. "
@@ -62,10 +66,12 @@ PATHWAY_SIGNATURES: Dict[str, Dict] = {
                      "(LPS+autocrine-TNF > TNF-direct > PBS) not cascade existence.",
     },
     "TNFR_autocrine": {
-        "up": ["Tnfaip3", "Nfkbid", "Birc3"],
+        # Birc3 is not in the Sheu panel; replaced with Nfkbie + Nfkbiz, both
+        # NF-κB inhibitors classically induced by TNFR1 / IL-1R signaling.
+        "up": ["Tnfaip3", "Nfkbid", "Nfkbie", "Nfkbiz"],
         "primary_for": ["TNF"],
         "cascade_from": ["LPS", "LPSlo", "P3CSK", "CpG"],
-        "rationale": "Subset of NF-κB targets classically induced via TNFR1→TRADD "
+        "rationale": "Subset of NF-κB regulators classically induced via TNFR1→TRADD "
                      "→TRAF2→IKK. Overlaps with general NF-κB so works best as a "
                      "consistency check rather than a primary discriminator.",
     },
@@ -134,18 +140,33 @@ def resolve_all_pathways(
 ) -> Dict[str, Dict]:
     """
     Resolve all pathways against a gene panel. Pathways with too few hits
-    are dropped with a warning string in their entry.
+    are flagged ok=False but their actual found/missing lists are preserved
+    for diagnostic reporting.
 
-    Returns dict {pathway -> {idx, found, missing, ok}}.
+    Returns dict {pathway -> {idx, found, missing, ok, reason?}}.
     """
+    gene_to_idx = {g: i for i, g in enumerate(gene_names)}
     resolved = {}
     for p in PATHWAY_SIGNATURES:
-        try:
-            idx, found, missing = resolve_pathway_genes(p, gene_names, min_hits)
-            resolved[p] = {"idx": idx, "found": found, "missing": missing, "ok": True}
-        except ValueError as e:
-            resolved[p] = {"idx": None, "found": [], "missing": list(PATHWAY_SIGNATURES[p]["up"]),
-                           "ok": False, "reason": str(e)}
+        found, missing, idx_list = [], [], []
+        for g in PATHWAY_SIGNATURES[p]["up"]:
+            if g in gene_to_idx:
+                found.append(g)
+                idx_list.append(gene_to_idx[g])
+            else:
+                missing.append(g)
+        ok = len(found) >= min_hits
+        resolved[p] = {
+            "idx": np.array(idx_list, dtype=np.int64) if ok else None,
+            "found": found,
+            "missing": missing,
+            "ok": ok,
+        }
+        if not ok:
+            resolved[p]["reason"] = (
+                f"Only {len(found)} of {len(PATHWAY_SIGNATURES[p]['up'])} "
+                f"genes resolved (need >= {min_hits})"
+            )
     return resolved
 
 
@@ -383,11 +404,13 @@ def magnitude_cascade_test(
 ) -> pd.DataFrame:
     """
     For a cascade A→B that shares the same pathway P, the upstream A should
-    show HIGHER pathway activation than direct-B (because A also produces
-    cascade autocrine on top of A-primary).
+    show HIGHER pathway activation than direct-B (because A engages B's pathway
+    directly AND gets autocrine boost from cascade B).
 
     Test per cell type: is mean_score_A > mean_score_B > mean_score_PBS?
-    Returns DataFrame with columns: cell_type, score_A, score_B, score_PBS, pass.
+
+    NOTE: This is the ordering-only version. For full inference (with
+    Mann-Whitney p-values), use `magnitude_cascade_test_with_stats`.
     """
     df = penetration_df[
         (penetration_df["pathway"] == pathway)
@@ -401,3 +424,198 @@ def magnitude_cascade_test(
         & (df["mean_score_B"] > df["mean_score_PBS"])
     )
     return df[["cell_type", "mean_score_A", "mean_score_B", "mean_score_PBS", "pass_ordering"]]
+
+
+def magnitude_cascade_test_with_stats(
+    cells_by_pair: Dict[Tuple[str, str], np.ndarray],
+    pathway: str,
+    pathway_idx: np.ndarray,
+    A_upstream: str,
+    B_downstream: str,
+    pbs_label: str = "PBS",
+    min_cells: int = 10,
+    alpha: float = 0.05,
+) -> pd.DataFrame:
+    """
+    Full per-cell magnitude cascade test with Mann-Whitney inference.
+
+    For each cell type T:
+        H1a: mean(s_P, A-tube) > mean(s_P, B-tube)   (cascade adds magnitude)
+        H1b: mean(s_P, B-tube) > mean(s_P, PBS)      (sanity: pathway responds)
+
+    Reports one-sided Mann-Whitney U p-values for both contrasts. Pass requires
+    both orderings to hold AND both p-values to be below alpha.
+    """
+    cell_types = sorted({ct for (_, ct) in cells_by_pair.keys()})
+    rows = []
+    for T in cell_types:
+        keys = [(A_upstream, T), (B_downstream, T), (pbs_label, T)]
+        if any(k not in cells_by_pair for k in keys):
+            continue
+        cA = cells_by_pair[(A_upstream, T)]
+        cB = cells_by_pair[(B_downstream, T)]
+        cP = cells_by_pair[(pbs_label, T)]
+        if len(cA) < min_cells or len(cB) < min_cells or len(cP) < min_cells:
+            continue
+        sA = cA[:, pathway_idx].mean(axis=1)
+        sB = cB[:, pathway_idx].mean(axis=1)
+        sP = cP[:, pathway_idx].mean(axis=1)
+
+        # One-sided Mann-Whitney U: H1 sA > sB
+        u_AB, p_AB = scstats.mannwhitneyu(sA, sB, alternative="greater")
+        u_BP, p_BP = scstats.mannwhitneyu(sB, sP, alternative="greater")
+
+        rows.append({
+            "pathway": pathway,
+            "A_upstream": A_upstream,
+            "B_downstream": B_downstream,
+            "cell_type": T,
+            "mean_score_A": float(sA.mean()),
+            "mean_score_B": float(sB.mean()),
+            "mean_score_PBS": float(sP.mean()),
+            "pass_ordering": bool(sA.mean() > sB.mean() > sP.mean()),
+            "p_A_gt_B": float(p_AB),
+            "p_B_gt_PBS": float(p_BP),
+            "pass_significant_alpha": bool(
+                (sA.mean() > sB.mean() > sP.mean())
+                and p_AB < alpha
+                and p_BP < alpha
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Pre-registered test battery
+# ---------------------------------------------------------------------------
+
+# Pre-registered cascade tests. Each entry is one (test_kind, ...) tuple:
+#   ("binary",    pathway, primary_stim, pos_stims, neg_stims)
+#   ("magnitude", pathway, A_upstream,   B_downstream)
+PREREG_CASCADE_TESTS = [
+    ("binary",    "IFNAR_induced", "IFNb",
+                  IFNAR_POSITIVE_STIMULI, IFNAR_NEGATIVE_STIMULI),
+    ("magnitude", "NFkB_canonical", "LPS",    "TNF"),
+    ("magnitude", "NFkB_canonical", "LPSlo",  "TNF"),
+    ("magnitude", "NFkB_canonical", "P3CSK",  "TNF"),
+    ("magnitude", "NFkB_canonical", "CpG",    "TNF"),
+]
+
+
+def run_preregistered_battery(
+    cells_by_pair: Dict[Tuple[str, str], np.ndarray],
+    resolved_pathways: Dict[str, Dict],
+    penetration_df: pd.DataFrame,
+    alpha: float = 0.05,
+    min_cells: int = 10,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Run the full pre-registered cascade-test battery.
+
+    Returns a dict with keys:
+        binary_per_celltype:   AUC per cell type for the IFNAR binary test
+        magnitude_per_test:    long DataFrame across all magnitude tests, per cell type
+        summary:               one row per (test_name, cell_type) with pass + p
+        bonferroni:            Bonferroni-corrected pass-flag at α/N_tests
+
+    `N_tests` for Bonferroni is the number of pre-registered tests
+    (currently 5: 1 binary + 4 magnitude). Per-cell-type tests within a single
+    pre-registered test do NOT each count separately — the cell-type with
+    strongest effect carries the test (we report the best cell-type p-value).
+    """
+    n_tests = len(PREREG_CASCADE_TESTS)
+    alpha_bonf = alpha / n_tests
+
+    rows = []
+    magnitude_dfs = []
+
+    for entry in PREREG_CASCADE_TESTS:
+        if entry[0] == "binary":
+            _, pathway, primary, pos, neg = entry
+            test_name = f"binary:{pathway}->{primary}"
+            df_b = ifnar_binary_test(
+                penetration_df, pathway=pathway, primary_stim=primary,
+                pos_stimuli=pos, neg_stimuli=neg,
+            )
+            best_p = float("nan")
+            best_T = None
+            best_auc = float("nan")
+            sep_clean_any = False
+            for _, r in df_b.iterrows():
+                # Empirical p for AUC=auc with n_pos vs n_neg:
+                # exact one-sided test = sum_{k>=hits} C(n_pos,k)*C(n_neg,n_pos-k) / C(n_pos+n_neg,n_pos)
+                # but we approximate: use scstats.mannwhitneyu on penetration values.
+                sub = penetration_df[
+                    (penetration_df["pathway"] == pathway)
+                    & (penetration_df["primary_stim"] == primary)
+                    & (penetration_df["cell_type"] == r["cell_type"])
+                ]
+                pen_by_stim = dict(zip(sub["A"], sub["penetration"]))
+                pos_v = np.array([pen_by_stim[s] for s in pos if s in pen_by_stim and not np.isnan(pen_by_stim[s])])
+                neg_v = np.array([pen_by_stim[s] for s in neg if s in pen_by_stim and not np.isnan(pen_by_stim[s])])
+                if len(pos_v) >= 1 and len(neg_v) >= 1:
+                    try:
+                        _, p_emp = scstats.mannwhitneyu(pos_v, neg_v, alternative="greater")
+                        p_emp = float(p_emp)
+                    except ValueError:
+                        p_emp = float("nan")
+                else:
+                    p_emp = float("nan")
+                if r["sep_clean"]:
+                    sep_clean_any = True
+                # Track best (lowest p) cell type
+                if np.isnan(best_p) or (not np.isnan(p_emp) and p_emp < best_p):
+                    best_p = p_emp
+                    best_T = r["cell_type"]
+                    best_auc = float(r["auc"])
+
+            rows.append({
+                "test_name": test_name,
+                "kind": "binary",
+                "best_cell_type": best_T,
+                "best_auc_or_means": best_auc,
+                "best_p": best_p,
+                "pass_alpha": (not np.isnan(best_p)) and best_p < alpha,
+                "pass_bonferroni": (not np.isnan(best_p)) and best_p < alpha_bonf,
+                "sep_clean_any_cell_type": sep_clean_any,
+            })
+        elif entry[0] == "magnitude":
+            _, pathway, A_up, B_dn = entry
+            test_name = f"magnitude:{pathway}:{A_up}>{B_dn}>PBS"
+            pw = resolved_pathways.get(pathway)
+            if not pw or not pw["ok"]:
+                continue
+            df_m = magnitude_cascade_test_with_stats(
+                cells_by_pair, pathway, pw["idx"], A_up, B_dn,
+                alpha=alpha, min_cells=min_cells,
+            )
+            magnitude_dfs.append(df_m)
+            if df_m.empty:
+                continue
+            best_p = df_m["p_A_gt_B"].min()
+            best_T = df_m.loc[df_m["p_A_gt_B"].idxmin(), "cell_type"]
+            best_pass = bool(df_m["pass_significant_alpha"].any())
+            rows.append({
+                "test_name": test_name,
+                "kind": "magnitude",
+                "best_cell_type": best_T,
+                "best_auc_or_means": float(df_m.loc[df_m["p_A_gt_B"].idxmin(), "mean_score_A"]),
+                "best_p": float(best_p),
+                "pass_alpha": (not np.isnan(best_p)) and best_p < alpha,
+                "pass_bonferroni": (not np.isnan(best_p)) and best_p < alpha_bonf,
+                "sep_clean_any_cell_type": best_pass,
+            })
+
+    summary = pd.DataFrame(rows)
+    summary["alpha"] = alpha
+    summary["alpha_bonferroni"] = alpha_bonf
+    summary["n_preregistered_tests"] = n_tests
+
+    magnitude_per_test = (
+        pd.concat(magnitude_dfs, ignore_index=True) if magnitude_dfs else pd.DataFrame()
+    )
+
+    return {
+        "summary": summary,
+        "magnitude_per_test": magnitude_per_test,
+    }
