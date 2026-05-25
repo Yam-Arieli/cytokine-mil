@@ -17,8 +17,11 @@ export MPLCONFIGDIR=/cs/labs/mornitzan/yam.arieli/.matplotlib_cache
 /cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python \
     scripts/run_pathway_trajectory.py \
     --trajectory \
+        "0.5hr:0.5:/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_0_5hr_pseudotubes/manifest.json" \
         "1hr:1.0:/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_1hr_pseudotubes/manifest.json" \
         "3hr:3.0:/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json" \
-    --out_dir /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/sheu_pathway_trajectory \
+        "5hr:5.0:/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_5hr_pseudotubes/manifest.json" \
+        "8hr:8.0:/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_8hr_pseudotubes/manifest.json" \
+    --out_dir /cs/labs/mornitzan/yam.arieli/cytokine-mil/results/sheu_pathway_trajectory_full \
     --min_cells 10 \
     --seed 42
