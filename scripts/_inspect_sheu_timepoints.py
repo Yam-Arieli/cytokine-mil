@@ -1,52 +1,41 @@
 #!/usr/bin/env python3
-"""One-off inspector: list Sheu raw h5ads and report unique time_point values
-and per-(time_point × pseudo_donor) cell counts. Helps decide which time
-points are worth building extra pseudotubes for."""
+"""Inspect the Sheu samptag metadata file for available time points and
+cells-per-(time_point × pseudo_donor) before building extra pseudotubes."""
+import gzip
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
-import scanpy as sc
+import pandas as pd
 
-RAW_DIR = Path("/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024/raw")
-PSEUDO_DIR = Path("/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes")
+META = Path("/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024/raw"
+            "/GSE224518_samptag.all_cellannotations_metadata.txt.gz")
 
-# 1. List raw h5ads
-print(">>> Candidate raw h5ads under", RAW_DIR)
-candidates = sorted(RAW_DIR.rglob("*.h5ad"))
-for c in candidates[:8]:
-    print(f"  {c}  ({c.stat().st_size/1e6:.1f} MB)")
-if not candidates:
-    print("  (none — raw is probably .csv/.csv.gz, not h5ad)")
+print(f">>> Reading {META} ...")
+df = pd.read_csv(str(META), sep="\t", compression="gzip")
+print(f"  shape={df.shape}")
+print(f"  columns: {list(df.columns)}")
 
-# 2. Try the manifest path's raw — look at one of the pseudotubes' provenance
-print("\n>>> Existing Sheu pseudotube directories:")
-for p in Path("/cs/labs/mornitzan/yam.arieli/datasets").glob("Sheu*"):
-    print(f"  {p}")
+for c in ("timept", "time_point", "type", "cytokine", "pseudo_donor", "batch"):
+    if c in df.columns:
+        u = sorted(df[c].dropna().astype(str).unique())
+        print(f"  unique {c} ({len(u)}): {u[:30]}")
 
-# 3. If a "processed" master h5ad exists, scan it for time points
-master_candidates = [
-    RAW_DIR / "Sheu2024_processed.h5ad",
-    RAW_DIR / "Sheu2024_master.h5ad",
-] + candidates
-for cand in master_candidates:
-    if cand.exists() and cand.stat().st_size > 1e6:
-        print(f"\n>>> Loading {cand} ...")
-        try:
-            adata = sc.read_h5ad(str(cand))
-            print(f"  shape={adata.shape}")
-            print(f"  obs cols: {list(adata.obs.columns)}")
-            if "time_point" in adata.obs.columns:
-                tp = adata.obs["time_point"].astype(str)
-                print(f"  time_point unique: {sorted(tp.unique())}")
-                if "pseudo_donor" in adata.obs.columns:
-                    cross = adata.obs.groupby(["time_point", "pseudo_donor"]).size().unstack(fill_value=0)
-                    print(f"\n  cells per (time_point × pseudo_donor):")
-                    print(cross.to_string())
-                if "cytokine" in adata.obs.columns:
-                    cross2 = adata.obs.groupby(["time_point", "cytokine"]).size().unstack(fill_value=0)
-                    print(f"\n  cells per (time_point × cytokine):")
-                    print(cross2.to_string())
-        except Exception as e:
-            print(f"  ERROR loading: {e}")
-        break
+# Build a "pseudo_donor" column the same way the adapter does (type × replicate)
+# so the cross-tab matches the actual training distribution.
+type_col = "type" if "type" in df.columns else None
+rep_col = next((c for c in df.columns if c.lower() in ("replicate", "rep")), None)
+if type_col and rep_col:
+    df["pseudo_donor"] = df[type_col].astype(str) + "_" + df[rep_col].astype(str)
+
+# Identify time-point column
+tp_col = "timept" if "timept" in df.columns else ("time_point" if "time_point" in df.columns else None)
+cyt_col = "stim" if "stim" in df.columns else ("cytokine" if "cytokine" in df.columns else None)
+
+if tp_col and cyt_col:
+    print(f"\n>>> Cells per ({tp_col} × {cyt_col}):")
+    print(df.groupby([tp_col, cyt_col]).size().unstack(fill_value=0).to_string())
+
+if tp_col and "pseudo_donor" in df.columns:
+    print(f"\n>>> Cells per ({tp_col} × pseudo_donor):")
+    print(df.groupby([tp_col, "pseudo_donor"]).size().unstack(fill_value=0).to_string())
