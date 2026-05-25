@@ -91,6 +91,101 @@ STIMULUS_PRIMARY_PATHWAYS: Dict[str, List[str]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Human pathway library for Oesinghaus (PBMC 24h, 91 cytokines, 4000 HVGs).
+# All gene symbols are HUMAN uppercase. The IFNAR_induced signature is much
+# larger here because the 4000-HVG dataset contains the canonical ISGs that
+# were missing from Sheu's targeted 500-gene panel.
+# ---------------------------------------------------------------------------
+
+PATHWAY_SIGNATURES_HUMAN: Dict[str, Dict] = {
+    "IFNAR_induced": {
+        "up": [
+            # Canonical ISGs — should virtually all be in the 4000 HVGs
+            "ISG15", "MX1", "MX2", "OAS1", "OAS2", "OAS3", "OASL",
+            "IFIT1", "IFIT2", "IFIT3", "IFI44", "IFI44L", "IFI27",
+            "RSAD2", "STAT1", "IRF7", "USP18", "ISG20", "BST2",
+            "IFITM1", "IFITM3", "DDX60", "HERC5", "EPSTI1",
+        ],
+        # Cytokines that DIRECTLY engage IFNAR (predicted high penetration).
+        # Auto-matched by substring against actual cytokine names.
+        "primary_patterns": ["IFN-alpha", "IFN-beta", "IFN-α", "IFN-β",
+                              "IFNA", "IFNB", "IFNa1", "IFNb1"],
+        # Other IFN family members that engage STAT1/2 and share many ISGs
+        # downstream (predicted partial penetration — also positives).
+        "extended_positive_patterns": ["IFN-gamma", "IFN-γ", "IFNG",
+                                        "IFN-lambda", "IFN-λ", "IL-29",
+                                        "IL-28", "IFNL"],
+        "rationale": "Direct ISGs induced by type-I/II/III IFN via JAK-STAT.",
+    },
+    "NFkB_canonical": {
+        "up": [
+            "TNF", "IL1B", "IL6", "NFKBIA", "NFKBID", "NFKBIE", "NFKBIZ",
+            "TNFAIP3", "BIRC3", "CXCL1", "CXCL2", "CXCL3", "CCL3", "CCL4",
+            "PTGS2", "CXCL8", "IL8", "ICAM1",
+        ],
+        # Cytokines that strongly activate NF-κB through receptor-proximal signalling.
+        "primary_patterns": ["TNF", "TNF-alpha", "TNF-α", "TNFA",
+                              "IL-1", "IL1A", "IL1B", "IL-1α", "IL-1β"],
+        "rationale": "p65/p50 NF-κB targets. Engaged by TNFR1, IL1R, and several "
+                     "TLR pathways — broad positive set.",
+    },
+}
+
+
+# Validation pseudo-donor convention (Oesinghaus: D2 and D3 are held out per §16).
+OESINGHAUS_VAL_DONORS_DEFAULT = ["Donor2", "Donor3"]
+
+
+def subsample_oesinghaus_manifest(
+    manifest: List[Dict],
+    val_donors: Optional[Sequence[str]] = None,
+    tubes_per_pair: int = 1,
+) -> List[Dict]:
+    """
+    Subsample Oesinghaus manifest (~9100 entries) to train-donors × one tube per
+    (donor, cytokine). Default keeps 1 tube/pair, so the subset has ~910
+    entries (≈91 cytokines × 10 train donors). Excludes val donors entirely.
+
+    Args:
+        manifest: full Oesinghaus manifest list
+        val_donors: donor names to drop entirely (defaults to D2 and D3 per §16)
+        tubes_per_pair: number of tubes per (donor, cytokine) to keep
+
+    Returns:
+        subsampled manifest list (sorted by donor then cytokine then tube_idx)
+    """
+    if val_donors is None:
+        val_donors = OESINGHAUS_VAL_DONORS_DEFAULT
+    val_set = set(val_donors)
+
+    by_pair: Dict[Tuple[str, str], List[Dict]] = defaultdict(list)
+    for e in manifest:
+        if e["donor"] in val_set:
+            continue
+        by_pair[(e["donor"], e["cytokine"])].append(e)
+
+    subset: List[Dict] = []
+    for (d, c), entries in by_pair.items():
+        entries_sorted = sorted(entries, key=lambda x: x.get("tube_idx", 0))
+        subset.extend(entries_sorted[:tubes_per_pair])
+    subset.sort(key=lambda e: (e["donor"], e["cytokine"], e.get("tube_idx", 0)))
+    return subset
+
+
+def match_cytokines_by_patterns(
+    cytokines: Sequence[str],
+    patterns: Sequence[str],
+) -> List[str]:
+    """Substring match (case-insensitive) of cytokine names against pattern list.
+    Returns the actual cytokine names that match any pattern."""
+    pats = [p.lower() for p in patterns]
+    return sorted([
+        c for c in cytokines
+        if any(p in c.lower() for p in pats)
+    ])
+
+
 # Pre-registered cascade-existence binary benchmark for IFNAR_induced
 # (Sheu §21 pairs collapsed to "does this stimulus drive IFN-cascade?").
 IFNAR_POSITIVE_STIMULI = ["PIC", "LPS", "LPSlo", "IFNb"]
@@ -105,9 +200,15 @@ def resolve_pathway_genes(
     pathway: str,
     gene_names: Sequence[str],
     min_hits: int = 3,
+    signatures: Optional[Dict[str, Dict]] = None,
 ) -> Tuple[np.ndarray, List[str], List[str]]:
     """
     Map a curated pathway to integer column indices in the loaded data.
+
+    Args:
+        signatures: dict to look up the pathway from. Defaults to
+            PATHWAY_SIGNATURES (mouse, Sheu). Pass PATHWAY_SIGNATURES_HUMAN
+            for Oesinghaus.
 
     Returns:
         idx: int array of column indices present in gene_names
@@ -116,10 +217,12 @@ def resolve_pathway_genes(
     Raises:
         ValueError if fewer than `min_hits` curated genes are present.
     """
+    if signatures is None:
+        signatures = PATHWAY_SIGNATURES
     gene_to_idx = {g: i for i, g in enumerate(gene_names)}
     found, missing = [], []
     idx_list = []
-    for g in PATHWAY_SIGNATURES[pathway]["up"]:
+    for g in signatures[pathway]["up"]:
         if g in gene_to_idx:
             found.append(g)
             idx_list.append(gene_to_idx[g])
@@ -128,7 +231,7 @@ def resolve_pathway_genes(
     if len(found) < min_hits:
         raise ValueError(
             f"Pathway {pathway}: only {len(found)} of "
-            f"{len(PATHWAY_SIGNATURES[pathway]['up'])} curated genes "
+            f"{len(signatures[pathway]['up'])} curated genes "
             f"present in panel (need >= {min_hits}). Missing: {missing}"
         )
     return np.array(idx_list, dtype=np.int64), found, missing
@@ -137,19 +240,27 @@ def resolve_pathway_genes(
 def resolve_all_pathways(
     gene_names: Sequence[str],
     min_hits: int = 3,
+    signatures: Optional[Dict[str, Dict]] = None,
 ) -> Dict[str, Dict]:
     """
     Resolve all pathways against a gene panel. Pathways with too few hits
     are flagged ok=False but their actual found/missing lists are preserved
     for diagnostic reporting.
 
+    Args:
+        signatures: dict of {pathway -> {"up": [genes], ...}}. Defaults to
+            PATHWAY_SIGNATURES (mouse). Pass PATHWAY_SIGNATURES_HUMAN for
+            Oesinghaus.
+
     Returns dict {pathway -> {idx, found, missing, ok, reason?}}.
     """
+    if signatures is None:
+        signatures = PATHWAY_SIGNATURES
     gene_to_idx = {g: i for i, g in enumerate(gene_names)}
     resolved = {}
-    for p in PATHWAY_SIGNATURES:
+    for p in signatures:
         found, missing, idx_list = [], [], []
-        for g in PATHWAY_SIGNATURES[p]["up"]:
+        for g in signatures[p]["up"]:
             if g in gene_to_idx:
                 found.append(g)
                 idx_list.append(gene_to_idx[g])
@@ -164,7 +275,7 @@ def resolve_all_pathways(
         }
         if not ok:
             resolved[p]["reason"] = (
-                f"Only {len(found)} of {len(PATHWAY_SIGNATURES[p]['up'])} "
+                f"Only {len(found)} of {len(signatures[p]['up'])} "
                 f"genes resolved (need >= {min_hits})"
             )
     return resolved
