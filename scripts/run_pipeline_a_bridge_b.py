@@ -101,6 +101,17 @@ def _parse_args():
                    help="Min cells per (cyt, cell_type) for §24")
     p.add_argument("--max_tubes_per_cytokine", type=int, default=None,
                    help="Cap on tubes per cytokine (smoke runs)")
+    p.add_argument("--magnitude_threshold", type=float, default=0.01,
+                   help="Min |median directional_score| to be a non-AMBIGUOUS call")
+    p.add_argument("--strong_consensus", type=float, default=0.75,
+                   help="Min sign_consensus for a STRONG call")
+    p.add_argument("--weak_consensus", type=float, default=0.50,
+                   help="Min sign_consensus for a WEAK call")
+    p.add_argument("--n_null_perms", type=int, default=100,
+                   help="Per-axis null permutations with random S_A/S_B "
+                        "drawn from HVGs disjoint from observed S_X union. "
+                        "Set 0 to disable.")
+    p.add_argument("--null_seed", type=int, default=42)
     p.add_argument(
         "--restrict_axes_to", nargs="+", default=None,
         help="If given, only run the axes whose unordered pair lex-key matches "
@@ -238,6 +249,51 @@ def _expected_sign(lit_dir: str) -> Optional[int]:
     return None
 
 
+def _aggregate_directional(
+    df_per_celltype: pd.DataFrame,
+) -> Tuple[float, float, int, int]:
+    """
+    Aggregate §24 per-cell-type DataFrame into (median, sign_consensus, n_pos, n_neg).
+
+    median       : median of directional_score across cell types (robust to one-
+                   cell-type domination, which we found broke the mean for
+                   IL-6/TNF-α on Oesinghaus — CD14 Mono produced score=+0.115
+                   while everything else was near zero).
+    consensus    : fraction of cell types whose sign matches the median's sign.
+                   For median=0 we report the fraction of exactly-zero rows.
+    """
+    if df_per_celltype.empty:
+        return float("nan"), float("nan"), 0, 0
+    scores = df_per_celltype["directional_score"].to_numpy(dtype=np.float64)
+    med = float(np.median(scores))
+    n_pos = int(np.sum(scores > 0))
+    n_neg = int(np.sum(scores < 0))
+    n_total = len(scores)
+    if med == 0.0:
+        consensus = float(np.sum(scores == 0) / n_total)
+    elif med > 0:
+        consensus = float(n_pos / n_total)
+    else:
+        consensus = float(n_neg / n_total)
+    return med, consensus, n_pos, n_neg
+
+
+def _classify_call(
+    median: float, consensus: float,
+    magnitude_threshold: float, strong_consensus: float, weak_consensus: float,
+) -> str:
+    """STRONG / WEAK / AMBIGUOUS based on (|median|, consensus)."""
+    if np.isnan(median) or np.isnan(consensus):
+        return "UNDEFINED"
+    if abs(median) < magnitude_threshold:
+        return "AMBIGUOUS"
+    if consensus >= strong_consensus:
+        return "STRONG"
+    if consensus >= weak_consensus:
+        return "WEAK"
+    return "AMBIGUOUS"
+
+
 def _evaluate_one_axis(
     cells_by_pair: Dict[Tuple[str, str], np.ndarray],
     pathway_idx_dict: Dict[str, np.ndarray],
@@ -247,15 +303,13 @@ def _evaluate_one_axis(
     min_cells: int,
 ) -> Dict[str, object]:
     """
-    Runs §24 in both directions and aggregates a per-axis summary.
+    Run §24 once for the axis (A=axis_a, B=axis_b, P_A=axis_a, P_B=axis_b) and
+    aggregate per-cell-type rows into a single (median, consensus) call.
 
-    Returns a dict with:
-        per_celltype_AB    DataFrame (§24 output for A=axis_a, B=axis_b)
-        per_celltype_BA    DataFrame (§24 output for A=axis_b, B=axis_a)
-        overall_score_AB   mean over cell_types of directional_score (AB)
-        overall_score_BA   mean over cell_types of directional_score (BA)
-        antisymmetry_check |overall_score_AB + overall_score_BA|
-                           — should be near 0 if §24 is well-behaved
+    Note on the dropped reverse call: directional_score is mathematically
+    invariant under the simultaneous swap (A↔B, P_A↔P_B), so the previous
+    AB / BA pair was redundant (we verified |AB - BA| == 0 across all 3 axes
+    on jobs 30701212 and 30701234). One forward call is sufficient.
     """
     df_AB = directional_asymmetry_test(
         cells_by_pair=cells_by_pair,
@@ -263,31 +317,67 @@ def _evaluate_one_axis(
         A=axis_a, B=axis_b, P_A=axis_a, P_B=axis_b,
         pbs_label=pbs_label, min_cells=min_cells,
     )
-    df_BA = directional_asymmetry_test(
-        cells_by_pair=cells_by_pair,
-        pathway_idx_dict=pathway_idx_dict,
-        A=axis_b, B=axis_a, P_A=axis_b, P_B=axis_a,
-        pbs_label=pbs_label, min_cells=min_cells,
-    )
-    if not df_AB.empty:
-        overall_AB = float(df_AB["directional_score"].mean())
-    else:
-        overall_AB = float("nan")
-    if not df_BA.empty:
-        overall_BA = float(df_BA["directional_score"].mean())
-    else:
-        overall_BA = float("nan")
-    if np.isnan(overall_AB) or np.isnan(overall_BA):
-        antisymmetry = float("nan")
-    else:
-        antisymmetry = float(abs(overall_AB + overall_BA))
+    med, cons, n_pos, n_neg = _aggregate_directional(df_AB)
     return {
         "per_celltype_AB": df_AB,
-        "per_celltype_BA": df_BA,
-        "overall_score_AB": overall_AB,
-        "overall_score_BA": overall_BA,
-        "antisymmetry_check": antisymmetry,
+        "median_score": med,
+        "sign_consensus": cons,
+        "n_pos_cell_types": n_pos,
+        "n_neg_cell_types": n_neg,
     }
+
+
+def _evaluate_null_for_axis(
+    cells_by_pair: Dict[Tuple[str, str], np.ndarray],
+    n_genes: int,
+    excluded_indices: set,
+    size_A: int,
+    size_B: int,
+    axis_a: str,
+    axis_b: str,
+    pbs_label: str,
+    min_cells: int,
+    n_perms: int,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Empirical null distribution under random S_A / S_B of the same sizes,
+    drawn from HVGs disjoint from any observed S_X (excluded_indices).
+
+    Tests whether the DISCOVERED gene sets carry cytokine-specific
+    information: under the null hypothesis "any random gene set of the
+    same size would give a similar median directional_score", the
+    observed |median| should be in the tail of this distribution.
+
+    Returns:
+        null_medians:     (n_perms,) array of per-permutation median scores
+        null_consensuses: (n_perms,) array of per-permutation sign_consensuses
+    """
+    pool = np.array(
+        [i for i in range(n_genes) if i not in excluded_indices],
+        dtype=np.int64,
+    )
+    if len(pool) < max(size_A, size_B):
+        raise ValueError(
+            f"Null pool too small: {len(pool)} non-S_X HVGs available, "
+            f"need {max(size_A, size_B)} for random gene sets."
+        )
+    medians = np.full(n_perms, np.nan, dtype=np.float64)
+    consensuses = np.full(n_perms, np.nan, dtype=np.float64)
+    for k in range(n_perms):
+        idx_A = rng.choice(pool, size=size_A, replace=False)
+        idx_B = rng.choice(pool, size=size_B, replace=False)
+        null_pathway_dict = {axis_a: idx_A, axis_b: idx_B}
+        df = directional_asymmetry_test(
+            cells_by_pair=cells_by_pair,
+            pathway_idx_dict=null_pathway_dict,
+            A=axis_a, B=axis_b, P_A=axis_a, P_B=axis_b,
+            pbs_label=pbs_label, min_cells=min_cells,
+        )
+        med, cons, _, _ = _aggregate_directional(df)
+        medians[k] = med
+        consensuses[k] = cons
+    return medians, consensuses
 
 
 # ----------------------------------------------------------------------------
@@ -374,16 +464,26 @@ def main() -> None:
     _log("           pathway_idx_dict sizes: "
          + ", ".join(f"{c}={len(pathway_idx_dict[c])}" for c in sorted(needed_cyts)))
 
-    # ---- Step 4+5: per-axis test ----
+    # ---- Step 4+5: per-axis test (with null control) ----
     per_celltype_path = output_dir / "per_celltype.csv"
     per_axis_path = output_dir / "per_axis_summary.csv"
+
+    # Build the union of observed S_X indices for null sampling
+    excluded_indices: set = set()
+    for cyt_indices in pathway_idx_dict.values():
+        excluded_indices.update(cyt_indices.tolist())
+    n_genes_total = len(gene_names)
+    n_genes_pool = n_genes_total - len(excluded_indices)
+    _log(f"\n[null setup] excluded {len(excluded_indices)} / {n_genes_total} "
+         f"HVGs (union of observed S_X across all cytokines); "
+         f"null pool size = {n_genes_pool}")
+
+    null_rng = np.random.default_rng(args.null_seed)
 
     per_axis_rows: List[Dict[str, object]] = []
     n_ground_truth = 0
     n_correct = 0
     n_axes = len(axes_df)
-
-    # Stream incremental writes — write headers on first write, then append.
     first_celltype_write = True
 
     for i, (_, row) in enumerate(axes_df.iterrows(), start=1):
@@ -400,34 +500,37 @@ def main() -> None:
             res = _evaluate_one_axis(
                 cells_by_pair=cells_by_pair,
                 pathway_idx_dict=pathway_idx_dict,
-                axis_a=A,
-                axis_b=B,
+                axis_a=A, axis_b=B,
                 pbs_label=args.pbs_label,
                 min_cells=args.min_cells,
             )
         except Exception as e:  # defensive — one bad axis does not kill the run
-            _log(f"           ERROR: {type(e).__name__}: {e}")
+            _log(f"           ERROR (observed): {type(e).__name__}: {e}")
             _log(traceback.format_exc())
             per_axis_rows.append({
                 "axis_a": A, "axis_b": B,
                 "literature_status": lit_status,
                 "literature_direction": lit_dir,
                 "expected_sign": expected,
-                "overall_score_AB": float("nan"),
-                "overall_score_BA": float("nan"),
-                "antisymmetry_check": float("nan"),
+                "median_score": float("nan"),
+                "sign_consensus": float("nan"),
+                "n_pos_cell_types": 0,
+                "n_neg_cell_types": 0,
+                "classification": "UNDEFINED",
+                "null_n_perms": 0,
+                "null_mean": float("nan"),
+                "null_q025": float("nan"),
+                "null_q975": float("nan"),
+                "p_emp_two_sided": float("nan"),
                 "sign_correct": False,
-                "error": f"{type(e).__name__}: {e}",
+                "error": f"observed: {type(e).__name__}: {e}",
             })
             continue
 
-        # Tag per-cell-type rows with the axis identity for the long CSV
-        for direction_tag, sub_df in (("AB", res["per_celltype_AB"]),
-                                      ("BA", res["per_celltype_BA"])):
-            if sub_df.empty:
-                continue
+        # Stream per-cell-type rows (forward only)
+        sub_df = res["per_celltype_AB"]
+        if not sub_df.empty:
             sub = sub_df.copy()
-            sub.insert(0, "direction_tag", direction_tag)
             sub.insert(0, "axis_b", B)
             sub.insert(0, "axis_a", A)
             sub.insert(0, "literature_direction", lit_dir)
@@ -440,37 +543,94 @@ def main() -> None:
             )
             first_celltype_write = False
 
-        # Per-axis summary row
-        score_AB = res["overall_score_AB"]
+        med = res["median_score"]
+        cons = res["sign_consensus"]
+        classification = _classify_call(
+            med, cons,
+            magnitude_threshold=args.magnitude_threshold,
+            strong_consensus=args.strong_consensus,
+            weak_consensus=args.weak_consensus,
+        )
+
+        # ---- Null control (random S_A, S_B) ----
+        null_mean = float("nan")
+        null_q025 = float("nan")
+        null_q975 = float("nan")
+        p_emp = float("nan")
+        null_n_actual = 0
+        null_err = ""
+        if args.n_null_perms > 0 and not np.isnan(med):
+            try:
+                size_A = len(pathway_idx_dict[A])
+                size_B = len(pathway_idx_dict[B])
+                null_medians, _ = _evaluate_null_for_axis(
+                    cells_by_pair=cells_by_pair,
+                    n_genes=n_genes_total,
+                    excluded_indices=excluded_indices,
+                    size_A=size_A, size_B=size_B,
+                    axis_a=A, axis_b=B,
+                    pbs_label=args.pbs_label,
+                    min_cells=args.min_cells,
+                    n_perms=args.n_null_perms,
+                    rng=null_rng,
+                )
+                valid_null = null_medians[~np.isnan(null_medians)]
+                null_n_actual = int(len(valid_null))
+                if null_n_actual > 0:
+                    null_mean = float(np.mean(valid_null))
+                    null_q025 = float(np.quantile(valid_null, 0.025))
+                    null_q975 = float(np.quantile(valid_null, 0.975))
+                    p_emp = float(np.mean(np.abs(valid_null) >= abs(med)))
+            except Exception as e:
+                null_err = f"null: {type(e).__name__}: {e}"
+                _log(f"           NULL ERROR: {null_err}")
+
         sign_correct = False
-        if expected is not None and not np.isnan(score_AB):
-            sign_correct = (np.sign(score_AB) == expected)
-            n_ground_truth += 1
-            if sign_correct:
-                n_correct += 1
+        if expected is not None and not np.isnan(med):
+            sign_correct = (np.sign(med) == expected)
+            # Only count toward ground-truth accuracy if the call is not AMBIGUOUS
+            if classification != "AMBIGUOUS":
+                n_ground_truth += 1
+                if sign_correct:
+                    n_correct += 1
+
         per_axis_rows.append({
             "axis_a": A, "axis_b": B,
             "literature_status": lit_status,
             "literature_direction": lit_dir,
             "expected_sign": expected,
-            "overall_score_AB": score_AB,
-            "overall_score_BA": res["overall_score_BA"],
-            "antisymmetry_check": res["antisymmetry_check"],
+            "median_score": med,
+            "sign_consensus": cons,
+            "n_pos_cell_types": res["n_pos_cell_types"],
+            "n_neg_cell_types": res["n_neg_cell_types"],
+            "classification": classification,
+            "null_n_perms": null_n_actual,
+            "null_mean": null_mean,
+            "null_q025": null_q025,
+            "null_q975": null_q975,
+            "p_emp_two_sided": p_emp,
             "sign_correct": sign_correct,
-            "error": "",
+            "error": null_err,
         })
 
-        # Incremental write of per_axis_summary
         pd.DataFrame(per_axis_rows).to_csv(per_axis_path, index=False)
 
         elapsed = time.time() - t_axis
-        _log(f"           overall_score_AB={score_AB:+.4f}  "
-             f"overall_score_BA={res['overall_score_BA']:+.4f}  "
-             f"antisymmetry={res['antisymmetry_check']:.4f}  "
+        _log(f"           median={med:+.4f}  consensus={cons:.2f}  "
+             f"({res['n_pos_cell_types']}+/{res['n_neg_cell_types']}−)  "
+             f"call={classification}  null_p={p_emp:.3f}  "
              f"sign_correct={sign_correct}  elapsed={elapsed:.1f}s  DONE")
 
     # ---- verdict.md ----
     per_axis_df = pd.DataFrame(per_axis_rows)
+    n_strong = int((per_axis_df["classification"] == "STRONG").sum())
+    n_weak = int((per_axis_df["classification"] == "WEAK").sum())
+    n_ambig = int((per_axis_df["classification"] == "AMBIGUOUS").sum())
+    n_null_pass = int(
+        ((per_axis_df["p_emp_two_sided"] < 0.05)
+         & (per_axis_df["classification"] != "AMBIGUOUS")).sum()
+    )
+
     verdict_lines = [
         "# Pipeline A → Bridge → Path B — directional verdict",
         "",
@@ -480,14 +640,16 @@ def main() -> None:
         f"**evaluable axes:**      {len(per_axis_df)}",
         f"**include_donors:**      {args.include_donors}",
         f"**exclude_donors:**      {args.exclude_donors}",
+        f"**n_null_perms:**        {args.n_null_perms}",
         "",
-        f"## Ground-truth sign accuracy: **{n_correct} / {n_ground_truth}**",
+        "## Headline",
         "",
-        ("All ground-truth axes correct → method works on this dataset; queue "
-         "training of 16 missing cytokines for full 19-axis validation."
-         if n_ground_truth > 0 and n_correct == n_ground_truth
-         else "Some ground-truth axes failed → inspect per_celltype.csv for "
-              "the failing axis and decide between debug vs. methodology change."),
+        f"- Classification breakdown: **{n_strong} STRONG, {n_weak} WEAK, "
+        f"{n_ambig} AMBIGUOUS** (out of {len(per_axis_df)})",
+        f"- Ground-truth sign accuracy (non-AMBIGUOUS only): "
+        f"**{n_correct} / {n_ground_truth}**",
+        f"- Non-AMBIGUOUS axes also passing the null control (p_emp < 0.05): "
+        f"**{n_null_pass}**",
         "",
         "## Per-axis summary",
         "",
@@ -496,26 +658,46 @@ def main() -> None:
             columns=[
                 "axis_a", "axis_b", "literature_direction",
                 "expected_sign",
-                "overall_score_AB", "overall_score_BA",
-                "antisymmetry_check", "sign_correct",
+                "median_score", "sign_consensus",
+                "n_pos_cell_types", "n_neg_cell_types",
+                "classification",
+                "null_mean", "null_q025", "null_q975", "p_emp_two_sided",
+                "sign_correct",
             ],
         ),
         "",
-        "## Notes",
+        "## Definitions",
         "",
-        "- `overall_score_AB` is the mean of `directional_score` across cell types "
-        "with §24 called as `(A=axis_a, B=axis_b, P_A=axis_a, P_B=axis_b)`.",
-        "- `overall_score_BA` is the reverse call; |AB + BA| (antisymmetry_check) "
-        "should be near 0 if §24 is well-behaved.",
-        "- `expected_sign`: +1 if literature says a_to_b, -1 if b_to_a, blank for "
-        "NOVEL / no_lit axes (those are reported for inspection but not scored).",
+        "- `median_score`: median of `directional_score` across cell types "
+        "(robust to one-cell-type domination; mean aggregation gave misleading "
+        "results on jobs 30701212/30701234 where CD14 Mono's strong direct "
+        "effect dominated the IL-6/TNF-α axis).",
+        "- `sign_consensus`: fraction of cell types whose `directional_score` "
+        "matches the sign of `median_score`.",
+        "- `classification`:",
+        f"    - **STRONG**: `|median| ≥ {args.magnitude_threshold}` AND "
+        f"`consensus ≥ {args.strong_consensus}`",
+        f"    - **WEAK**: `|median| ≥ {args.magnitude_threshold}` AND "
+        f"`{args.weak_consensus} ≤ consensus < {args.strong_consensus}`",
+        f"    - **AMBIGUOUS**: otherwise (`|median| < {args.magnitude_threshold}` "
+        f"OR `consensus < {args.weak_consensus}`) — not scored against literature",
+        "- Null control: `null_mean/q025/q975` and `p_emp_two_sided` come from "
+        f"{args.n_null_perms} random (S_A, S_B) gene-set pairs of the same sizes, "
+        "drawn from HVGs disjoint from any observed S_X. Tests whether the "
+        "DISCOVERED S_X carries cytokine-specific information vs being any "
+        "random subset of activation-responsive HVGs (the trap §23 Audit 2 "
+        "caught on Sheu).",
+        "- `expected_sign`: +1 if literature says a_to_b, −1 if b_to_a, blank "
+        "for NOVEL / no_lit axes.",
+        "- `sign_correct`: only counted when `classification != AMBIGUOUS`.",
         f"- §24 min_cells = {args.min_cells}.  S_X size = top_{args.top_n} genes "
         "per cytokine from `binary_ig.parquet`.",
     ]
     (output_dir / "verdict.md").write_text("\n".join(verdict_lines) + "\n")
     _log(f"\nWrote {output_dir / 'verdict.md'}")
-    _log(f"\nOVERALL: {n_correct} / {n_ground_truth} ground-truth axes "
-         f"have sign matching literature.")
+    _log(f"\nOVERALL: {n_strong} STRONG / {n_weak} WEAK / {n_ambig} AMBIGUOUS; "
+         f"ground-truth sign accuracy {n_correct}/{n_ground_truth} on "
+         f"non-AMBIGUOUS calls; {n_null_pass} pass null p < 0.05")
 
 
 if __name__ == "__main__":
