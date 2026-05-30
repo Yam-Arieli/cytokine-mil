@@ -49,12 +49,12 @@ from cytokine_mil.models.instance_encoder import InstanceEncoder  # noqa: E402
 
 
 # ----------------------------------------------------------------------------
-# HPs of the binary models (must match train_oesinghaus_binary.py)
+# Binary model HPs are inferred from the saved state dict at load time. This
+# makes the probe robust to whichever HP configuration was used at training
+# time (the train_oesinghaus_binary.py script has CLI overrides and was used
+# both with default narrow HPs and with the "wide" overrides — embed_dim=512,
+# hidden_dims=(512,512), attention_hidden_dim=128 — for different runs).
 # ----------------------------------------------------------------------------
-
-BINARY_EMBED_DIM = 32
-BINARY_HIDDEN_DIMS = (128, 64)
-BINARY_ATTENTION_HIDDEN_DIM = 16
 
 # The cytokines we want to probe — must overlap with trained binary models in
 # the run dir. Will skip any that don't have a model_<safe_target>.pt file.
@@ -140,19 +140,53 @@ def _safe_filename(cytokine: str) -> str:
     return cytokine.replace("/", "_")
 
 
-def _build_binary_mil(n_input_genes: int, n_cell_types: int, device) -> CytokineABMIL:
-    """Construct an untrained binary MIL with the HPs of train_oesinghaus_binary.py."""
+def _infer_hps_from_state_dict(state: dict, n_input_genes: int) -> Dict[str, int]:
+    """
+    Infer encoder + attention HPs from saved weight shapes:
+      input_proj.0.weight       (h0, input_dim)       -> h0
+      down1.fc1.weight          (h1, h0)               -> h1
+      down2.fc1.weight          (embed_dim, h1)        -> embed_dim
+      attention.V.weight        (att_hidden, embed)    -> attention_hidden_dim
+      encoder.cell_type_head.W  (n_cell_types, embed)  -> n_cell_types
+      classifier.classifier.W   (n_classes, embed)     -> n_classes
+    """
+    h0 = state["encoder.input_proj.0.weight"].shape[0]
+    h1 = state["encoder.down1.fc1.weight"].shape[0]
+    embed_dim = state["encoder.down2.fc1.weight"].shape[0]
+    att_hidden = state["attention.V.weight"].shape[0]
+    n_cell_types = state["encoder.cell_type_head.weight"].shape[0]
+    n_classes = state["classifier.classifier.weight"].shape[0]
+
+    # Sanity-check input dim
+    saved_input_dim = state["encoder.input_proj.0.weight"].shape[1]
+    if saved_input_dim != n_input_genes:
+        raise ValueError(
+            f"Saved model expects input_dim={saved_input_dim} but HVG list has "
+            f"{n_input_genes} genes. Wrong --hvg_path?"
+        )
+    return {
+        "h0": h0, "h1": h1, "embed_dim": embed_dim,
+        "attention_hidden_dim": att_hidden,
+        "n_cell_types": n_cell_types, "n_classes": n_classes,
+    }
+
+
+def _build_binary_mil(
+    n_input_genes: int, n_cell_types: int, embed_dim: int,
+    hidden_dims: Tuple[int, int], attention_hidden_dim: int, device,
+) -> CytokineABMIL:
+    """Construct an untrained binary MIL with explicit HPs."""
     encoder = InstanceEncoder(
         input_dim=n_input_genes,
-        embed_dim=BINARY_EMBED_DIM,
+        embed_dim=embed_dim,
         n_cell_types=n_cell_types,
-        hidden_dims=BINARY_HIDDEN_DIMS,
+        hidden_dims=hidden_dims,
     )
     attention = AttentionModule(
-        embed_dim=BINARY_EMBED_DIM,
-        attention_hidden_dim=BINARY_ATTENTION_HIDDEN_DIM,
+        embed_dim=embed_dim,
+        attention_hidden_dim=attention_hidden_dim,
     )
-    classifier = BagClassifier(embed_dim=BINARY_EMBED_DIM, n_classes=2)
+    classifier = BagClassifier(embed_dim=embed_dim, n_classes=2)
     model = CytokineABMIL(encoder, attention, classifier, encoder_frozen=True)
     model.to(device).eval()
     for p in model.parameters():
@@ -161,10 +195,17 @@ def _build_binary_mil(n_input_genes: int, n_cell_types: int, device) -> Cytokine
 
 
 def _load_binary_model(model_pt_path: Path, n_input_genes: int, device) -> CytokineABMIL:
-    """Load a binary AB-MIL state dict into a freshly constructed model."""
+    """Load a binary AB-MIL state dict, inferring HPs from saved shapes."""
     state = torch.load(model_pt_path, map_location="cpu", weights_only=False)
-    n_cell_types = state["encoder.cell_type_head.weight"].shape[0]
-    model = _build_binary_mil(n_input_genes, n_cell_types, device)
+    hps = _infer_hps_from_state_dict(state, n_input_genes)
+    model = _build_binary_mil(
+        n_input_genes=n_input_genes,
+        n_cell_types=hps["n_cell_types"],
+        embed_dim=hps["embed_dim"],
+        hidden_dims=(hps["h0"], hps["h1"]),
+        attention_hidden_dim=hps["attention_hidden_dim"],
+        device=device,
+    )
     model.load_state_dict(state)
     model.to(device).eval()
     for p in model.parameters():
