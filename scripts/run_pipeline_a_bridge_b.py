@@ -106,6 +106,17 @@ def _parse_args():
         help="If given, only run the axes whose unordered pair lex-key matches "
              "any of the supplied strings of form 'A__B' (sorted lex). Smoke flag.",
     )
+    p.add_argument(
+        "--include_donors", nargs="+", default=None,
+        help="If set, only manifest entries from these donors are loaded. "
+             "Mutually exclusive with --exclude_donors.",
+    )
+    p.add_argument(
+        "--exclude_donors", nargs="+", default=None,
+        help="If set, manifest entries from these donors are dropped. "
+             "Use --exclude_donors Donor2 Donor3 to restrict §24 to the "
+             "10 train donors (consistent with the binary MIL training split).",
+    )
     return p.parse_args()
 
 
@@ -313,6 +324,8 @@ def main() -> None:
     _log(f"min_cells:           {args.min_cells}")
     _log(f"max_tubes/cytokine:  {args.max_tubes_per_cytokine}")
     _log(f"restrict_axes_to:    {args.restrict_axes_to}")
+    _log(f"include_donors:      {args.include_donors}")
+    _log(f"exclude_donors:      {args.exclude_donors}")
     _log("")
 
     # ---- Step 2: load S_X^binary per cytokine ----
@@ -351,6 +364,8 @@ def main() -> None:
         hvg_path=args.hvg_path,
         max_tubes_per_cytokine=args.max_tubes_per_cytokine,
         pbs_label=args.pbs_label,
+        include_donors=args.include_donors,
+        exclude_donors=args.exclude_donors,
     )
     _log(f"           loaded {len(cells_by_pair)} (cyt, cell_type) groups, "
          f"{len(gene_names)} genes  elapsed={time.time()-t0:.1f}s")
@@ -463,6 +478,8 @@ def main() -> None:
         f"**binary_ig_parquet:**   `{args.binary_ig_parquet}`",
         f"**top_n:**               {args.top_n}",
         f"**evaluable axes:**      {len(per_axis_df)}",
+        f"**include_donors:**      {args.include_donors}",
+        f"**exclude_donors:**      {args.exclude_donors}",
         "",
         f"## Ground-truth sign accuracy: **{n_correct} / {n_ground_truth}**",
         "",

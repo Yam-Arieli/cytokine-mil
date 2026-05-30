@@ -41,6 +41,8 @@ def load_oesinghaus_cells_by_pair(
     hvg_path: str,
     max_tubes_per_cytokine: Optional[int] = None,
     pbs_label: str = "PBS",
+    include_donors: Optional[Sequence[str]] = None,
+    exclude_donors: Optional[Sequence[str]] = None,
 ) -> Tuple[Dict[Tuple[str, str], np.ndarray], List[str]]:
     """
     Load Oesinghaus pseudotubes restricted to a cytokine subset, pooled by
@@ -56,6 +58,13 @@ def load_oesinghaus_cells_by_pair(
                        entries per cytokine (after manifest's own ordering).
                        Useful for smoke tests.
         pbs_label:     Control class name in the manifest (default "PBS").
+        include_donors: If set, only manifest entries whose donor is in this
+                       list are kept. Mutually exclusive with exclude_donors
+                       (exclude_donors overrides if both given).
+        exclude_donors: If set, manifest entries whose donor is in this list
+                       are dropped. Useful for "use train donors only"
+                       (exclude_donors=["Donor2","Donor3"]) to keep §24
+                       consistent with the binary models' training split.
 
     Returns:
         cells_by_pair: ``{(cytokine, cell_type) -> (N_cells, G_hvgs) float32 array}``.
@@ -75,16 +84,31 @@ def load_oesinghaus_cells_by_pair(
     if not isinstance(gene_names, list) or not gene_names:
         raise ValueError(f"HVG file {hvg_path} is not a non-empty JSON list.")
 
-    # ---- Filter manifest down to the cytokine subset ----
+    # ---- Filter manifest down to the cytokine subset (+ optional donor filter) ----
     with open(manifest_path) as f:
         full_manifest = json.load(f)
 
     keep_cyt = set(cytokines) | {pbs_label}
+
+    # Resolve donor inclusion/exclusion to a single positive include set.
+    available_donors = sorted({e.get("donor") for e in full_manifest if e.get("donor")})
+    if exclude_donors:
+        donor_include_set: Optional[set] = {
+            d for d in available_donors if d not in set(exclude_donors)
+        }
+    elif include_donors:
+        donor_include_set = set(include_donors)
+    else:
+        donor_include_set = None  # keep all donors
+
     per_cyt_count: Dict[str, int] = {c: 0 for c in keep_cyt}
     filtered: List[dict] = []
     for entry in full_manifest:
         cyt = entry.get("cytokine")
         if cyt not in keep_cyt:
+            continue
+        if (donor_include_set is not None
+                and entry.get("donor") not in donor_include_set):
             continue
         if max_tubes_per_cytokine is not None:
             if per_cyt_count[cyt] >= max_tubes_per_cytokine:
@@ -111,11 +135,14 @@ def load_oesinghaus_cells_by_pair(
         json.dump(filtered, fh)
 
     # ---- Reuse the generic loader ----
+    # We already filtered by donor at the manifest level above, so pass
+    # donors=None to load_phase1_cells (its donor filter would apply the
+    # same constraint redundantly).
     cells_by_pair, resolved_genes = load_phase1_cells(
         manifest_path=str(tmp_manifest_path),
         gene_names=gene_names,
         time_filter=None,        # Oesinghaus is 24h-only, no time field
-        donors=None,             # pool across all donors
+        donors=None,
     )
 
     # The loader returns resolved_genes from the first tube it reads; align to
