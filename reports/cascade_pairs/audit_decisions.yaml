@@ -1,0 +1,854 @@
+# Audit decisions for the 53 evaluable Oesinghaus axes.
+# One block per axis; both a_to_b and b_to_a directions scored.
+# Source evidence: reports/cascade_pairs/audit_digest.csv
+# Decision rules: see /Users/yam/.claude/plans/no-job-is-running-glittery-eagle.md
+
+audits:
+  - axis: ["CD30L", "IL-17A"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "CD30 stimulation directly induces IL-17 production in human cells"
+      n_citations_primary: 2
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["CD30L", "IL-27"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no direct evidence found that IL-27 induces CD30L/TNFSF8 expression on monocytes"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["CD30L", "IL-9"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no published evidence IL-9 induces CD30L expression on HSPCs"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["CD30L", "VEGF"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no clear literature was found establishing CD30L→VEGF induction in CD14+ monocytes"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["Decorin", "IL-16"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no published evidence found linking decorin to IL-16 induction"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["Decorin", "IL-27"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no direct evidence was found linking decorin to IL-27 induction"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["Decorin", "IL-6"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "IL-6 directly induces decorin mRNA in human endothelial cells in a dose-dependent manner"
+      n_citations_primary: 1
+      n_citations_secondary: 0
+      lit_T_immune: false
+    reviewer_action: agree
+  - axis: ["Decorin", "IL-9"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No literature found linking IL-9 to decorin expression in immune cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["Decorin", "VEGF"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "decorin induces VEGF and modulates VEGFR2"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: false
+    b_to_a:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "VEGF participates in decorin down-regulation (autocrine feedback) rather than induction"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["GM-CSF", "IL-17A"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "GM-CSF promotes Th17 cell survival and IL-17 production in autoimmunity"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "the canonical direction is Th17→GM-CSF; the relationship is bidirectional in autoimmune feedback loops"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["GM-CSF", "IL-27"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "IL-27 is a robust SUPPRESSOR of GM-CSF in T cells (STAT1-dependent), well documented in EAE and CNS inflammation"
+      n_citations_primary: 2
+      n_citations_secondary: 0
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["GM-CSF", "TL1A"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "GM-CSF induces TL1A (Tnfsf15) expression in macrophages, demonstrated in intestinal inflammation models"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["GM-CSF", "VEGF"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No literature describes VEGF inducing GM-CSF in CD4 naive T cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-beta", "IFN-gamma"]
+    a_to_b:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "in CD4+ T cells it can suppress IFN-gamma"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-beta", "IFN-omega"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "IFN-beta is not documented as a direct upstream inducer of IFN-omega in CD8 T cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-beta", "IL-2"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "Type-I IFNs (IFN-α/β) act as 'signal 3' on CD8 T cells; IFN-α subtypes induce significantly higher frequencies of IL-2-expressing CD8+ T cells"
+      n_citations_primary: 0
+      n_citations_secondary: 2
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-gamma", "IFN-omega"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IFN-omega specifically enhances cytolytic CD8+ T cell IFN-gamma responses"
+      n_citations_primary: 2
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IFN-gamma", "IL-2"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-2 is well-established to induce IFN-gamma production in CD8+ T cells via STAT5/T-bet signaling"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IFN-lambda1", "IL-27"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No direct evidence found that IFN-lambda1 (IL-29) induces IL-27 in MAIT or other immune cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-lambda1", "IL-6"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-29/IFN-λ1 up-regulates IL-6 production in PBMCs, macrophages, and synovial fibroblasts"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-lambda1", "IL-9"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No published evidence IL-9 induces IFN-λ1 in CD8 T cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-lambda1", "VEGF"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no published evidence found for VEGF induction of IFN-lambda1 (IL-29) in CD8 or any immune cell type"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IFN-omega", "IL-15"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "Type I interferons (including IFN-omega, signaling through the same IFNAR receptor as IFN-alpha/beta) upregulate IL-15 expression in vitro and in vivo"
+      n_citations_primary: 3
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-12", "IL-27"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "IL-12 does not directly induce IL-27 expression"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-12", "IL-6"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no published evidence that IL-12 induces IL-6 production in NKT cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-12", "IL-9"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "IL-12 is listed among cytokines that can increase IL-9 production from CD4+ T cells under certain conditions"
+      n_citations_primary: 1
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-12", "TL1A"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "TL1A does not directly induce IL-12 expression"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-12", "VEGF"]
+    a_to_b:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "the documented cascade is IL-12 inhibiting (not inducing) VEGF"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-13", "IL-27"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "IL-27 is documented to suppress Th2 responses (including IL-13 production)"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-13", "IL-6"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No direct mechanistic study of IL-6 inducing IL-13 transcription in naive CD4 T cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-13", "TL1A"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "TL1A/TNFSF15 drives IL-13 production primarily from ILC2s and Th2/Th9 cells"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-13", "VEGF"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "VEGF induces IL-13-dependent asthma-like phenotype in transgenic mice"
+      n_citations_primary: 3
+      n_citations_secondary: 0
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-15", "IL-2"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R5"
+      quote: "Pre-registered KNOWN_CASCADE"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-15", "IL-9"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no evidence IL-9 induces IL-15 production"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-15", "VEGF"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-15 signaling via JAK-STAT5 drives VEGF-A expression in NK cells"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No published evidence VEGF induces IL-15"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-16", "IL-6"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-16 stimulation of CD14+ CD4+ monocytes/maturing macrophages induces IL-1b, IL-6, IL-15, and TNF-alpha production"
+      n_citations_primary: 1
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-16", "IL-9"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "IL-9 acts on bronchial epithelial cells (BEAS-2B) in vitro to induce the T-cell chemoattractants IL-16 and RANTES"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: false
+    reviewer_action: agree
+  - axis: ["IL-16", "VEGF"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No clear evidence of IL-16 inducing VEGF expression in immune cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-17A", "IL-36-alpha"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-36 (including IL-36alpha) activates Th17 cells and induces IL-17A expression"
+      n_citations_primary: 2
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-27", "IL-35"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "A→B direction (IL-35 inducing IL-27) is not explicitly documented"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-27", "IL-36-alpha"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no published evidence shows IL-27 induces IL-36α expression"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-27", "IL-6"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "IL-27 has been shown to augment TNF-alpha-induced IL-6 production in epithelial cells"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: false
+    b_to_a:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "the IL-6/IL-27 axis is well-documented bidirectional within the gp130 cytokine family, with both directions reported"
+      n_citations_primary: 1
+      n_citations_secondary: 1
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-27", "IL-9"]
+    a_to_b:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "IL-27 is a well-documented SUPPRESSOR of Th9 differentiation and IL-9 production in naive CD4+ T cells"
+      n_citations_primary: 0
+      n_citations_secondary: 2
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-27", "VEGF"]
+    a_to_b:
+      label: "INHIBITORY"
+      rule_id: "R3"
+      quote: "IL-27 INHIBITS VEGF expression via STAT1 signaling and has documented anti-angiogenic properties"
+      n_citations_primary: 0
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-35", "VEGF"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "Tumor-derived IL-35 promotes VEGF secretion and angiogenesis via STAT3 activation in myeloid cells"
+      n_citations_primary: 3
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-36-alpha", "IL-6"]
+    a_to_b:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "IL-36-alpha induces IL-6 (in fibroblasts and synovial cells, via MyD88/NF-kB)"
+      n_citations_primary: 0
+      n_citations_secondary: 2
+      lit_T_immune: false
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "IL-6 inducing IL-36-alpha is not the documented cascade"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-36-alpha", "IL-9"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-36 signaling (via IL-36R/MyD88/NF-kB) drives Th9 differentiation and IL-9 production in CD4+ T cells"
+      n_citations_primary: 2
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-36-alpha", "TL1A"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "no published evidence IL-36α induces TL1A in NK CD56bright cells"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-36-alpha", "VEGF"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-36 family upregulates VEGFs and VEGFR2/3 in monocyte-rich inflammatory milieus (psoriasis)"
+      n_citations_primary: 2
+      n_citations_secondary: 1
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-6", "TNF-alpha"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_STRONG"
+      rule_id: "R5"
+      quote: "Pre-registered KNOWN_CASCADE"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-6", "VEGF"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-6 is a well-established inducer of VEGF expression via trans-signaling and STAT3 activation"
+      n_citations_primary: 1
+      n_citations_secondary: 2
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree
+  - axis: ["IL-9", "TNF-alpha"]
+    a_to_b:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "(direction not mentioned in summary)"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    b_to_a:
+      label: "POSITIVE_WEAK"
+      rule_id: "R2"
+      quote: "TNF-alpha potently promotes Th9 cell differentiation and IL-9 production through TNFR2-dependent pathways"
+      n_citations_primary: 0
+      n_citations_secondary: 2
+      lit_T_immune: true
+    reviewer_action: agree
+  - axis: ["IL-9", "VEGF"]
+    a_to_b:
+      label: "POSITIVE_STRONG"
+      rule_id: "R1"
+      quote: "IL-9 induces VEGF secretion from mast cells"
+      n_citations_primary: 1
+      n_citations_secondary: 0
+      lit_T_immune: true
+    b_to_a:
+      label: "UNKNOWN"
+      rule_id: "R4"
+      quote: "No evidence VEGF induces IL-9 in monocytes"
+      n_citations_primary: 0
+      n_citations_secondary: 0
+      lit_T_immune: null
+    reviewer_action: agree

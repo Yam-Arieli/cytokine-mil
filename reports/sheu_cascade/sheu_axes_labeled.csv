@@ -1,0 +1,22 @@
+axis_a,axis_b,literature_status,literature_direction,expected_sign,pair_status,benchmark_class,counts_in_benchmark,upstream,original_direction,tag_changed,reason
+CpG,IFNb,NEGATIVE,no_lit,0,NEGATIVE_NO_CASCADE,NEGATIVE,False,,no_lit,False,TLR9 type-I IFN is plasmacytoid-DC restricted; BMDM produce minimal IFN-beta via CpG. No cascade in either direction.
+CpG,LPS,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"Both signal via MyD88->NF-kB (LPS also TRIF); overlapping programs, no clean cascade direction."
+CpG,LPSlo,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"Both MyD88-biased; overlapping NF-kB, no clear directional cascade."
+CpG,P3CSK,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"Both MyD88-only (TLR9, TLR2); same adaptor, parallel — no cascade."
+CpG,PIC,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"CpG=TLR9/MyD88, PIC=TLR3/TRIF — orthogonal adaptors, no cascade link."
+CpG,TNF,NFKB_SHOULD,a_to_b,1,DIRECTIONAL_a_to_b,NFKB_SHOULD,True,CpG,a_to_b,False,TLR9->MyD88->NF-kB->autocrine TNF. CpG upstream. NF-kB and TNFR programs overlap -> precondition risk; expected weaker than IFN cascades.
+IFNb,LPS,IFN_MUST,b_to_a,-1,DIRECTIONAL_b_to_a,IFN_MUST,True,LPS,b_to_a,False,LPS engages the TLR4->TRIF arm -> IRF3 -> IFN-beta. LPS-tubes carry the IFN-beta response (autocrine); IFNb-tubes do not carry the IRF3-direct genes. Upstream = LPS.
+IFNb,LPSlo,IFN_SHOULD,b_to_a,-1,DIRECTIONAL_b_to_a,IFN_SHOULD,True,LPSlo,b_to_a,False,Low-dose LPS still triggers TLR4->TRIF->IRF3->IFN-beta; the direction (LPSlo upstream) is unambiguous though IFN-beta induction is weaker than full LPS.
+IFNb,P3CSK,NEGATIVE,no_lit,0,NEGATIVE_NO_CASCADE,NEGATIVE,False,,no_lit,False,TLR2 has no TRIF arm -> no IRF3 -> no IFN-beta induction. P3CSK does not drive IFN-beta; IFN-beta does not drive P3CSK biology.
+IFNb,PIC,IFN_MUST,b_to_a,-1,DIRECTIONAL_b_to_a,IFN_MUST,True,PIC,b_to_a,False,polyIC engages TLR3->TRIF->IRF3 directly; IFN-beta is the autocrine product acting via IFNAR. S_PIC (IRF3-direct + ISGs) strictly contains S_IFNb (ISGs) -> cleanest cascade; precondition holds.
+IFNb,TNF,NEGATIVE,no_lit,0,NEGATIVE_NO_CASCADE,NEGATIVE,False,,no_lit,False,No TNF->IFN-beta cross-induction in macrophages; IFNAR and TNFR programs are distinct with no cascade link in BMDM.
+LPS,LPSlo,NEGATIVE,no_lit,0,NEGATIVE_NO_CASCADE,NEGATIVE,False,,no_lit,False,"Same TLR4 receptor at different doses — a dose-response pair, not a cascade. Neither induces the other."
+LPS,P3CSK,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"LPS dual-arm (TRIF+MyD88), P3CSK MyD88-only; LPS engages a broader program but neither induces the other -> not a directional cascade."
+LPS,PIC,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,Different receptors (TLR4 vs TLR3); both reach TRIF but no induction between them in BMDM.
+LPS,TNF,NFKB_SHOULD,a_to_b,1,DIRECTIONAL_a_to_b,NFKB_SHOULD,True,LPS,a_to_b,False,TLR4->MyD88->NF-kB->autocrine TNF loop. LPS upstream. NF-kB/TNFR overlap -> precondition risk (this cascade failed §24 with curated sets).
+LPSlo,P3CSK,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,Both MyD88-biased; coupled by similarity (§22 SHOULD) but no directional cascade between them.
+LPSlo,PIC,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"TLR4 vs TLR3 — separate adaptor axes, no cascade direction."
+LPSlo,TNF,NFKB_SHOULD,a_to_b,1,DIRECTIONAL_a_to_b,NFKB_SHOULD,True,LPSlo,a_to_b,False,Low-dose TLR4->NF-kB->TNF. LPSlo upstream. NF-kB/TNFR overlap -> risk.
+P3CSK,PIC,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"TLR2/MyD88 vs TLR3/TRIF — orthogonal pathways, no cascade."
+P3CSK,TNF,NFKB_SHOULD,a_to_b,1,DIRECTIONAL_a_to_b,NFKB_SHOULD,True,P3CSK,a_to_b,False,TLR2->MyD88->NF-kB->TNF. P3CSK upstream. NF-kB/TNFR overlap -> risk.
+PIC,TNF,UNKNOWN,no_lit,,UNKNOWN,UNKNOWN,False,,no_lit,False,"polyIC can induce TNF via TRIF->NF-kB, but polyIC's dominant output is type-I IFN not TNF; direction ambiguous -> excluded to stay crystal-clear."

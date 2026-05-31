@@ -1,0 +1,151 @@
+# Crystal-clear Sheu cascade-direction labels (TLR receptor biology).
+# Stimulus names = Sheu manifest convention (P3CSK, PIC — not Pam3CSK4/polyIC).
+# expected_sign: +1 a_to_b, -1 b_to_a, 0 negative (no cascade), null unknown.
+labels:
+  - axis: [CpG, IFNb]
+    pair_status: NEGATIVE_NO_CASCADE
+    expected_sign: 0
+    benchmark_class: NEGATIVE
+    counts_in_benchmark: false
+    upstream: null
+    reason: "TLR9 type-I IFN is plasmacytoid-DC restricted; BMDM produce minimal IFN-beta via CpG. No cascade in either direction."
+  - axis: [CpG, LPS]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Both signal via MyD88->NF-kB (LPS also TRIF); overlapping programs, no clean cascade direction."
+  - axis: [CpG, LPSlo]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Both MyD88-biased; overlapping NF-kB, no clear directional cascade."
+  - axis: [CpG, P3CSK]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Both MyD88-only (TLR9, TLR2); same adaptor, parallel — no cascade."
+  - axis: [CpG, PIC]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "CpG=TLR9/MyD88, PIC=TLR3/TRIF — orthogonal adaptors, no cascade link."
+  - axis: [CpG, TNF]
+    pair_status: DIRECTIONAL_a_to_b
+    expected_sign: 1
+    benchmark_class: NFKB_SHOULD
+    counts_in_benchmark: true
+    upstream: CpG
+    reason: "TLR9->MyD88->NF-kB->autocrine TNF. CpG upstream. NF-kB and TNFR programs overlap -> precondition risk; expected weaker than IFN cascades."
+  - axis: [IFNb, LPS]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: IFN_MUST
+    counts_in_benchmark: true
+    upstream: LPS
+    reason: "LPS engages the TLR4->TRIF arm -> IRF3 -> IFN-beta. LPS-tubes carry the IFN-beta response (autocrine); IFNb-tubes do not carry the IRF3-direct genes. Upstream = LPS."
+  - axis: [IFNb, LPSlo]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: IFN_SHOULD
+    counts_in_benchmark: true
+    upstream: LPSlo
+    reason: "Low-dose LPS still triggers TLR4->TRIF->IRF3->IFN-beta; the direction (LPSlo upstream) is unambiguous though IFN-beta induction is weaker than full LPS."
+  - axis: [IFNb, P3CSK]
+    pair_status: NEGATIVE_NO_CASCADE
+    expected_sign: 0
+    benchmark_class: NEGATIVE
+    counts_in_benchmark: false
+    upstream: null
+    reason: "TLR2 has no TRIF arm -> no IRF3 -> no IFN-beta induction. P3CSK does not drive IFN-beta; IFN-beta does not drive P3CSK biology."
+  - axis: [IFNb, PIC]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: IFN_MUST
+    counts_in_benchmark: true
+    upstream: PIC
+    reason: "polyIC engages TLR3->TRIF->IRF3 directly; IFN-beta is the autocrine product acting via IFNAR. S_PIC (IRF3-direct + ISGs) strictly contains S_IFNb (ISGs) -> cleanest cascade; precondition holds."
+  - axis: [IFNb, TNF]
+    pair_status: NEGATIVE_NO_CASCADE
+    expected_sign: 0
+    benchmark_class: NEGATIVE
+    counts_in_benchmark: false
+    upstream: null
+    reason: "No TNF->IFN-beta cross-induction in macrophages; IFNAR and TNFR programs are distinct with no cascade link in BMDM."
+  - axis: [LPS, LPSlo]
+    pair_status: NEGATIVE_NO_CASCADE
+    expected_sign: 0
+    benchmark_class: NEGATIVE
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Same TLR4 receptor at different doses — a dose-response pair, not a cascade. Neither induces the other."
+  - axis: [LPS, P3CSK]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "LPS dual-arm (TRIF+MyD88), P3CSK MyD88-only; LPS engages a broader program but neither induces the other -> not a directional cascade."
+  - axis: [LPS, PIC]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Different receptors (TLR4 vs TLR3); both reach TRIF but no induction between them in BMDM."
+  - axis: [LPS, TNF]
+    pair_status: DIRECTIONAL_a_to_b
+    expected_sign: 1
+    benchmark_class: NFKB_SHOULD
+    counts_in_benchmark: true
+    upstream: LPS
+    reason: "TLR4->MyD88->NF-kB->autocrine TNF loop. LPS upstream. NF-kB/TNFR overlap -> precondition risk (this cascade failed §24 with curated sets)."
+  - axis: [LPSlo, P3CSK]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Both MyD88-biased; coupled by similarity (§22 SHOULD) but no directional cascade between them."
+  - axis: [LPSlo, PIC]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "TLR4 vs TLR3 — separate adaptor axes, no cascade direction."
+  - axis: [LPSlo, TNF]
+    pair_status: DIRECTIONAL_a_to_b
+    expected_sign: 1
+    benchmark_class: NFKB_SHOULD
+    counts_in_benchmark: true
+    upstream: LPSlo
+    reason: "Low-dose TLR4->NF-kB->TNF. LPSlo upstream. NF-kB/TNFR overlap -> risk."
+  - axis: [P3CSK, PIC]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "TLR2/MyD88 vs TLR3/TRIF — orthogonal pathways, no cascade."
+  - axis: [P3CSK, TNF]
+    pair_status: DIRECTIONAL_a_to_b
+    expected_sign: 1
+    benchmark_class: NFKB_SHOULD
+    counts_in_benchmark: true
+    upstream: P3CSK
+    reason: "TLR2->MyD88->NF-kB->TNF. P3CSK upstream. NF-kB/TNFR overlap -> risk."
+  - axis: [PIC, TNF]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: UNKNOWN
+    counts_in_benchmark: false
+    upstream: null
+    reason: "polyIC can induce TNF via TRIF->NF-kB, but polyIC's dominant output is type-I IFN not TNF; direction ambiguous -> excluded to stay crystal-clear."

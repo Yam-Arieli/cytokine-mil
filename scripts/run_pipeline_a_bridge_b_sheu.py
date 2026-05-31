@@ -53,8 +53,8 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from cytokine_mil.analysis.oesinghaus_cell_loader import (  # noqa: E402
-    load_oesinghaus_cells_by_pair,
+from cytokine_mil.analysis.eda_pair_benchmark import (  # noqa: E402
+    load_phase1_cells,
 )
 from cytokine_mil.analysis.pathway_audit import (  # noqa: E402
     directional_asymmetry_test,
@@ -64,22 +64,24 @@ from cytokine_mil.analysis.pathway_audit import (  # noqa: E402
 # ----------------------------------------------------------------------------
 # Defaults (cluster paths — overridable via CLI)
 # ----------------------------------------------------------------------------
+# SHEU variant of run_pipeline_a_bridge_b.py. The ONLY differences vs the
+# Oesinghaus driver are: (1) the cell loader is eda_pair_benchmark.load_phase1_cells
+# (Sheu-native, supports per-time-point filtering); (2) a required --time_filter
+# selects ONE time frame's stimulated cells (single-frame cascade detection —
+# no cross-time leakage). Everything else (cross_asym primary metric, null
+# control, median+consensus) is identical.
 
 AXES_CSV_DEFAULT = (
-    REPO_ROOT / "reports" / "cascade_pairs" / "cytokine_axes.csv"
+    REPO_ROOT / "reports" / "sheu_cascade" / "sheu_axes_labeled.csv"
 )
 BINARY_IG_PARQUET_DEFAULT = (
-    REPO_ROOT
-    / "results"
-    / "gene_dynamics_phase0"
-    / "binary_ig"
-    / "binary_ig.parquet"
+    REPO_ROOT / "results" / "sheu_cascade" / "binary_ig.parquet"
 )
 MANIFEST_PATH_DEFAULT = (
-    "/cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/manifest.json"
+    "/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json"
 )
 HVG_PATH_DEFAULT = (
-    "/cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/hvg_list.json"
+    "/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/hvg_list.json"
 )
 
 
@@ -112,6 +114,13 @@ def _parse_args():
                         "drawn from HVGs disjoint from observed S_X union. "
                         "Set 0 to disable.")
     p.add_argument("--null_seed", type=int, default=42)
+    p.add_argument(
+        "--time_filter", default=None,
+        help="REQUIRED for single-frame detection: stimulated cells whose "
+             "obs.time_point != this value are dropped (e.g. '3hr'). PBS "
+             "(0h-pooled) is always kept in full. Omit only for an already "
+             "time-filtered manifest.",
+    )
     p.add_argument(
         "--restrict_axes_to", nargs="+", default=None,
         help="If given, only run the axes whose unordered pair lex-key matches "
@@ -483,22 +492,29 @@ def main() -> None:
         _log(f"           {row['axis_a']} -- {row['axis_b']}  "
              f"lit={row['literature_status']}  lit_dir={row['literature_direction']}")
 
-    # ---- Step 3: load cells ----
+    # ---- Step 3: load cells (SINGLE TIME FRAME via load_phase1_cells) ----
     needed_cyts = set()
     for _, row in axes_df.iterrows():
         needed_cyts.add(row["axis_a"])
         needed_cyts.add(row["axis_b"])
-    _log(f"\n[step 3] loading Oesinghaus cells for cytokines: "
-         f"{sorted(needed_cyts)} (+ {args.pbs_label})")
+    if args.exclude_donors:
+        _log("FATAL: --exclude_donors is not supported by the Sheu loader; "
+             "use --include_donors instead.")
+        sys.exit(2)
+    with open(args.hvg_path) as fh:
+        hvg_list = json.load(fh)
+    _log(f"\n[step 3] loading Sheu cells (time_filter={args.time_filter}) for "
+         f"cytokines: {sorted(needed_cyts)} (+ {args.pbs_label}); "
+         f"{len(hvg_list)} panel genes")
+    if args.time_filter is None:
+        _log("           WARNING: --time_filter is None; using the manifest as-is. "
+             "For single-frame detection pass --time_filter <T>hr.")
     t0 = time.time()
-    cells_by_pair, gene_names = load_oesinghaus_cells_by_pair(
+    cells_by_pair, gene_names = load_phase1_cells(
         manifest_path=args.manifest_path,
-        cytokines=sorted(needed_cyts),
-        hvg_path=args.hvg_path,
-        max_tubes_per_cytokine=args.max_tubes_per_cytokine,
-        pbs_label=args.pbs_label,
-        include_donors=args.include_donors,
-        exclude_donors=args.exclude_donors,
+        gene_names=hvg_list,
+        time_filter=args.time_filter,
+        donors=args.include_donors,
     )
     _log(f"           loaded {len(cells_by_pair)} (cyt, cell_type) groups, "
          f"{len(gene_names)} genes  elapsed={time.time()-t0:.1f}s")
