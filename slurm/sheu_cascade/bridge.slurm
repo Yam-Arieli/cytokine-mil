@@ -14,11 +14,12 @@ cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 export MPLCONFIGDIR=/cs/labs/mornitzan/yam.arieli/.matplotlib_cache
 PY=/cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python
 
-BIN_RUN=$(ls -dt $RES/$TP/binary/run_* 2>/dev/null | head -1)
-if [ -z "$BIN_RUN" ]; then
-    # train_sheu2024_binary wrote directly to $RES/$TP/binary when --output_dir given
-    BIN_RUN=$RES/$TP/binary
-fi
+# Defensive: default RES if --export didn't propagate it (the original DAG
+# failure: $RES was empty in the bridge job while $TP was set, so BIN_RUN
+# pointed at /$TP/binary and matched no models -> empty --targets -> exit 2).
+RES=${RES:-results/sheu_cascade}
+if [ -z "$TP" ]; then echo "FATAL: TP unset"; exit 3; fi
+BIN_RUN=$RES/$TP/binary
 IGDIR=$RES/$TP/binary_ig
 PBDIR=$RES/$TP/pathB
 EVDIR=$RES/$TP/eval
@@ -26,7 +27,10 @@ mkdir -p "$IGDIR" "$PBDIR" "$EVDIR"
 
 # Stimuli present (from model_*.pt files)
 TARGETS=$(ls "$BIN_RUN"/model_*.pt 2>/dev/null | sed -E 's#.*/model_(.*)\.pt#\1#' | tr '\n' ' ')
-echo "=== Sheu binary IG  TP=$TP  targets: $TARGETS ==="
+echo "=== Sheu binary IG  TP=$TP  BIN_RUN=$BIN_RUN  targets: [$TARGETS] ==="
+if [ -z "$TARGETS" ]; then
+    echo "FATAL: no model_*.pt under $BIN_RUN"; ls -la "$BIN_RUN" 2>&1 | head; exit 3
+fi
 $PY scripts/run_binary_ig_probe.py \
     --binary_run_dir "$BIN_RUN" \
     --output_dir "$IGDIR" \
