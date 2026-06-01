@@ -20,10 +20,15 @@ MAN=${MAN:-/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary_pseudotubes/m
 HVG=${HVG:-/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary_pseudotubes/hvg_list.json}
 
 BIN_RUN_PARENT=$RES/binary
-# train_immune_dictionary_binary.py writes a run_<timestamp>_pid<n> subdir under
-# --output_dir; pick the most recent one (single submission so one subdir).
-BIN_RUN=$(ls -dt "$BIN_RUN_PARENT"/run_* 2>/dev/null | head -1)
-if [ -z "$BIN_RUN" ]; then BIN_RUN=$BIN_RUN_PARENT; fi
+# When binary.slurm passes --output_dir, models are written DIRECTLY under
+# $RES/binary/ (model_*.pt). Prefer that. Only fall back to a run_<ts>/ SUBDIR
+# (trailing slash so the glob matches DIRECTORIES, not the run_log.txt file —
+# the bug that made BIN_RUN=run_log.txt and failed job 30717270).
+BIN_RUN=$BIN_RUN_PARENT
+if ! ls "$BIN_RUN"/model_*.pt >/dev/null 2>&1; then
+    SUB=$(ls -dt "$BIN_RUN_PARENT"/run_*/ 2>/dev/null | head -1)
+    [ -n "$SUB" ] && BIN_RUN=${SUB%/}
+fi
 
 IGDIR=$RES/binary_ig
 PBDIR=$RES/pathB
