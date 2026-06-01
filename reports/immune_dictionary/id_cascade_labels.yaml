@@ -1,0 +1,89 @@
+# Immune Dictionary cascade-direction labels (§26 cross_asym primary metric).
+# Benchmark cytokines (binary models train on these only):
+#   IFN-beta, IFN-gamma, IL-1-beta, IL-10, IL-12, IL-13, IL-15, IL-18, IL-2, IL-4, IL-6, TNF
+# expected_sign: +1 a_to_b, -1 b_to_a, 0 NEGATIVE (no cascade), null UNKNOWN/BIDIR.
+labels:
+  - axis: [IFN-beta, IFN-gamma]
+    pair_status: DIRECTIONAL_a_to_b
+    expected_sign: 1
+    benchmark_class: TYPE1_IFN_PRIME
+    counts_in_benchmark: true
+    upstream: IFN-beta
+    reason: "Type-I IFN primes NK cells for IFN-gamma production (Nguyen 2002 J Immunol, Mack 2011 J Exp Med).  IFN-beta upstream -> expected_sign = +1.  Distinct pathways: IFNAR/STAT1+STAT2 vs IFNGR/STAT1-only (GAS-driven); precondition holds."
+  - axis: [IFN-gamma, IL-12]
+    pair_status: BIDIRECTIONAL
+    expected_sign: null
+    benchmark_class: BIDIRECTIONAL
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Bidirectional positive feedback: IL-12 -> STAT4 -> IFN-gamma in NK/T, and IFN-gamma -> STAT1 -> Il12b in DCs/macs.  Direction is cell-type-dependent in vivo; excluded from signed accuracy per the user pre-reg."
+  - axis: [IFN-gamma, IL-15]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: NK_IFNG
+    counts_in_benchmark: true
+    upstream: IL-15
+    reason: "IL-15 (and IL-2/IL-12/IL-18) drives NK-cell IFN-gamma production in vivo (§2.7 paper-validated NK cascade).  IL-15 upstream -> expected_sign = -1."
+  - axis: [IFN-gamma, IL-18]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: NK_IFNG
+    counts_in_benchmark: true
+    upstream: IL-18
+    reason: "IL-18 synergizes with IL-12 to drive NK-cell IFN-gamma (§2.7 paper-validated cascade).  IL-18 upstream -> expected_sign = -1."
+  - axis: [IFN-gamma, IL-2]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: NK_IFNG
+    counts_in_benchmark: true
+    upstream: IL-2
+    reason: "IL-2 supports NK-cell IFN-gamma production (§2.7 cascade).  IL-2 upstream -> expected_sign = -1."
+  - axis: [IFN-gamma, IL-4]
+    pair_status: NEGATIVE_NO_CASCADE
+    expected_sign: 0
+    benchmark_class: ANTAGONISM
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Th2 cytokine IL-4 actively suppresses Th1 IFN-gamma program (antagonism, not cascade).  No directional cross-induction; |cross_asym| may still be large (signature distinctness), so this pair is DESCRIPTIVE only per §26.4."
+  - axis: [IL-1-beta, IL-6]
+    pair_status: DIRECTIONAL_a_to_b
+    expected_sign: 1
+    benchmark_class: NFKB_STAT3
+    counts_in_benchmark: true
+    upstream: IL-1-beta
+    reason: "IL-1R -> MyD88 -> NF-kB induces IL-6 transcription in monos/macs (NF-kB targets Il6 promoter).  IL-6 then signals STAT3 -> distinct downstream program (gp130/JAK1).  IL-1-beta upstream -> +1.  Pathways distinct: NF-kB vs STAT3 -> precondition holds."
+  - axis: [IL-1-beta, TNF]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: OVERLAP_NFKB
+    counts_in_benchmark: false
+    upstream: null
+    reason: "Both IL-1-beta and TNF signal through NF-kB; programs overlap heavily (§24 known failure mode replicated here).  cross_asym sign is unreliable when S_X collapse onto a shared activation axis.  DESCRIPTIVE only."
+  - axis: [IL-10, IL-12]
+    pair_status: NEGATIVE_NO_CASCADE
+    expected_sign: 0
+    benchmark_class: ANTAGONISM
+    counts_in_benchmark: false
+    upstream: null
+    reason: "IL-10 -> STAT3 actively SUPPRESSES Il12b transcription (Moore 2001 Annu Rev Immunol).  Negative cascade -> any sign of cross_asym would still be biologically interpretable (suppression engages STAT3 targets in macs); DESCRIPTIVE per §26.4."
+  - axis: [IL-13, IL-4]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: OVERLAP_STAT6
+    counts_in_benchmark: false
+    upstream: null
+    reason: "IL-4 and IL-13 both signal via STAT6 through type-II IL-4R (IL-4Ralpha + IL-13Ralpha1).  Programs overlap heavily; sign of cross_asym is unreliable for the same reason as IL-1b/TNF.  DESCRIPTIVE."
+  - axis: [IL-15, IL-2]
+    pair_status: UNKNOWN
+    expected_sign: null
+    benchmark_class: OVERLAP_STAT5
+    counts_in_benchmark: false
+    upstream: null
+    reason: "IL-2 and IL-15 both signal through common gamma-chain (CD132) and STAT5; gene programs overlap heavily.  cross_asym sign unreliable here.  DESCRIPTIVE."
+  - axis: [IL-6, TNF]
+    pair_status: DIRECTIONAL_b_to_a
+    expected_sign: -1
+    benchmark_class: NFKB_STAT3
+    counts_in_benchmark: true
+    upstream: TNF
+    reason: "TNF -> TNFR1 -> NF-kB induces IL-6 transcription in myeloid cells (NF-kB targets Il6 promoter).  IL-6 signals STAT3.  TNF upstream -> expected_sign = -1.  NF-kB vs STAT3 distinct -> precondition holds (in contrast to IL-1b/TNF which share NF-kB)."
