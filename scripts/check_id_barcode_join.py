@@ -27,12 +27,23 @@ DEFAULT_META = str(REPO_ROOT / "reports" / "immune_dictionary" / "scp_metadata.p
 DEFAULT_EXTRACTED = "/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary/raw/extracted"
 
 
-def _geo_barcodes_for_channel(extracted: str, channel: str):
+def _count_matches_streaming(extracted: str, channel: str, want: set):
+    """Stream the GEO barcodes.tsv.gz for `channel` and count how many of the
+    (small) SCP `want` barcodes appear. Streaming avoids materialising the full
+    6.79M raw-whitelist barcode set (which OOMs the ~4 GB gateway node).
+    Returns (n_matched, geo_total) or (None, None) if the lane file is missing.
+    """
     hits = glob.glob(f"{extracted}/*cytokine-samples{channel}-barcodes.tsv.gz")
     if len(hits) != 1:
-        return None
+        return None, None
+    matched = 0
+    total = 0
     with gzip.open(hits[0], "rt") as fh:
-        return {ln.strip().rsplit("-", 1)[0] for ln in fh}
+        for ln in fh:
+            total += 1
+            if ln.strip().rsplit("-", 1)[0] in want:
+                matched += 1
+    return matched, total
 
 
 def main() -> None:
@@ -49,15 +60,14 @@ def main() -> None:
     ok = True
     for ch in channels:
         want = set(meta[meta["channel"] == ch]["barcode16"])
-        geo = _geo_barcodes_for_channel(args.extracted, ch)
-        if geo is None:
+        matched, geo_total = _count_matches_streaming(args.extracted, ch, want)
+        if matched is None:
             print(f"  channel {ch}: GEO barcodes file not found / ambiguous -> FAIL")
             ok = False
             continue
-        matched = len(want & geo)
         frac = matched / max(1, len(want))
         flag = "OK" if frac >= args.min_frac else "LOW"
-        print(f"  channel {ch}: SCP={len(want)} GEO={len(geo)} "
+        print(f"  channel {ch}: SCP={len(want)} GEO={geo_total} "
               f"matched={matched} ({100*frac:.1f}%)  [{flag}]")
         if frac < args.min_frac:
             ok = False
