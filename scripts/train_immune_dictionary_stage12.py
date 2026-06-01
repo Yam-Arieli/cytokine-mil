@@ -62,7 +62,8 @@ HVG_PATH      = "/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary_pseudot
 OUTPUT_BASE   = REPO_ROOT / "results" / "id_cascade"
 
 # Default val mouse fallback (overridden by build_metadata.json if present).
-DEFAULT_VAL_DONORS = ["mouse_3"]
+# Each benchmark cytokine spans rep01/rep02/rep03 -> hold out rep03 as val.
+DEFAULT_VAL_DONORS = ["rep03"]
 
 # HPs matching the production Oesinghaus full multiclass (4000 HVG, ~91 classes).
 # Wider than Sheu (32/16) but not the binary-wide bridge config (512/128).

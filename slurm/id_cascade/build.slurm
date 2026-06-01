@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=id_build
-#SBATCH --mem=32G
+#SBATCH --mem=96G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --partition=short
@@ -34,12 +34,15 @@ else
     echo "[$(date -Iseconds)] Download already extracted; skipping"
 fi
 
-# 2. Run adapter (skipped if manifest already exists; the adapter itself is also
-# idempotent via --skip_existing for individual tubes but we early-return here)
+# 2a. Barcode-join pre-check (fast; fails early if SCP<->GEO mapping is wrong)
+echo "[$(date -Iseconds)] Barcode-join pre-check"
+$PY scripts/check_id_barcode_join.py --channels 01,02,03,04,05 --min_frac 0.5
+
+# 2b. Run adapter (GEO MTX expression + committed SCP per-cell labels)
 if [ -f "$MANIFEST" ]; then
     echo "[$(date -Iseconds)] Manifest already exists at $MANIFEST; skipping adapter"
 else
-    echo "[$(date -Iseconds)] Running ID adapter (4000 HVG, Leiden id_c*, val mouse)"
+    echo "[$(date -Iseconds)] Running ID adapter (GEO expr + SCP labels, 4000 HVG)"
     $PY scripts/build_pseudotubes_immune_dictionary.py
 fi
 

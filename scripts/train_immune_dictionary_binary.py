@@ -72,14 +72,15 @@ OUTPUT_BASE   = REPO_ROOT / "results" / "id_cascade" / "binary"
 CONTROL       = "PBS"
 
 # Fallback val mouse if build_metadata.json absent (the ID adapter writes it).
-DEFAULT_VAL_DONORS = ["mouse_3"]
+# Each benchmark cytokine spans rep01/rep02/rep03 -> hold out rep03 as val.
+DEFAULT_VAL_DONORS = ["rep03"]
 
-# Pre-registered 12 benchmark cytokines.  These MUST match
+# Pre-registered 12 benchmark cytokines.  SCP `cyt` machine names; MUST match
 # scripts/finalize_id_labels.py BENCHMARK_CYTOKINES and the cytokine column
 # strings in the ID manifest (built by build_pseudotubes_immune_dictionary.py).
 BENCHMARK_CYTOKINES = [
-    "IFN-beta", "IFN-gamma", "IL-1-beta", "IL-10", "IL-12", "IL-13",
-    "IL-15", "IL-18", "IL-2", "IL-4", "IL-6", "TNF",
+    "IFNb", "IFNg", "IL1b", "IL10", "IL12", "IL13",
+    "IL15", "IL18", "IL2", "IL4", "IL6", "TNFa",
 ]
 
 # Wide HPs — match the Oes-wide bridge variant used to produce the published
