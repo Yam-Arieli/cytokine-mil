@@ -1277,6 +1277,12 @@ Post-audit primary methodology for cascade-direction inference. Distinct from
 2026-05-26 audit (it reads "activation level" rather than "pathway
 specificity"; see §23 audit note).
 
+> **⚠ SUPERSEDED AS PRIMARY (2026-06) — see §26.** When `P_A`/`P_B` are the cytokines' own
+> *discovered* signatures, `directional_score` (defined below) is algebraically **symmetric**
+> under swapping A↔B, so its *sign cannot encode direction* (it scored 47% ≈ chance on
+> Oesinghaus). The current **primary** direction metric is the **antisymmetric `cross_asym`**
+> (§26). `directional_score` is retained below as a secondary *coupling-distinctness* reference.
+
 ### 24.1 Construction
 
 For a candidate cascade A → B with two transcriptionally distinct paired
@@ -1376,6 +1382,13 @@ pathways that the 500-gene Sheu panel could not separate. The §24 methodology a
 `directional_asymmetry_test` API are unchanged; only the cascade list and pathway
 library are extended.
 
+> **⚠ UPDATED (2026-06): run the ID sweep with the `cross_asym` pipeline (§26), not the
+> curated-pathway `directional_score` sweep described below.** The pre-registered cascade
+> list in §25.2 is retained as the **evaluation benchmark**, re-expressed as directional
+> `cross_asym` labels (alphabetical pair + `expected_sign`; bidirectional pairs such as
+> IL-12↔IFN-γ are excluded from signed accuracy). The §24-style curated sweep is kept as an
+> optional secondary comparison. Full method: §26 + `reports/method_deep_dive/`.
+
 ### 25.1 Pre-registration discipline
 
 The cascade list, P_A / P_B pairing, and predicted directional_score sign per
@@ -1441,3 +1454,58 @@ Verdict written to `reports/immune_dictionary/CASCADE_SWEEP_RESULTS.md`.
 - **Slurm:** `slurm/run_id_pathway_audit.slurm` — single CPU node; no model
   training, no checkpoints; expected runtime < 30 min.
 - **Output dir (cluster):** `results/immune_dictionary_pathway/`
+
+---
+
+## 26. Cross-Engagement Asymmetry (`cross_asym`) — PRIMARY cascade-direction metric (2026-06)
+
+**Status:** supersedes §24's `directional_score` as the primary direction method. Full
+pedagogical reference: **`reports/method_deep_dive/`** (the "method bible", modules M0–M9).
+
+### 26.1 The fix (why `directional_score` failed)
+With per-cytokine **discovered** signatures `S_a, S_b` (so `P_A = S_a`, `P_B = S_b`), the §24
+`directional_score = asym_PA − asym_PB` is **algebraically symmetric** under swapping a↔b:
+`directional_score(b,a) == directional_score(a,b)`. Its sign therefore **cannot encode
+direction** — it measures *coupling distinctness*, not who is upstream (47% ≈ chance on
+Oesinghaus). The antisymmetric **cross-engagement** statistic is the fix:
+
+```
+cross_asym(a,b) = s(a, S_b) − s(b, S_a)        # = sA_PB_norm − sB_PA_norm  (PBS-normalised)
+cross_asym(b,a) = − cross_asym(a,b)             # ANTISYMMETRIC ⇒ the sign encodes direction
+```
+Convention (pairs stored alphabetically, `a < b`): `+` ⇒ a upstream (`a_to_b`); `−` ⇒ b
+upstream (`b_to_a`). Biology: an upstream stimulus's cells carry **both** programs (their own +
+the autocrine downstream one), the downstream ligand's carry mainly their own ⇒
+`s(upstream, S_down) > s(down, S_up)`.
+
+### 26.2 The pipeline (discovered signatures — no curated gene sets)
+1. **Path A** — multiclass AB-MIL → latent geometry (§20) → *which* pairs are coupled
+   (unordered axes). Direction-blind; the standing coupling result.
+2. **Bridge** — per-stimulus **binary** AB-MIL (stimulus vs PBS) + **Integrated Gradients**
+   (PBS-mean baseline, 20-step midpoint) → discovered signature `S_X` = top-50 genes by IG
+   (`scripts/run_binary_ig_probe.py` → `binary_ig.parquet`). The binary models share one
+   frozen Stage-1 encoder so the `S_X` are comparable.
+3. **Path B** — `cross_asym` on `S_X` per cell type, then **median across cell types +
+   sign-consensus**; random-gene-set null. Drivers: `scripts/run_pipeline_a_bridge_b.py`
+   (Oesinghaus) / `…_sheu.py` (Sheu). Eval: `scripts/retally_pipeline_against_audit.py
+   --metric cross_asym` (default).
+
+### 26.3 Results
+- **Oesinghaus 24h PBMC: cross_asym 15/17 = 88%** (vs `directional_score` 8/17 = 47%, same
+  data, same signatures); 34/53 axes beat the random-gene-set null (p<0.05); benchmark
+  label-permutation p = 0.003.
+- **Sheu BMDM single-frame, no cross-time leakage: 5h = 6/7 = 86%** (1h 4/5, 3h 5/7); NF-κB→TNF
+  4/4 at 5h. One consistent failure: **polyIC→IFNb** (S_polyIC is ISG-dominated ≈ S_IFNb).
+
+### 26.4 Honest caveats
+- **cross_asym gives direction, NOT existence.** Negative pairs also have large `|cross_asym|`;
+  deciding *whether* a pair is coupled is Path A's job. Magnitude is not a coupling gate.
+- Small n (17 Oes, 7 Sheu directional axes). The 88% is vs a conservative hand-audit.
+- Requires `S_a ≠ S_b`; when a signature collapses onto the shared program (polyIC ISGs) the
+  sign can flip — a known, mechanistically-understood failure.
+
+### 26.5 Immune Dictionary run
+Run the §26 pipeline on the ID (§2.7) using the §25.2 pre-registered cascades as the
+benchmark, re-expressed as `cross_asym` directional labels (alphabetical pair + `expected_sign`;
+bidirectional pairs such as IL-12↔IFN-γ excluded from signed accuracy). Verdict →
+`reports/immune_dictionary/CASCADE_SWEEP_RESULTS.md`.
