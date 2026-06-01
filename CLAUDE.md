@@ -253,6 +253,34 @@ stratified sampling means the same thing everywhere.
 earliest time point where both M0 reps are present and where secondary responses
 (TNF/IFN feedback) are transcriptionally visible. 0hr cells provide the PBS baseline.
 
+### §2.7 Immune Dictionary — Cui et al., Nature 2024 (3rd dataset, Path B priority)
+
+- **Source:** Cui A. et al., "Dictionary of immune responses to cytokines at single-cell resolution," *Nature* 625, 377–384 (2024). DOI: 10.1038/s41586-023-06816-9.
+- **Data deposit:** Broad Institute Single Cell Portal **SCP2554**. Raw counts + log-normalized counts + metadata + tSNE coordinates freely accessible.
+- **Platform:** 10x Genomics Chromium 3′ v3, whole transcriptome (~31,053 genes).
+- **Raw path (cluster):** `/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary/raw/`
+- **Pseudo-tube path (cluster):** `/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary_pseudotubes/`
+- **Manifest:** `…/ImmuneDictionary_pseudotubes/manifest.json`
+- **HVG list:** `…/ImmuneDictionary_pseudotubes/hvg_list.json` (n_hvgs = 4000, Seurat v3, matching Oesinghaus)
+
+**Active classes:** 86 cytokines + PBS = **87 active classes**. PBS = index 90 (relabeled at adapter boundary so PBS-RC code works unchanged); `n_classes` stays at 91 in code, 87 in practice. Representative cytokines: IL-1β, IL-6, TNF, IFN-α/β/γ, IL-12, IL-2, IL-15, IL-4, IL-10, IL-17, IL-22, IL-23, IL-33, GM-CSF, TGF-β, BAFF, APRIL, FLT3L (plus ~67 others).
+
+**Pseudo-donor scheme:** `mouse_id` directly. 3 C57BL/6 mice per cytokine (in vivo subcutaneous/intradermal injection). Unlike Sheu, no need to pool across replicates — cell counts per mouse per cytokine are adequate.
+
+**Train/val split:** 2 train + 1 val mouse per cytokine. Val mouse selection deferred to runtime: choose the mouse with the most outlier PBS PCA position (by analogy to Oesinghaus D2/D3 selection). Document the chosen val mouse in the manifest comment after build.
+
+**Cell types:** Leiden clustering on PBS-injected control cells pooled across mice (same pattern as Sheu adapter §2.5). Labels `id_c0`, `id_c1`, …; post-stim cells assigned to nearest PBS cluster centroid in PCA space. Expect 4–8 coarse-grained immune clusters (myeloid / T / NK / B / DC families). The paper's 17+ expert-curated cell-type annotations (T, NK, B, ILC, cDC1, cDC2, pDC, MigDC, Langerhans, eTAC, macrophage, monocyte, neutrophil, mast, basophil, BEC, LEC, FRC) are deposited on SCP2554 (login required) and can be overlaid retrospectively if finer granularity is needed — but the §24 sweep does not depend on the paper's labels, only on stable per-cluster PBS baselines.
+
+**Time point:** single 4 h post sc/id injection (in vivo).
+
+**Replicates:** 3 mice per cytokine. ~386,703 total cells.
+
+**In vivo design note:** the lymph-node microenvironment lets paracrine relays develop, so cascade products are biologically real. However, the relay cell type sometimes differs from the responder cell type. Report relay cell types as informative, not causal.
+
+**Known cascades documented in the paper:** IL-2/IL-12/IL-15/IL-18 → IFN-γ (NK source) → secondary B-cell/DC/macrophage IFN-γ signatures. This is the canonical positive control for §25 on ID.
+
+---
+
 ### §2.6 Zhang 2022 dataset (secondary)
 
 - **Source:** Zhang et al., JCI 2022; GEO accession: GSE181475 (probable — verify before first run)
@@ -276,6 +304,8 @@ earliest time point where both M0 reps are present and where secondary responses
 
 Steps 2–4 applied post-hoc via `notebooks/preprocess_tubes.ipynb`. HVGs estimated from one tube per cytokine (~40k cells); all tubes normalized + log1p + filtered in-place. Raw tubes preserved as `pseudotube_N_raw.h5ad`.
 
+**Multi-dataset normalization:** the same pipeline (`normalize_total → log1p → HVG (4000, Seurat v3)`) applies to the Immune Dictionary (§2.7) on its raw 10x counts. No new preprocessing steps beyond what Sheu and Oesinghaus use.
+
 **Never applied:**
 - **Z-score per gene:** removes absolute expression the encoder should learn to weight itself.
 - **Perturbation scores (log2FC vs PBS):** computing deviation from PBS is a prior injection — assumes resting state is the correct baseline. The model should discover what is informative on its own.
@@ -297,7 +327,7 @@ Steps 2–4 applied post-hoc via `notebooks/preprocess_tubes.ipynb`. HVGs estima
 
 **Statistical caveat:** pseudo-tubes from the same donor are highly correlated — effective N = 12 (donors), not 120. All statistical comparisons must aggregate to donor level first.
 
-**Multi-dataset adapter convention:** Sheu and Zhang adapter scripts (`scripts/build_pseudotubes_sheu2024.py`, `scripts/build_pseudotubes_zhang2022.py`) relabel each dataset's resting/unstim condition to the literal string `"PBS"` at the adapter boundary. This keeps the PBS-index-90 contract (`cytokine_mil/data/label_encoder.py:11`, `label_encoder.py:33`) and PBS-RC computation (`cytokine_mil/analysis/pbs_rc.py:59`, which hard-checks `cytokine == "PBS"`) working unchanged. **No edits to the `cytokine_mil/` package itself in phase 1.**
+**Multi-dataset adapter convention:** Sheu, Zhang, and ID adapter scripts (`scripts/build_pseudotubes_sheu2024.py`, `scripts/build_pseudotubes_zhang2022.py`, `scripts/build_pseudotubes_immune_dictionary.py`) relabel each dataset's resting/unstim condition to the literal string `"PBS"` at the adapter boundary. This keeps the PBS-index-90 contract (`cytokine_mil/data/label_encoder.py:11`, `label_encoder.py:33`) and PBS-RC computation (`cytokine_mil/analysis/pbs_rc.py:59`, which hard-checks `cytokine == "PBS"`) working unchanged. **No edits to the `cytokine_mil/` package itself in phase 1.**
 
 ---
 
@@ -636,24 +666,31 @@ cytokine_mil/               <- repo root
 │
 ├── scripts/
 │   ├── build_pseudotubes.py
-│   ├── build_pseudotubes_sheu2024.py  <- Sheu 2024 adapter (Section 2.5)
-│   ├── build_pseudotubes_zhang2022.py <- Zhang 2022 adapter (Section 2.6)
-│   ├── synthetic_cascade_control.py   <- Experiment 0 go/no-go gate (Section 19.5)
-│   ├── train_oesinghaus_full.py       <- full 91-class confusion dynamics training
-│   ├── train_sheu2024_stage12.py      <- Sheu Stage 1+2 trainer (Section 21)
-│   ├── train_zhang2022_stage12.py     <- Zhang Stage 1+2 trainer (Section 2.6)
-│   ├── train_aux_decoder.py           <- trains AuxDecoder on frozen MIL model (Section 20.5)
-│   └── check_attention_cell_types.py  <- attention proxy check (Section 20.8)
+│   ├── build_pseudotubes_sheu2024.py          <- Sheu 2024 adapter (Section 2.5)
+│   ├── build_pseudotubes_zhang2022.py         <- Zhang 2022 adapter (Section 2.6)
+│   ├── build_pseudotubes_immune_dictionary.py <- ID adapter (Section 2.7)
+│   ├── synthetic_cascade_control.py           <- Experiment 0 go/no-go gate (Section 19.5)
+│   ├── train_oesinghaus_full.py               <- full 91-class confusion dynamics training
+│   ├── train_sheu2024_stage12.py              <- Sheu Stage 1+2 trainer (Section 21)
+│   ├── train_zhang2022_stage12.py             <- Zhang Stage 1+2 trainer (Section 2.6)
+│   ├── train_aux_decoder.py                   <- trains AuxDecoder on frozen MIL model (Section 20.5)
+│   ├── check_attention_cell_types.py          <- attention proxy check (Section 20.8)
+│   └── run_immune_dictionary_pathway_audit.py <- §25 ID directional-asymmetry sweep
 ├── configs/
 │   ├── default.yaml
 │   ├── sheu2024.yaml                  <- per-dataset config for Sheu (Section 21)
-│   └── zhang2022.yaml                 <- per-dataset config for Zhang (Section 2.6)
+│   ├── zhang2022.yaml                 <- per-dataset config for Zhang (Section 2.6)
+│   └── immune_dictionary.yaml         <- per-dataset config for ID (Section 2.7)
 ├── slurm/
 │   ├── run_sheu2024.slurm             <- sbatch wrapper (Section 21)
-│   └── run_zhang2022.slurm            <- sbatch wrapper (Section 2.6)
+│   ├── run_zhang2022.slurm            <- sbatch wrapper (Section 2.6)
+│   └── run_id_pathway_audit.slurm     <- sbatch wrapper for §25 ID sweep
 ├── reports/
-│   └── sheu2024/
-│       └── AXIS_GATE_VERDICT.md       <- phase 1 go/no-go verdict (Section 21)
+│   ├── sheu2024/
+│   │   └── AXIS_GATE_VERDICT.md       <- phase 1 go/no-go verdict (Section 21)
+│   └── immune_dictionary/
+│       ├── PRE_REGISTRATION.md        <- pre-registered cascade list; commit BEFORE audit (Section 25)
+│       └── CASCADE_SWEEP_RESULTS.md   <- §25 verdict (written after audit)
 ├── notebooks/
 │   ├── experiment.ipynb
 │   ├── experiment_subset.ipynb     <- 10-cytokine subset (fixed EASY/HARD groups)
@@ -665,7 +702,9 @@ cytokine_mil/               <- repo root
     ├── make_demo_data.py
     ├── test_demo.py
     ├── make_demo_data_sheu.py  <- Sheu demo fixture (Section 12)
-    └── test_demo_sheu.py       <- round-trips Sheu adapter through PseudoTubeDataset + CytokineLabel
+    ├── test_demo_sheu.py       <- round-trips Sheu adapter through PseudoTubeDataset + CytokineLabel
+    ├── make_demo_data_id.py    <- ID demo fixture (Section 12)
+    └── test_demo_id.py         <- round-trips ID adapter through PseudoTubeDataset + CytokineLabel
 ```
 
 ---
@@ -682,7 +721,7 @@ Real data is on the cluster; use simulated demo data locally.
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/test_demo.py tests/test_demo_sheu.py -v
+pytest tests/test_demo.py tests/test_demo_sheu.py tests/test_demo_id.py -v
 ```
 
 **Sheu demo spec (`tests/make_demo_data_sheu.py`):**
@@ -710,6 +749,16 @@ pytest tests/test_demo.py tests/test_demo_sheu.py -v
 - Sheu demo manifest has `"PBS"` string in `cytokine` field for all control entries
 - `PseudoTubeDataset` loads Sheu demo manifest and returns correct shapes (60 cells, 200 genes)
 - `split_manifest_by_donor` on Sheu demo produces donor-disjoint train/val sets
+- ID demo manifest has `"PBS"` string in `cytokine` field for all control entries
+- `PseudoTubeDataset` loads ID demo manifest and returns correct shapes (60 cells, 200 genes)
+- `split_manifest_by_donor` on ID demo produces mouse-disjoint train/val sets
+
+**ID demo spec (`tests/make_demo_data_id.py`):**
+- 5 cytokines + PBS = 6 classes, mirroring ID's structure
+- 3 mice, 1 tube per (mouse, cytokine) — 1 mouse held out for val split testing
+- 2 cell types (`id_c0`, `id_c1`), 30 cells each → 60 cells/tube; 200 simulated genes (log-normalized)
+- Writes `.h5ad` files + `manifest.json` mirroring ID pseudo-tube structure
+- `cytokine` column uses ID cytokine names; `"PBS"` string for PBS-injected control mice
 
 ---
 
@@ -790,6 +839,8 @@ aux_decoder:
   Per-donor class coverage is uneven by design (M0_rep1 has no IFNb;
   M0_rep2 / M1 / M2 have no LPSlo).
 - **Zhang val donors:** TBD pending donor-count verification. If <3 donors, fall back to plate-id-as-donor and skip the seed-stability gate.
+- **ID val mouse:** 1 of 3 (chosen at build time based on PBS PCA outlier position across all cytokines). Train set: 2 mice. Document chosen val mouse in manifest comment field after build. See §2.7.
+- **ID time point:** single 4 h (in vivo). No kinetic validation as in Sheu. The §24/§25 directional-asymmetry method is single-time-point by construction; evaluate the §25 cascade sweep with this caveat explicitly stated in the verdict.
 
 ---
 
@@ -1200,6 +1251,23 @@ present in the panel per pathway. Pathways with < 3 curated genes resolved
 are skipped. If no pathway resolves (e.g., wrong gene-symbol case),
 the script aborts cleanly.
 
+**Mouse pathway library extension (for §25 ID sweep):** in addition to the
+TLR-centric IRF3_direct / IFNAR_induced / NFkB_canonical / TNFR_autocrine
+sets, the following JAK-STAT family pathways are curated for the ID phase 2
+sweep (full gene lists TBD by literature review, committed to `pathway_signatures.py`
+before any audit script runs):
+
+- `IL12_STAT4_target` — IL-12 specific STAT4 targets (NOT shared with STAT1)
+- `IFNg_STAT1_target` — IFN-γ specific STAT1 targets (NOT shared with type-I IFN ISGs)
+- `IL6_STAT3_target` — IL-6 specific STAT3 targets
+- `IL2_STAT5_target` — common γ-chain STAT5 targets
+- `IL4_STAT6_target` — IL-4 specific STAT6 targets
+
+Critical: each pair (P_A, P_B) used in a cascade test must be transcriptionally
+distinct from one another for the §24 directional asymmetry test to work. The
+overlap matrix of curated genes must be computed and verified before commit.
+Do NOT specify actual gene lists in CLAUDE.md — that belongs in `pathway_signatures.py`.
+
 ---
 
 ## 24. Directional Asymmetry Cascade Test (`analysis/pathway_audit.py`)
@@ -1296,3 +1364,80 @@ upgrade.
 - Does not work on stimuli without a defined `P_A` (cytokine cascades
   where the upstream stimulus engages JAK-STAT directly, e.g., IL-2 → ?
   in Oesinghaus, have no obvious upstream P_A to use).
+
+---
+
+## 25. Phase 2 §24 Cascade Sweep on Immune Dictionary (`scripts/run_immune_dictionary_pathway_audit.py`)
+
+**Purpose:** extend the §24 directional-asymmetry test from Sheu's 2 cascades
+(PIC→IFNb, LPS→IFNb) to a larger pre-registered set spanning JAK-STAT, NF-κB, and
+SMAD pathway families. The 31K-gene 10x transcriptome resolves distinct curated
+pathways that the 500-gene Sheu panel could not separate. The §24 methodology and
+`directional_asymmetry_test` API are unchanged; only the cascade list and pathway
+library are extended.
+
+### 25.1 Pre-registration discipline
+
+The cascade list, P_A / P_B pairing, and predicted directional_score sign per
+cascade **must be committed** to `reports/immune_dictionary/PRE_REGISTRATION.md` on
+`main` **before** any audit script runs. The JAK-STAT pathway gene sets in
+`pathway_signatures.py` (§23 extension) must also be locked at that same commit.
+Running `run_immune_dictionary_pathway_audit.py` before this commit is a protocol
+violation.
+
+### 25.2 Pre-registered cascade list
+
+**MUST-PASS — distinct pathways, predicted directional_score > 0:**
+
+| # | Cascade | P_A | P_B | Biological rationale |
+|---|---|---|---|---|
+| 1 | IL-12 → IFN-γ | `IL12_STAT4_target` | `IFNg_STAT1_target` | IL-12 drives STAT4 in NK/T; IFN-γ engages STAT1-only ISGs |
+| 2 | IL-1β → IL-6 | `NFkB_canonical` | `IL6_STAT3_target` | IL-1β signals NF-κB; IL-6 signals STAT3 — distinct downstream targets |
+| 3 | IFN-γ → IL-12 | `IFNg_STAT1_target` | `IL12_STAT4_target` | IFN-γ → STAT1 → Il12b upregulation (positive feedback) |
+| 4 | TNF → IL-6 | `NFkB_canonical` | `IL6_STAT3_target` | TNF → NF-κB → IL-6 induction in myeloid cells |
+| 5 | IFN-β → IFN-γ | `IFNAR_induced` | `IFNg_STAT1_target` | Type-I IFN primes NK for IFN-γ production (in NK cell type) |
+
+**MUST-FAIL — overlapping pathways, predicted |directional_score| < 0.5:**
+
+| # | Cascade | P_A | P_B | Predicted failure mode |
+|---|---|---|---|---|
+| 6 | IL-2 → IL-15 | `IL2_STAT5_target` | `IL2_STAT5_target` | Both common γ-chain → STAT5; gene sets overlap by design |
+| 7 | IL-1β → TNF | `NFkB_canonical` | `NFkB_canonical` | Both NF-κB; replicates the §24 known failure from Sheu |
+| 8 | IL-4 → IL-13 | `IL4_STAT6_target` | `IL4_STAT6_target` | Both STAT6; gene overlap by shared receptor IL-4Rα |
+
+**NEGATIVE CONTROLS — no cascade biology, predicted directional_score ≤ 0:**
+
+| # | Cascade | P_A | P_B | Reason |
+|---|---|---|---|---|
+| 9 | IL-4 → IFN-γ | `IL4_STAT6_target` | `IFNg_STAT1_target` | Th2 actively inhibits Th1; antagonistic not cascade |
+| 10 | IL-10 → IL-12 | `NFkB_canonical` | `IL12_STAT4_target` | IL-10 suppresses IL-12 production; reverse of any induction |
+
+### 25.3 Scoring and verdict
+
+Each cascade scored per cell type via `directional_asymmetry_test`, then aggregated
+per mouse as mean(directional_score) across informative cell types. Donor-level
+Wilcoxon signed-rank across 2 train mice + 1 val mouse (n=3) is underpowered —
+report magnitude and direction, not p-values, as the primary readout.
+
+**GREEN verdict:** 4 of 5 MUST-PASS show directional_score > +1.0 in ≥1 cell type
+AND 2 of 3 MUST-FAIL show |directional_score| < 0.5 AND both NEGATIVE CONTROLS show
+directional_score ≤ 0 → §24 generalises beyond TLR-IFN cascades; Path B claim
+upgrades to "cascade-direction inference across JAK-STAT, NF-κB, and IFN pathway
+families."
+
+**AMBER:** 2–3 of 5 MUST-PASS pass, OR 1 of 3 MUST-FAIL is miscalled → identify
+which pathway pairs caused failure; check gene-set overlap matrix; refine before
+reporting.
+
+**RED:** 0–1 of 5 MUST-PASS → §24 does not generalise; report as TLR-IFN-specific
+result only.
+
+Verdict written to `reports/immune_dictionary/CASCADE_SWEEP_RESULTS.md`.
+
+### 25.4 Driver script and slurm wrapper
+
+- **Script:** `scripts/run_immune_dictionary_pathway_audit.py` — mirrors
+  `scripts/run_pathway_audit.py`; parameterised for ID manifest and gene symbols.
+- **Slurm:** `slurm/run_id_pathway_audit.slurm` — single CPU node; no model
+  training, no checkpoints; expected runtime < 30 min.
+- **Output dir (cluster):** `results/immune_dictionary_pathway/`

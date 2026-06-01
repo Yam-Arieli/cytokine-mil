@@ -76,7 +76,104 @@ PATHWAY_SIGNATURES: Dict[str, Dict] = {
                      "→TRAF2→IKK. Overlaps with general NF-κB so works best as a "
                      "consistency check rather than a primary discriminator.",
     },
+    # --- §25 Immune Dictionary pathways -------------------------------------------
+    "IL12_STAT4_target": {
+        "up": ["Il2ra", "Hlx", "Furin", "Tnfrsf25", "Eomes", "Tbx21",
+               "Ifng", "Cxcr6", "Il18r1", "Il18rap", "Nkg7"],
+        "primary_for": [],   # ID stimulus name TBD — populated after manifest known
+        "cascade_from": [],
+        "rationale": "STAT4 ChIP-confirmed direct targets in Th1/NK (Wei 2010, Mullen 2001). "
+                     "Includes T-bet (Tbx21), Hlx, Il18r1/Il18rap — the IL-12-driven Th1 program. "
+                     "Ifng included as canonical STAT4 effector message. Designed overlap with "
+                     "IL2_STAT5_target via Il2ra, Eomes (18% Jaccard) reflects real Th1 effector "
+                     "biology shared by both pathways.",
+    },
+    "IFNg_STAT1_target": {
+        "up": ["Gbp2", "Gbp5", "Iigp1", "Ifi47", "Igtp", "Tgtp1",
+               "Nos2", "Cxcl9", "Cd274", "Irf1", "Socs1", "Ciita"],
+        "primary_for": [],
+        "cascade_from": [],
+        "rationale": "STAT1-GAS driven IFN-γ-specific targets (Boehm 1997; MacMicking 2012). "
+                     "Strict separation from IFNAR_induced: Mx1/Isg15/Oas/Ifit classical ISGs "
+                     "are STAT1/STAT2/IRF9-ISGF3 driven via ISRE and excluded. GBP family + p47 "
+                     "GTPases are the IFN-γ macrophage signature. Cxcl9 is GAS-specific. "
+                     "Ciita drives MHC-II induction (IFN-γ hallmark).",
+    },
+    "IL6_STAT3_target": {
+        "up": ["Socs3", "Bcl3", "Cish", "Sgk1", "Junb", "Pim1",
+               "Saa1", "Saa3", "Mcl1", "Tnfrsf1b", "Stat3", "Osmr"],
+        "primary_for": [],
+        "cascade_from": [],
+        "rationale": "STAT3 ChIP-confirmed direct targets in mouse macrophages (Hutchins 2013). "
+                     "Acute-phase module (Saa1/3) + STAT3 autoregulation (Socs3, Cish, Stat3, Osmr). "
+                     "Excludes Il6/Tnf/Il1b/Tnfaip3 — those are NF-κB upstream inducers, kept in "
+                     "NFkB_canonical. Small Cish overlap with IL2_STAT5 reflects general JAK-STAT "
+                     "feedback (8% Jaccard, below MUST-PASS threshold).",
+    },
+    "IL2_STAT5_target": {
+        "up": ["Il2ra", "Cish", "Socs2", "Bcl2", "Foxp3", "Ikzf2",
+               "Bcl2l1", "Cd69", "Stat5a", "Stat5b", "Eomes", "Il2rb"],
+        "primary_for": [],
+        "cascade_from": [],
+        "rationale": "Common γ-chain STAT5 ChIP targets (Lin 2012, Liao 2011, Villarino 2016). "
+                     "Designed overlap with IL12_STAT4 (Il2ra, Eomes — Th1/effector shared "
+                     "program) and SMAD2_3 (Foxp3 — Treg differentiation requires both pathways). "
+                     "When used as (P_A, P_B) for IL-2 → IL-15 cascade test, overlap is 100% by "
+                     "design — this IS the MUST-FAIL prediction.",
+    },
+    "IL4_STAT6_target": {
+        "up": ["Arg1", "Retnla", "Chi3l3", "Mrc1", "Ccl17", "Ccl22",
+               "Gata3", "Il4ra", "Cd200r1", "Pdcd1lg2", "Klf4"],
+        "primary_for": [],
+        "cascade_from": [],
+        "rationale": "Canonical Th2/M2 program (Czimmerer 2018, Piccolo 2017). M2 markers "
+                     "(Arg1, Retnla, Chi3l3, Mrc1) STAT6 ChIP-confirmed in BMDM. Gata3 is the "
+                     "Th2 master regulator (Zheng & Flavell 1997). Cd200r1, Pdcd1lg2 are M2-"
+                     "specific; Klf4 is the M2-driven TF (Liao 2011). Note: Ym1 (alias of "
+                     "Chi3l3) removed to avoid double-counting.",
+    },
+    "SMAD2_3_target": {
+        "up": ["Foxp3", "Smad7", "Skil", "Serpine1", "Tgfbr1", "Ccn2",
+               "Itgb6", "Cdkn1a", "Cdkn2b", "Id3", "Tgfb1i1", "Ltbp1"],
+        "primary_for": [],
+        "cascade_from": [],
+        "rationale": "SMAD2/3 ChIP targets driven by TGF-β (Mullen 2011, Massagué 2012). "
+                     "Includes auto-feedback (Smad7, Skil, Tgfbr1) and canonical SMAD3 "
+                     "outputs (Serpine1/PAI-1, Cdkn1a/p21, Cdkn2b/p15). Designed overlap "
+                     "with IL2_STAT5 via Foxp3 (Treg biology). Ccn2 (formerly Ctgf) is the "
+                     "modern symbol for connective-tissue growth factor.",
+    },
 }
+
+
+# Immune Dictionary stimulus → primary pathway map for §25 cascade sweep.
+# Stimulus names must match the `cytokine` column in the ID manifest (TBD until
+# data is downloaded; current entries are best-guess canonical names).
+IMMUNE_DICTIONARY_STIMULUS_PRIMARY_PATHWAYS: Dict[str, List[str]] = {
+    # TBD: populate after first manifest is built. Expected entries include
+    # "IL-12" -> ["IL12_STAT4_target"], "IFN-g" -> ["IFNg_STAT1_target"], etc.
+    # Used by `scripts/run_immune_dictionary_pathway_audit.py` to validate that
+    # pre-registered cascades reference known stimulus names.
+}
+
+# Pre-registered cascade list for §25 ID sweep. (A, B, P_A, P_B, predicted_outcome).
+# `predicted_outcome` ∈ {"MUST_PASS", "MUST_FAIL", "NEG_CONTROL"}.
+# Stimulus names (A, B) are placeholders; resolved against the manifest at runtime.
+IMMUNE_DICTIONARY_PREREGISTERED_CASCADES: List[Tuple[str, str, str, str, str]] = [
+    # MUST-PASS — distinct pathways, predicted directional_score > 0
+    ("IL-12",  "IFN-g", "IL12_STAT4_target",  "IFNg_STAT1_target",  "MUST_PASS"),
+    ("IL-1b",  "IL-6",  "NFkB_canonical",     "IL6_STAT3_target",   "MUST_PASS"),
+    ("IFN-g",  "IL-12", "IFNg_STAT1_target",  "IL12_STAT4_target",  "MUST_PASS"),
+    ("TNF",    "IL-6",  "NFkB_canonical",     "IL6_STAT3_target",   "MUST_PASS"),
+    ("IFN-b",  "IFN-g", "IFNAR_induced",      "IFNg_STAT1_target",  "MUST_PASS"),
+    # MUST-FAIL — overlapping pathways, predicted |directional_score| < 0.5
+    ("IL-2",   "IL-15", "IL2_STAT5_target",   "IL2_STAT5_target",   "MUST_FAIL"),
+    ("IL-1b",  "TNF",   "NFkB_canonical",     "NFkB_canonical",     "MUST_FAIL"),
+    ("IL-4",   "IL-13", "IL4_STAT6_target",   "IL4_STAT6_target",   "MUST_FAIL"),
+    # NEGATIVE CONTROLS — no cascade biology, predicted directional_score ≤ 0
+    ("IL-4",   "IFN-g", "IL4_STAT6_target",   "IFNg_STAT1_target",  "NEG_CONTROL"),
+    ("IL-10",  "IL-12", "NFkB_canonical",     "IL12_STAT4_target",  "NEG_CONTROL"),
+]
 
 
 # Per-stimulus primary pathway map (derived from PATHWAY_SIGNATURES.primary_for).
@@ -191,6 +288,36 @@ def match_cytokines_by_patterns(
 # (Sheu §21 pairs collapsed to "does this stimulus drive IFN-cascade?").
 IFNAR_POSITIVE_STIMULI = ["PIC", "LPS", "LPSlo", "IFNb"]
 IFNAR_NEGATIVE_STIMULI = ["P3CSK", "CpG", "TNF"]
+
+
+# ---------------------------------------------------------------------------
+# Pathway overlap sanity check
+# ---------------------------------------------------------------------------
+
+def compute_pathway_overlap_matrix(
+    library: Optional[Dict[str, Dict]] = None,
+) -> pd.DataFrame:
+    """
+    Compute pairwise gene-overlap ratio across pathways.
+
+    Returns a square DataFrame indexed/columned by pathway name, where each
+    cell (i, j) is |genes_i ∩ genes_j| / min(|genes_i|, |genes_j|). Diagonal
+    is 1.0 by construction.
+
+    Used as a sanity check before §24 / §25 cascade audits: pre-registered
+    MUST-PASS cascades must have P_A, P_B pairs with overlap < 0.30; MUST-FAIL
+    cascades have pairs with overlap ≥ 0.50 (the predicted failure mode).
+    """
+    library = library or PATHWAY_SIGNATURES
+    names = list(library.keys())
+    M = np.zeros((len(names), len(names)), dtype=float)
+    gene_sets = {n: set(library[n]["up"]) for n in names}
+    for i, ni in enumerate(names):
+        for j, nj in enumerate(names):
+            inter = len(gene_sets[ni] & gene_sets[nj])
+            denom = min(len(gene_sets[ni]), len(gene_sets[nj]))
+            M[i, j] = inter / denom if denom > 0 else 0.0
+    return pd.DataFrame(M, index=names, columns=names)
 
 
 # ---------------------------------------------------------------------------
