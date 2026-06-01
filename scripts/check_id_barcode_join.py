@@ -28,7 +28,7 @@ DEFAULT_EXTRACTED = "/cs/labs/mornitzan/yam.arieli/datasets/ImmuneDictionary/raw
 
 
 def _geo_barcodes_for_channel(extracted: str, channel: str):
-    hits = glob.glob(f"{extracted}/*-cytokine-samples{channel}-barcodes.tsv.gz")
+    hits = glob.glob(f"{extracted}/*cytokine-samples{channel}-barcodes.tsv.gz")
     if len(hits) != 1:
         return None
     with gzip.open(hits[0], "rt") as fh:

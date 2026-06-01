@@ -65,8 +65,12 @@ MIN_MATCH_FRAC      = 0.30              # per-channel barcode-match floor before
 # ===========================================================================
 
 def _find_lane_files(extracted: Path, channel: str):
-    """Return (matrix, barcodes, features) paths for GEO lane cytokine-samples{channel}."""
-    infix = f"-cytokine-samples{channel}-"
+    """Return (matrix, barcodes, features) paths for GEO lane cytokine-samples{channel}.
+
+    GEO names files like 'GSM6102836_cytokine-samples01-barcodes.tsv.gz' — note the
+    separator before 'cytokine' is '_', so the glob must NOT require a leading '-'.
+    """
+    infix = f"cytokine-samples{channel}-"
     mtx = list(extracted.glob(f"*{infix}matrix.mtx.gz"))
     bc  = list(extracted.glob(f"*{infix}barcodes.tsv.gz"))
     ft  = list(extracted.glob(f"*{infix}features.tsv.gz"))
