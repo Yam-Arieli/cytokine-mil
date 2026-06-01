@@ -269,7 +269,19 @@ earliest time point where both M0 reps are present and where secondary responses
 
 **Train/val split:** 2 train + 1 val mouse per cytokine. Val mouse selection deferred to runtime: choose the mouse with the most outlier PBS PCA position (by analogy to Oesinghaus D2/D3 selection). Document the chosen val mouse in the manifest comment after build.
 
-**Cell types:** Leiden clustering on PBS-injected control cells pooled across mice (same pattern as Sheu adapter §2.5). Labels `id_c0`, `id_c1`, …; post-stim cells assigned to nearest PBS cluster centroid in PCA space. Expect 4–8 coarse-grained immune clusters (myeloid / T / NK / B / DC families). The paper's 17+ expert-curated cell-type annotations (T, NK, B, ILC, cDC1, cDC2, pDC, MigDC, Langerhans, eTAC, macrophage, monocyte, neutrophil, mast, basophil, BEC, LEC, FRC) are deposited on SCP2554 (login required) and can be overlaid retrospectively if finer granularity is needed — but the §24 sweep does not depend on the paper's labels, only on stable per-cluster PBS baselines.
+**Cell types (IMPLEMENTED — expert labels, NOT Leiden):** the paper's expert-curated
+annotations, pulled per-cell from the **public** SCP2554 REST API (no login — see
+`scripts/fetch_scp_id_metadata.py`; committed as `reports/immune_dictionary/scp_metadata.parquet`)
+and used directly: `T_cell_CD4`, `T_cell_CD8`, `NK_cell`, `B_cell`, `B_cell_GC`,
+`Treg`, `T_cell_gd`, `Macrophage`, `Monocyte`, `cDC1`, `cDC2`, `pDC`, `MigDC`,
+`Langerhans`, `ILC`, `Neutrophil`, `Basophil`, `Mast_cell`, `Plasma_cell`, `eTAC`,
+`Keratinocyte`, `BEC`, `LEC`, `FRC`, … (26 types; `doublet` dropped). These are the
+Stage-1 encoder pre-training targets AND the per-cell-type stratification key for
+pseudo-tubes. **No Leiden clustering is run for ID** (unlike Sheu §2.5, which has no
+trusted annotations). The earlier GEO-only plan (Leiden `id_c*` on PBS cells) was
+dropped once the SCP-API join (§2.7 data-source note in the adapter) made the
+expert labels freely available — they are trusted and higher-resolution than ad-hoc
+clusters.
 
 **Time point:** single 4 h post sc/id injection (in vivo).
 
