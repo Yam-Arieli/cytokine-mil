@@ -1,0 +1,116 @@
+"""InstanceEncoder: maps single-cell expression vectors to dense embeddings.
+
+Pre-trained with cell-type supervision (Stage 1). After pre-training, only the
+backbone is used by the MIL model — the ``cell_type_head`` is never seen by it.
+
+Faithful copy of the validated cytokine-mil encoder (kaiming init, zero-init of
+the residual-block second linear so each block starts as identity). Pure tensor
+module: no I/O, no project coupling.
+"""
+
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+
+
+class _ResBlock(nn.Module):
+    """Same-dimension residual block: LayerNorm -> Linear -> GELU -> Linear + skip."""
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fc1 = nn.Linear(dim, dim)
+        self.fc2 = nn.Linear(dim, dim)
+        self.act = nn.GELU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.norm(x)
+        h = self.act(self.fc1(h))
+        h = self.fc2(h)
+        return x + h
+
+
+class _DownBlock(nn.Module):
+    """Downsampling residual block with a linear skip projection."""
+
+    def __init__(self, in_dim: int, out_dim: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(in_dim)
+        self.fc1 = nn.Linear(in_dim, out_dim)
+        self.fc2 = nn.Linear(out_dim, out_dim)
+        self.skip = nn.Linear(in_dim, out_dim, bias=False)
+        self.act = nn.GELU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.norm(x)
+        h = self.act(self.fc1(h))
+        h = self.fc2(h)
+        return self.skip(x) + h
+
+
+class InstanceEncoder(nn.Module):
+    """MLP encoder: single-cell expression -> dense embedding.
+
+    Architecture: input projection + ResBlock + DownBlock + ResBlock + DownBlock.
+
+    Input:  ``x_i`` in R^G  (G = number of genes / HVGs)
+    Output: ``h_i`` in R^embed_dim  (default 128)
+
+    The ``cell_type_head`` (if ``n_cell_types`` is given) is used only during
+    Stage-1 pre-training and is never passed to the MIL model.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        embed_dim: int = 128,
+        n_cell_types: int | None = None,
+        hidden_dims: tuple[int, int] = (512, 256),
+    ) -> None:
+        super().__init__()
+        self.input_dim = input_dim
+        self.embed_dim = embed_dim
+        self.hidden_dims = hidden_dims
+        self._build_layers(input_dim, embed_dim)
+        if n_cell_types is not None:
+            self.cell_type_head: nn.Linear | None = nn.Linear(embed_dim, n_cell_types)
+        else:
+            self.cell_type_head = None
+        self._init_weights()
+
+    def _build_layers(self, input_dim: int, embed_dim: int) -> None:
+        h0, h1 = self.hidden_dims
+        self.input_proj = nn.Sequential(
+            nn.Linear(input_dim, h0),
+            nn.LayerNorm(h0),
+            nn.GELU(),
+        )
+        self.res1 = _ResBlock(h0)
+        self.down1 = _DownBlock(h0, h1)
+        self.res2 = _ResBlock(h1)
+        self.down2 = _DownBlock(h1, embed_dim)
+
+    def _init_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+        # Zero-init the last linear in each residual block so every block starts as
+        # an identity mapping — keeps initial loss near ln(n_classes).
+        for m in [self.res1, self.res2, self.down1, self.down2]:
+            nn.init.zeros_(m.fc2.weight)
+            nn.init.zeros_(m.fc2.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Args: x ``(N, G)``. Returns: h ``(N, embed_dim)``."""
+        h = self.input_proj(x)
+        h = self.res1(h)
+        h = self.down1(h)
+        h = self.res2(h)
+        h = self.down2(h)
+        return h
