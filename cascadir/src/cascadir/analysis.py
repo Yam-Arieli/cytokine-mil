@@ -96,6 +96,9 @@ def score_directions(
         classification = str(row["classification"])
         cross_sign = _sign(cross_med)
         ds_sign = _sign(ds_med)
+        # directional_score may be absent (NaN) when only cross_asym is supplied;
+        # in that case it is simply not scored (None), not counted as wrong.
+        ds_correct = None if np.isnan(ds_med) else bool(ds_sign == expected_sign)
         called_upstream = a if cross_sign > 0 else (b if cross_sign < 0 else None)
         null_p = float(row["null_p"]) if has_null and pd.notna(row["null_p"]) else np.nan
         rows.append(
@@ -109,7 +112,7 @@ def score_directions(
                 "called_upstream": called_upstream,
                 "cross_correct": bool(cross_sign == expected_sign),
                 "directional_score_median": ds_med,
-                "dirscore_correct": bool(ds_sign == expected_sign),
+                "dirscore_correct": ds_correct,
                 "null_p": null_p,
                 "null_pass": (bool(null_p < null_alpha) if not np.isnan(null_p) else None),
             }
@@ -125,8 +128,12 @@ def score_directions(
     cross_accuracy_all = (
         float(found["cross_correct"].mean()) if n_found else float("nan")
     )
+    # directional_score accuracy only over rows that actually carry a dirscore value
+    scored_ds = scored[scored["dirscore_correct"].notna()] if n_scored else scored
     dirscore_accuracy = (
-        float(scored["dirscore_correct"].mean()) if n_scored else float("nan")
+        float(scored_ds["dirscore_correct"].astype(bool).mean())
+        if len(scored_ds)
+        else float("nan")
     )
     n_null_pass = int(scored["null_pass"].fillna(False).sum()) if n_scored else 0
     classification_counts = dict(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -68,3 +69,13 @@ def test_score_directions_requires_columns():
     bad = pd.DataFrame({"condition_a": ["A"], "condition_b": ["B"]})
     with pytest.raises(ValueError):
         score_directions(bad, [("A", "B")])
+
+
+def test_score_directions_tolerates_missing_dirscore():
+    # cross supplied, directional_score absent (NaN) -> dirscore accuracy is NaN,
+    # cross is still scored normally.
+    t = _table()
+    t["directional_score_median"] = np.nan
+    res = score_directions(t, [("CytA", "CytB"), ("IFNb", "IFNg")])
+    assert res.cross_accuracy == 1.0
+    assert np.isnan(res.dirscore_accuracy)
