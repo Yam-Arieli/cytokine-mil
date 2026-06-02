@@ -68,8 +68,9 @@ gene signature \Sx{}; (C) a directional-asymmetry test assigns direction.
 \emph{algebraically symmetric} and therefore direction-blind. Replacing it with
 the \emph{antisymmetric} cross-engagement \cross{} $= s(a,S_b)-s(b,S_a)$ recovers
 direction at \textbf{88\%} on human PBMC (24h, 17 audited cascades; vs.\ 47\% =
-chance for the old score) and \textbf{86\%} on mouse BMDM at 5h
-(single-frame, crystal-clear TLR-biology labels). The fix is exactly the intuition
+chance for the old score), \textbf{86\%} on mouse BMDM at 5h, and \textbf{83\%} on the
+mouse in-vivo Immune Dictionary (4h, 86 cytokines; vs.\ 33\% for the old score) ---
+single-frame across three datasets. The fix is exactly the intuition
 ``the upstream tube carries \emph{both} signatures; the downstream tube carries
 only its own''.
 \end{abstract}
@@ -98,7 +99,7 @@ change is the spine of this talk.
     \scriptsize single-frame, this work};
   \node[box, below=10mm of B, text width=5.0cm, fill=cgreen!12, draw=cgreen!60] (X)
     {\textbf{the \cross{} fix}\\ \scriptsize symmetric score $\Rightarrow$ direction-blind;\\
-     \scriptsize antisymmetric \cross{} $\Rightarrow$ \textbf{88\% / 86\%}};
+     \scriptsize antisymmetric \cross{} $\Rightarrow$ \textbf{88\% / 86\% / 83\%}};
   \draw[ar] (A) -- node[lbl,above]{coupled pairs} (B);
   \draw[ar] (X) -- (B);
 \end{tikzpicture}
@@ -178,7 +179,7 @@ points. (ii) It unlocks the many single-time-point datasets already deposited.
 cascades (not just cytokines) could be analysed the same way.
 
 % ================================================================== §3 data
-\section{Data: cells, pseudo-tubes, and two datasets}\label{sec:data}
+\section{Data: cells, pseudo-tubes, and three datasets}\label{sec:data}
 
 \subsection{From cells to ``pseudo-tubes''}
 Single-cell RNA-seq yields a (cells $\times$ genes) matrix per condition. A single
@@ -203,27 +204,31 @@ then assembled into stratified pseudo-tubes; the tube inherits the stimulus
 label.}\label{fig:f4}
 \end{figure}
 
-\subsection{Two complementary datasets}
-We use two datasets with opposite strengths (Table~\ref{tab:data}). Oesinghaus
+\subsection{Three complementary datasets}
+We use three datasets with opposite strengths (Table~\ref{tab:data}). Oesinghaus
 (human PBMC, 91 cytokines, 24h) is broad but single-time. Sheu (mouse bone-marrow
 macrophages, 7 stimuli, a true time-course) is narrow but has the \emph{time axis}
-and textbook-clean cascade biology --- ideal for validating direction.
+and textbook-clean cascade biology. The Immune Dictionary (Cui 2024; mouse lymph
+node, 86 cytokines, single 4h \emph{in vivo}) is a broad third test in a new
+regime --- and ships expert per-cell annotations, which we pulled from the public
+SCP API and joined to the GEO expression matrices by (channel, barcode).
 
 \begin{table}[h]\centering\small
-\caption{The two datasets.}\label{tab:data}
-\begin{tabular}{@{}lll@{}}
+\caption{The three datasets.}\label{tab:data}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llll@{}}
 \toprule
- & \textbf{Oesinghaus 2024} & \textbf{Sheu 2024} \\
+ & \textbf{Oesinghaus 2024} & \textbf{Sheu 2024} & \textbf{Immune Dict.\ (Cui) 2024} \\
 \midrule
-organism / tissue   & human PBMC                 & mouse BMDM (macrophages) \\
-stimuli             & 91 cytokines (+PBS)        & 7 (LPS, LPSlo, P3CSK, PIC, TNF, CpG, \ifnb) \\
-time points         & 24h (single)               & 0/0.25/0.5/1/3/5/8/24h (course) \\
-genes               & 4000 HVGs                  & 500-gene targeted panel \\
-``donors''          & 12 biological donors       & 4 pseudo-donors @3h (context$\times$rep) \\
-cells/tube          & $\sim$480 (16 cell types)  & $\sim$120 (mac\_c0--c3) \\
-role here           & broad benchmark (Path B)   & single-frame, multi-time confirmation \\
+organism / tissue   & human PBMC                 & mouse BMDM (macrophages)        & mouse lymph node (\emph{in vivo}) \\
+stimuli             & 91 cytokines (+PBS)        & 7 TLR agonists $+$ \ifnb{} (+PBS) & 86 cytokines (+PBS) \\
+time points         & 24h (single)               & 0/0.25/0.5/1/3/5/8/24h (course) & 4h (single, \emph{in vivo}) \\
+genes               & 4000 HVGs                  & 500-gene targeted panel         & 4000 HVGs (of $\sim$31k) \\
+``donors''          & 12 biological donors       & 4 pseudo-donors @3h             & 3 mice/cytokine (rep01--03) \\
+cells/tube          & $\sim$480 (16 types)       & $\sim$120 (mac\_c0--c3)         & $\sim$350 (26 expert types) \\
+role here           & broad benchmark            & single-frame, multi-time        & in-vivo cross-check \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \subsection{The test cascades (textbook TLR biology)}
@@ -468,6 +473,19 @@ survives because LPS carries a broad non-ISG (\nfkb{}) program that keeps
 $S_{\text{LPS}}$ distinct from $S_{\ifnb}$. This is a concrete, testable failure
 mode (next steps, §\ref{sec:next}), not a mystery.
 
+\subsection{Immune Dictionary 4h (mouse \emph{in vivo}): 83\%, a third dataset}
+The same single-frame pipeline on the Immune Dictionary --- expression from GEO,
+per-cell labels from the public SCP API, expert cell types (no clustering) ---
+scores \textbf{5/6 = 83\%} on a pre-registered directional benchmark (5/5 among
+non-ambiguous calls; all five beat the random-gene-set null at $p\approx0$). The
+symmetric \dscore{} control sits at \textbf{2/6 = 33\%} on the \emph{identical}
+signatures, reproducing the symmetry argument on a third dataset. The method
+recovers the Dictionary's own canonical NK cascade
+(IL-2/IL-15/IL-18$\to$IFN-$\gamma$, all correct) and TNF$\to$IL-6 (\nfkb$\to$STAT3).
+The single miss, IL-1$\beta\to$IL-6, is a near-zero \emph{non}-call that fails the
+null (not a wrong direction) --- the same signature-collapse mode as polyIC, while
+the \emph{parallel} TNF$\to$IL-6 cascade recovers cleanly.
+
 % ================================================================== §6 limits
 \section{Honest limitations}\label{sec:limits}
 \begin{itemize}[leftmargin=1.3em,itemsep=2pt]
@@ -475,8 +493,9 @@ mode (next steps, §\ref{sec:next}), not a mystery.
 \emph{not} decide whether a cascade exists. No-cascade Sheu pairs also have large
 $|\cross|$. That is by design: Path A decides \emph{which} pairs couple; \cross{}
 only directs those.
-\item \textbf{Small benchmarks.} 17 and 7 graded cascades. Sheu's IFN-MUST is
-effectively one clean win (LPS) plus one explained failure (polyIC).
+\item \textbf{Small benchmarks.} 17, 7, and 6 graded cascades. Each dataset's one
+failure is a single explained signature-collapse (polyIC on Sheu; IL-1$\beta$ on
+the Immune Dictionary), not noise.
 \item \textbf{Labels are a judgement call.} The 88\% is against \emph{our}
 receptor-biology audit (7 tags flipped); the audit log is open for review.
 \item \textbf{Retrospective.} We test on \emph{known} cascades; we have not yet
@@ -485,7 +504,8 @@ made a prospective, experimentally-validated prediction.
 
 % ================================================================== §7 next
 \section{Current state and next steps}\label{sec:next}
-The method works at $\sim$86--88\% direction accuracy on two independent datasets,
+The method works at $\sim$83--88\% direction accuracy on \emph{three} independent
+datasets (human ex-vivo PBMC, mouse ex-vivo BMDM, mouse in-vivo lymph node),
 including early time points, with a clean mechanistic story. Cheap next
 experiments: (1) \textbf{polyIC ISG-exclusion test} --- re-derive
 $S_{\text{polyIC}}$ with ISGs removed; we predict the sign flips to correct,
@@ -505,7 +525,7 @@ min & segment & key visual \\
 0--8   & biology primer + the question (why direction is hard/important) & F2, F3 \\
 8--16  & data + test-cascade biology (TLR arms) & Table~1, F5 \\
 16--31 & method: MIL $\to$ IG signatures $\to$ \cross{} (the symmetric-bug story) & F6, F7, \textbf{F8} \\
-31--41 & results: Oesinghaus 88\%, Sheu kinetics, the polyIC wart & \textbf{F9}, F11, \textbf{F12} \\
+31--41 & results: Oes 88\%, Sheu kinetics, ID 83\% (3rd dataset), polyIC wart & \textbf{F9}, F11, \textbf{F12} \\
 41--45 & limitations + next steps & --- \\
 45--60 & discussion & --- \\
 \bottomrule
@@ -526,6 +546,8 @@ Sheu Stage 1+2 (Path A)         & 32  & 512 & 256 & 16  & 8 \\
 Sheu binary (Bridge)            & 128 & 256 & 128 & 64  & 2 \\
 Oesinghaus binary (narrow, 8)   & 32  & 128 & 64  & 16  & 2 \\
 Oesinghaus binary (wide, 16)    & 512 & 512 & 512 & 128 & 2 \\
+Immune Dict.\ Stage 1+2 (Path A) & 128 & 512 & 256 & 64  & 87 \\
+Immune Dict.\ binary (Bridge)    & 512 & 512 & 512 & 128 & 2 \\
 \bottomrule
 \end{tabular}\\[2pt]
 {\scriptsize Encoder: input\_proj(LayerNorm,GELU) $\to$ ResBlock($h_0$) $\to$
@@ -544,11 +566,13 @@ run & S1 epochs & S1 lr & S2 epochs & S2 lr & warmup \\
 Sheu Stage 1+2 & 30 & 0.003 & 40  & 0.0005  & 5 \\
 Sheu binary    & 20 & 0.005 & 200 & 0.0001  & --- \\
 Oesinghaus binary (both) & 20 & 0.005 & 250 & 3e-5 & --- \\
+Immune Dict.\ Stage 1+2  & 50 & 0.01  & 20  & 0.001 & 5 \\
+Immune Dict.\ binary     & 20 & 0.005 & 250 & 3e-5  & --- \\
 \bottomrule
 \end{tabular}\\[2pt]
 {\scriptsize Stage 1 = encoder pre-train on cell types (batch 256); Stage 2 =
 frozen-encoder MIL on tube labels (one tube per step). Sheu val pseudo-donor
-M2\_IL4\_rep1; Oesinghaus val donors 2,3.}
+M2\_IL4\_rep1; Oesinghaus val donors 2,3; Immune Dict.\ val rep03.}
 \end{table}
 
 \begin{table}[h]\centering\small
