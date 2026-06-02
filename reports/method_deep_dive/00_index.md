@@ -20,11 +20,13 @@ Two independent "paths" in the project:
 - **Path A** uses a **multiclass** AB-MIL (one model classifying *all* stimuli at once) — its
   embedding geometry gives the coupling.
 - **Path B / cross_asym** uses **per-stimulus binary** AB-MILs (each = one stimulus vs PBS) →
-  Integrated Gradients on each → the signatures `S_X`. The 88% / 86% direction result is a
+  Integrated Gradients on each → the signatures `S_X`. The 88% / 86% / 83% direction result is a
   **binary-model** story; the multiclass model is *not* used in cross_asym.
 
 **Headline:** `cross_asym` scores **88%** on Oesinghaus 24h (vs **47%** for the old
-symmetric `directional_score`) and **86%** on Sheu BMDM 5h — single-frame, no time leakage.
+symmetric `directional_score`), **86%** on Sheu BMDM 5h, and **83%** on the Immune
+Dictionary (mouse in-vivo lymph node, 4h; `directional_score` 33% on the same data) —
+single-frame, no time leakage, on **three** datasets.
 
 ## Modules
 

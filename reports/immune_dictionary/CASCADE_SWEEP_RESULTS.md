@@ -4,6 +4,7 @@
 **Method:** §26 cross-engagement asymmetry, the PRIMARY direction metric. `cross_asym(a,b) = s(a, S_b) − s(b, S_a)` (PBS-normalised), antisymmetric so the sign encodes direction; `+` ⇒ axis_a upstream. Signatures `S_X` = top-50 IG genes from per-cytokine binary AB-MIL (Bridge), aggregated as median across cell types + sign-consensus, with a random-gene-set null.
 **Pipeline:** build (2720 tubes, 87 cytokines incl PBS, expression verified 100% finite) → 12 benchmark binary models (WIDE 512/(512,512), Stage-2 250 ep) → IG → cross_asym → retally. Pre-registration locked at `reports/immune_dictionary/id_axes_labeled.csv` BEFORE the audit.
 **Run:** `results/id_cascade/` (DAG jobs 30717262 build, 30717267 stage12×3, 30717269 binary, 30721961 bridge).
+**Method bible:** `reports/method_deep_dive/` (M2 datasets, M7 cross_asym crux, M8 results) — this run is the third-dataset entry there; `per_axis_summary.csv` (alongside this file) is the machine-readable record.
 
 ---
 

@@ -27,7 +27,8 @@ directional_score(b,a) = s(b,S_b) − s(a,S_b) − s(b,S_a) + s(a,S_a)  ==  dire
 ```
 **SYMMETRIC** — identical value. Its sign does **not** depend on which stimulus we label `a`, so
 it cannot encode direction; it measures *coupling distinctness*. → this is why it scored
-**47% ≈ chance** on direction (M8).
+**47% ≈ chance** on direction (M8). The same control reproduced on the Immune Dictionary
+(third dataset): cross_asym **5/6** vs directional_score **2/6**, identical signatures.
 
 ```
 cross_asym(a,b) = s(a,S_b) − s(b,S_a) − s(PBS,S_b) + s(PBS,S_a)

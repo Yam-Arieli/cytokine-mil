@@ -1,7 +1,7 @@
 # M2 — The datasets
 
-We need *labeled* data to test the method. We use **two deliberately different datasets**
-so a win on both can't be a fluke of one system.
+We need *labeled* data to test the method. We use **three deliberately different datasets**
+so a win on all three can't be a fluke of one system.
 
 ## Vocabulary (ML ↔ this project)
 - **example / sample** = one **pseudo-tube** (a bag of cells; built in M3).
@@ -37,11 +37,24 @@ so a win on both can't be a fluke of one system.
 The local file `results/hvg_list.json` **is** this 500-gene panel (mouse symbols:
 `Acod1, Zfp36, ...` — all immune-response genes).
 
-## Why two datasets
-Different **species** (human/mouse), **system** (mixed blood / pure macrophages),
-**scale** (91 / 7), **gene coverage** (4000 broad / 500 targeted), **time** (24 h / course).
-cross_asym working on **both** (88% / 86%) shows the result is a property of the **method**,
-not of one dataset, species, or platform.
+## Dataset 3 — Immune Dictionary (broad, mouse, in-vivo, single early snapshot)
+| property | value |
+|---|---|
+| system | mouse **lymph node**, whole tissue (26 expert-annotated immune + stromal types) |
+| stimuli | **86 cytokines** + PBS |
+| donors | **3** mice per cytokine (`rep01/02/03`); PBS pooled across 14 reps |
+| genes | whole transcriptome (~31k) → **4000 HVGs** |
+| time | **single snapshot, 4 h** post sc/id injection, **in vivo** |
+| labels source | expression from GEO `GSE202186`; per-cell `cyt`/`celltype`/`rep` from the **public SCP2554 REST API** (no login), joined by `(channel, 16bp barcode)` at 100% |
+| role | in-vivo cross-check; trusted expert cell types (no Leiden needed); **cross_asym = 83%** (5/6) |
+| weakness | in-vivo confounds responder vs relay; single 4 h frame; small n (6 directional pairs) |
+
+## Why three datasets
+Different **species** (human/mouse), **system** (mixed blood / pure macrophages / whole
+lymph node), **scale** (91 / 7 / 86), **gene coverage** (4000 broad / 500 targeted / 4000
+broad), **time** (24 h / time-course / 4 h), and **ex-vivo vs in-vivo**. cross_asym working
+on **all three** (88% / 86% / 83%) shows the result is a property of the **method**, not of
+one dataset, species, platform, or stimulation regime.
 
 ## The no-cross-time-leakage constraint (Sheu-specific, central)
 Sheu's time-course is a temptation: "learn the signature at 1 h, test direction at 3 h."
