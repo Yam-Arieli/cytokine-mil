@@ -59,6 +59,9 @@ from cytokine_mil.analysis.oesinghaus_cell_loader import (  # noqa: E402
 from cytokine_mil.analysis.pathway_audit import (  # noqa: E402
     directional_asymmetry_test,
 )
+from cytokine_mil.analysis.direction_null import (  # noqa: E402
+    direction_permutation_test,
+)
 
 
 # ----------------------------------------------------------------------------
@@ -108,10 +111,16 @@ def _parse_args():
     p.add_argument("--weak_consensus", type=float, default=0.50,
                    help="Min sign_consensus for a WEAK call")
     p.add_argument("--n_null_perms", type=int, default=100,
-                   help="Per-axis null permutations with random S_A/S_B "
-                        "drawn from HVGs disjoint from observed S_X union. "
-                        "Set 0 to disable.")
+                   help="Per-axis GENE-SET null permutations with random "
+                        "S_A/S_B drawn from HVGs disjoint from observed S_X "
+                        "union (tests gene specificity). Set 0 to disable.")
     p.add_argument("--null_seed", type=int, default=42)
+    p.add_argument("--n_direction_perms", type=int, default=0,
+                   help="Per-axis DIRECTION-permutation null (CLAUDE.md "
+                        "§27.2): hold S_a,S_b fixed, permute a/b cell-condition "
+                        "labels within each cell type, recompute cross_asym. "
+                        "Tests whether the DIRECTION is reliable. 0 disables.")
+    p.add_argument("--direction_null_seed", type=int, default=123)
     p.add_argument(
         "--restrict_axes_to", nargs="+", default=None,
         help="If given, only run the axes whose unordered pair lex-key matches "
@@ -522,6 +531,9 @@ def main() -> None:
          f"null pool size = {n_genes_pool}")
 
     null_rng = np.random.default_rng(args.null_seed)
+    dir_rng = np.random.default_rng(args.direction_null_seed)
+    _log(f"[direction null] n_direction_perms = {args.n_direction_perms} "
+         f"(seed={args.direction_null_seed})")
 
     per_axis_rows: List[Dict[str, object]] = []
     n_ground_truth = 0
@@ -570,6 +582,12 @@ def main() -> None:
                 "dirscore_consensus": float("nan"),
                 "dirscore_sign_correct": False,
                 "dirscore_p_emp_two_sided": float("nan"),
+                "dir_n_perms": 0,
+                "dir_n_celltypes": 0,
+                "dir_null_center": float("nan"),
+                "dir_null_q025": float("nan"),
+                "dir_null_q975": float("nan"),
+                "dir_p_emp": float("nan"),
                 "median_score": float("nan"),
                 "sign_consensus": float("nan"),
                 "sign_correct": False,
@@ -645,6 +663,35 @@ def main() -> None:
                 null_err = f"null: {type(e).__name__}: {e}"
                 _log(f"           NULL ERROR: {null_err}")
 
+        # ---- Direction-permutation null (CLAUDE.md §27.2) — tests whether the
+        # cross_asym DIRECTION is reliable, holding S_a,S_b fixed and permuting
+        # only the a/b cell-condition labels. Distinct from the gene-set null. ----
+        dir_res = {
+            "dir_observed_cross_median": float("nan"),
+            "dir_null_center": float("nan"),
+            "dir_null_q025": float("nan"),
+            "dir_null_q975": float("nan"),
+            "dir_p_emp": float("nan"),
+            "dir_n_perms": 0,
+            "dir_n_celltypes": 0,
+        }
+        if args.n_direction_perms > 0 and not np.isnan(med):
+            try:
+                dir_res = direction_permutation_test(
+                    cells_by_pair=cells_by_pair,
+                    idx_a=pathway_idx_dict[A],
+                    idx_b=pathway_idx_dict[B],
+                    A=A, B=B,
+                    pbs_label=args.pbs_label,
+                    min_cells=args.min_cells,
+                    n_perm=args.n_direction_perms,
+                    rng=dir_rng,
+                )
+            except Exception as e:
+                dir_err = f"dir_null: {type(e).__name__}: {e}"
+                null_err = (null_err + "; " + dir_err) if null_err else dir_err
+                _log(f"           DIRECTION NULL ERROR: {dir_err}")
+
         sign_correct = False
         ds_sign_correct = False
         if expected is not None and not np.isnan(med):
@@ -678,6 +725,13 @@ def main() -> None:
             "dirscore_consensus": ds_cons,
             "dirscore_sign_correct": ds_sign_correct,
             "dirscore_p_emp_two_sided": ds_p_emp,
+            # DIRECTION-permutation null (§27.2) — primary direction-reliability test
+            "dir_n_perms": dir_res["dir_n_perms"],
+            "dir_n_celltypes": dir_res["dir_n_celltypes"],
+            "dir_null_center": dir_res["dir_null_center"],
+            "dir_null_q025": dir_res["dir_null_q025"],
+            "dir_null_q975": dir_res["dir_null_q975"],
+            "dir_p_emp": dir_res["dir_p_emp"],
             # back-compat aliases (older consumers read these)
             "median_score": med,
             "sign_consensus": cons,
@@ -690,7 +744,8 @@ def main() -> None:
         elapsed = time.time() - t_axis
         _log(f"           cross_asym={med:+.4f}  consensus={cons:.2f}  "
              f"({res['cross_n_pos']}+/{res['cross_n_neg']}−)  "
-             f"call={classification}  null_p={p_emp:.3f}  "
+             f"call={classification}  geneset_null_p={p_emp:.3f}  "
+             f"dir_null_p={dir_res['dir_p_emp']:.3f}  "
              f"[dirscore={ds_med:+.4f}]  "
              f"sign_correct={sign_correct}  elapsed={elapsed:.1f}s  DONE")
 
@@ -702,6 +757,10 @@ def main() -> None:
     n_null_pass = int(
         ((per_axis_df["cross_p_emp_two_sided"] < 0.05)
          & (per_axis_df["classification"] != "AMBIGUOUS")).sum()
+    )
+    n_dir_pass = (
+        int(((per_axis_df["dir_p_emp"] < 0.05)).sum())
+        if "dir_p_emp" in per_axis_df.columns else 0
     )
     # directional_score (secondary metric) sign accuracy, for the comparison
     ds_gt = per_axis_df[per_axis_df["expected_sign"].notna()]
@@ -733,8 +792,11 @@ def main() -> None:
         f"**{n_correct} / {n_ground_truth}**",
         f"- directional_score (secondary) sign accuracy (all graded axes): "
         f"**{ds_correct} / {ds_total}**",
-        f"- cross_asym non-AMBIGUOUS axes also passing the null control "
+        f"- cross_asym non-AMBIGUOUS axes also passing the GENE-SET null control "
         f"(p_emp < 0.05): **{n_null_pass}**",
+        f"- axes passing the DIRECTION-permutation null (§27.2; dir_p_emp < 0.05): "
+        f"**{n_dir_pass}** / {len(per_axis_df)}  "
+        f"(Group-U FDR aggregation is done downstream by run_group_u_fdr.py)",
         "",
         "## Per-axis summary (cross_asym primary, directional_score secondary)",
         "",
