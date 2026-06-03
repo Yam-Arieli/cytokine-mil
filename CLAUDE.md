@@ -1521,3 +1521,87 @@ Run the §26 pipeline on the ID (§2.7) using the §25.2 pre-registered cascades
 benchmark, re-expressed as `cross_asym` directional labels (alphabetical pair + `expected_sign`;
 bidirectional pairs such as IL-12↔IFN-γ excluded from signed accuracy). Verdict →
 `reports/immune_dictionary/CASCADE_SWEEP_RESULTS.md`.
+
+---
+
+## 27. Full Path A → Path B + Group-U direction FDR (Oesinghaus, 2026-06)
+
+**Motivation (the gap this closes).** The `cross_asym` benchmark (§26) was evaluated on a
+hand-curated / audit-derived shortlist of labeled directional pairs (17 on Oesinghaus, 53
+pairs total with a direction). That measures **recall on knowns** but leaves two holes:
+(1) the two-stage "Path A couples → Path B directs" pipeline was never actually run
+end-to-end — the benchmark pairs were carved out of Path A's own output (circular); and
+(2) the **Group-U** pairs (Path-A-coupled pairs with *no* directional prior) get a
+confident `cross_asym` sign but were never scored — so the method's behaviour on the
+*unknown* coupled pairs (where novel-cascade discovery would live) is uncharacterised.
+This section runs the full pipeline over **all 121 Path A coupled axes** and quantifies
+the unknown calls with a **direction-specific permutation-null FDR**.
+
+**Scope:** Oesinghaus only (Path A genuinely works there — 121 axes; Sheu's Path A gate
+FAILED, ID's emitted nothing, so the two-stage claim is Oesinghaus-only and the
+direction-only Sheu/ID results in §26 are unchanged). Direction-not-existence and
+not-causation caveats (§26.4) carry over verbatim.
+
+### 27.1 Full Path A → Bridge → Path B (de-circularise)
+`run_pipeline_a_bridge_b.py` already reads `cytokine_axes.csv` (121 axes) as input but
+only 53 pairs resolved (21 cytokines had binary IG signatures). Train binary AB-MIL +
+IG for the **missing cytokines** (= cytokines in `cytokine_axes.csv` − cytokines already
+in `binary_ig.parquet`; ~24 of the 45) using the wide config (embed=512, hidden=(512,512),
+attn=128, Stage1 20@0.005, Stage2 250@3e-5 — matches §17/§26 bridge so the IG probe loads
+all models uniformly), merge into a 45-cytokine `binary_ig.parquet`, then run the pipeline
+over all 121 axes. The 17 labeled pairs reproduce the §26 headline (regression check); the
+remaining **~104 = Group U**.
+
+### 27.2 Direction-permutation null (`cytokine_mil/analysis/direction_null.py`)
+The §26 random-gene-set null tests "are the `S_X` genes cytokine-specific" — NOT "is the
+direction real" (overlap pairs pass it because shared-program genes *are* specific). The
+correct null for direction holds `S_a, S_b` **fixed** and breaks only the a-vs-b label:
+
+1. Per axis (a, b), per cell type T: precompute each pooled (a∪b)-cell's score on `S_a`
+   and on `S_b` (mean expression over the gene set) — done **once**.
+2. Observed `cross_asym(T) = (mean_{a-cells} score_Sb − pbs_Sb) − (mean_{b-cells} score_Sa
+   − pbs_Sa)`; matches `directional_asymmetry_test`'s `sA_PB_norm − sB_PA_norm`. PBS
+   baselines are fixed (not permuted).
+3. Permute the a/b membership **within each cell type** (preserve counts n_a, n_b),
+   recompute; aggregate **median across cell types** per permutation. `n_perm=1000`,
+   `seed=123`.
+4. The null has a **nonzero baseline centre** by construction (the `S_a`/`S_b` magnitude
+   offset is a nuisance, not direction). Recentre: `p_emp_two_sided = mean_k(|null_k −
+   null_centre| ≥ |observed − null_centre|)`, `null_centre = mean(null_k)`. The direction
+   **call** (sign) stays the observed `cross_median` sign; the null only asks whether the
+   a-vs-b asymmetry is beyond label noise.
+
+This null tests "**is the directional asymmetry statistically reliable**", not "is this a
+cascade" (existence = Path A) and not "is it causal" (wet-lab). Overlap pairs with a real
+magnitude asymmetry *may* pass — that is expected and correct; coupling is Path A's gate.
+
+New driver flags (default-off, backwards compatible): `--n_direction_perms` (0 = skip),
+`--direction_null_seed`. New per-axis columns: `dir_n_perms, dir_null_center,
+dir_null_q025, dir_null_q975, dir_p_emp`.
+
+### 27.3 Group-U FDR (`scripts/run_group_u_fdr.py`)
+Reads `per_axis_summary.csv` + the audited labels; partitions **labeled** (counts_in_benchmark)
+vs **Group U** (coupled, no prior); over Group U computes **BH-FDR** on `dir_p_emp`
+(manual, no scipy) and a **Storey π₀** estimate (λ=0.5) → "K of the ~104 unknown coupled
+pairs carry a reliable directional asymmetry at FDR q". Emits the ranked Group-U
+hypothesis list and `reports/cascade_pairs/GROUP_U_RESULTS.md`.
+
+### 27.4 Pre-registration (locked BEFORE the run, per §25.1)
+`reports/cascade_pairs/GROUP_U_PREREGISTRATION.md` (committed to `main` before any audit
+script runs) locks: n_perm=1000, FDR q∈{0.05,0.10}, confident-hypothesis definition
+(`dir BH-q ≤ 0.10` AND `cross_consensus ≥ 0.7` AND `|cross_median| ≥ 25th-pctile of
+labeled-positive |cross_median|`), top-K=10, and the calibration predictions:
+- **P1 (power):** ≥ 80% of labeled non-AMBIGUOUS positives pass the direction null (q ≤ 0.10).
+- **P2 (specificity):** near-zero / known-miss pairs do NOT pass.
+- **P3 (headline, discovery-capable):** Group-U π₀ < 0.9 (i.e., > 10% of unknown coupled
+  pairs carry a reliable direction). π₀ ≈ 1 ⇒ method is confirmation-only.
+- **P4 (regression):** the §26 labeled accuracy is unchanged by adding the ~24 cytokines.
+
+### 27.5 Driver / SLURM
+- New: `scripts/train_oesinghaus_binary_groupu.py` (computes the missing set from
+  axes_csv − existing binary_ig; clones the missing16 trainer), `scripts/run_group_u_fdr.py`,
+  `cytokine_mil/analysis/direction_null.py`.
+- SLURM DAG `slurm/group_u/`: `train.slurm` (GPU) → `ig.slurm` (CPU) → `merge.slurm` (CPU)
+  → `pipeline.slurm` (CPU, `--n_direction_perms 1000`) → `fdr.slurm` (CPU); submitter
+  `submit_group_u_dag.sh` (dry-run via `SUBMIT=echo`). Output dir `results/group_u/`.
+- **Bottom line:** `reports/cascade_pairs/GROUP_U_RESULTS.md` + `results/group_u/pipeline_full121/per_axis_summary.csv`.
