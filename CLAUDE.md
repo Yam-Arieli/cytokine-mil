@@ -1605,3 +1605,54 @@ labeled-positive |cross_median|`), top-K=10, and the calibration predictions:
   → `pipeline.slurm` (CPU, `--n_direction_perms 1000`) → `fdr.slurm` (CPU); submitter
   `submit_group_u_dag.sh` (dry-run via `SUBMIT=echo`). Output dir `results/group_u/`.
 - **Bottom line:** `reports/cascade_pairs/GROUP_U_RESULTS.md` + `results/group_u/pipeline_full121/per_axis_summary.csv`.
+
+---
+
+## 28. Signature-space coupling — the "specific-dimensions" reframe of Path A (2026-06)
+
+**Motivation.** Latent-geometry Path A (§20) measures coupling in the **encoder
+embedding** with PBS-RC. PBS-RC removes the *resting* baseline but NOT the
+**shared post-activation program** — the immune-response genes almost every
+cytokine co-induces. So apparent coupling can be dominated by that shared
+direction (cytokines look similar because they all *activate*), not by
+cytokine-**specific** biology. Evidence: on Oesinghaus, latent-geometry
+`axis_strength` correlates only weakly (Spearman ρ ≈ 0.29) with signature-space
+coupling; the textbook IL-2/IL-15 pair tops signature space but not Path A; and
+IL-6/TNF-α (pre-registered) has **negative** signature-space coupling (IL-6→STAT3
+and TNF→NF-κB are specifically *distinct*, coupled only via shared activation).
+On Sheu the latent-geometry gate had **no power at all** (q=1 everywhere) — the
+500-gene immune panel is *all* shared-activation genes.
+
+**The reframe.** Run gene-set detection (binary-IG `S_X`) **first**, then measure
+coupling DIRECTLY in those specific dimensions, bypassing the encoder embedding.
+Build the **cross-engagement matrix** `M[a,b] = s(a, S_b) − s(PBS, S_b)`
+(median across cell types; = `directional_asymmetry_test`'s `sA_PB_norm`
+generalised to every ordered pair). Two readouts from one matrix:
+
+- **Coupling(a,b) = M[a,b] + M[b,a]** (SYMMETRIC) — do a and b *mutually* engage
+  each other's specific programs? Gated by a **gene-set null** (is it > engagement
+  of random gene sets of the same size, drawn disjoint from any `S_X`? — the
+  "strong enough signal" gate).
+- **Direction(a,b) = M[a,b] − M[b,a]** = **cross_asym** (ANTISYMMETRIC; §26),
+  read only on coupled pairs (existence ≠ direction).
+
+**Code:** `cytokine_mil/analysis/signature_coupling.py`
+(`engagement_per_celltype`, `cross_engagement_matrix`, `coupling_direction`;
+numpy-only, unit-tested to match `directional_asymmetry_test`).
+Driver `scripts/run_signature_coupling.py --dataset {oesinghaus,sheu}`.
+
+**Two pre-registered tests (run 2026-06, alongside the §27 DAG):**
+- **Oesinghaus** (`slurm/group_u/coupling_oes.slurm`, all-45 signatures from the
+  §27 `ig_merge`): compare the coupling axis set + literature support to
+  latent-geometry Path A's 121 axes; report Spearman(coupling, axis_strength).
+- **Sheu** (`slurm/group_u/coupling_sheu.slurm`, 3hr + 5hr, single-frame):
+  **decisive "irrelevant features" test** — does signature-space coupling recover
+  the textbook MUST pairs (LPS–TNF, polyIC–IFNb) that the latent-geometry gate
+  FAILED (0/2)? If yes, Sheu's Path A failure was measuring shared activation, not
+  geometry. Output `results/group_u/coupling_{oes,sheu_*}/coupling_report.md`.
+
+**Honest caveat.** It all rides on `S_X` being *specific*. On Sheu's 500-gene
+panel `S_X` may still be activation-dominated (the §22 collapse) — in which case
+signature coupling also struggles there, and the bottleneck is the panel, not the
+geometry. That is exactly what the Sheu test decides. Does NOT replace Path A's
+published 121-axis result until this is validated; it is a candidate reframe.
