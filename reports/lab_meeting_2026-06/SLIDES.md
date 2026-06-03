@@ -10,8 +10,7 @@ in `[[ ... ]]`. ~14 slides + 2 backup.
 **Reading cytokine cascades from a single-cell snapshot**
 Which cytokines are coupled, and which one is upstream — without a time course.
 
-Yam Arieli · Nitzan Lab · June 2026
-*(confirm name/lab/date)*
+Cascades detection
 
 ---
 
