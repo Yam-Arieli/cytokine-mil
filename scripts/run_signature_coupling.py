@@ -177,6 +177,19 @@ def main() -> None:
     df = pd.DataFrame(rows)
     log(f"coupling computed for {len(df)} unordered pairs ({time.time()-t0:.0f}s)")
 
+    # Defensive: <2 cytokines had BOTH a signature AND loaded cells (e.g. wrong
+    # manifest / time_point) -> no pairs. Write a stub and exit 0 (don't crash).
+    if df.empty or "coupling_null_p" not in df.columns:
+        log("WARN: no evaluable pairs (need >=2 cytokines with signature AND cells). "
+            f"time_filter={args.time_filter}; check manifest/time_point.")
+        df.to_csv(out / "coupling_axes.csv", index=False)
+        (out / "coupling_report.md").write_text(
+            f"# Signature-space coupling — {args.dataset}\n\n"
+            f"**No evaluable pairs.** Fewer than 2 cytokines had both a discovered "
+            f"signature and loaded cells (time_filter={args.time_filter}). Likely a "
+            f"manifest/time_point mismatch.\n")
+        return
+
     # canonical key + null-pass flag
     df["coupled"] = df["coupling_null_p"] < 0.05
     df["direction_call"] = np.where(

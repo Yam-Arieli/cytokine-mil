@@ -18,15 +18,17 @@ cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 export MPLCONFIGDIR=/cs/labs/mornitzan/yam.arieli/.matplotlib_cache
 PY=/cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python
 
-MAN=/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json
-HVG=/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/hvg_list.json
+DATASETS=/cs/labs/mornitzan/yam.arieli/datasets
 AXES=reports/sheu_cascade/sheu_axes_labeled.csv
 
-# Sheu signatures are PER-TIME-POINT (single-frame, no cross-time leakage):
-#   results/sheu_cascade/<TP>/binary_ig/binary_ig.parquet
-# Use the frame-matched signature for each TP's coupling.
+# Sheu pseudotube manifests are PER-TIME-POINT (the standard manifest is 0hr+3hr
+# only, §2.5; 5hr was built separately). Signatures are also per-TP. Use the
+# frame-matched manifest AND signature for each TP (single-frame, no leakage).
+declare -A PTDIR=( [3hr]=Sheu2024_pseudotubes [5hr]=Sheu2024_5hr_pseudotubes )
 for TP in 3hr 5hr; do
-  echo "=== Sheu signature coupling @ $TP ==="
+  MAN=$DATASETS/${PTDIR[$TP]}/manifest.json
+  HVG=$DATASETS/${PTDIR[$TP]}/hvg_list.json
+  echo "=== Sheu signature coupling @ $TP (manifest ${PTDIR[$TP]}) ==="
   $PY scripts/run_signature_coupling.py \
       --dataset sheu \
       --binary_ig_parquet "results/sheu_cascade/${TP}/binary_ig/binary_ig.parquet" \
