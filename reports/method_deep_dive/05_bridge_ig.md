@@ -54,3 +54,28 @@ This is where the M1 caveat becomes concrete (and is the project's one consisten
 **IN:** `model_X.pt` (frozen binary models), manifest, `hvg_list.json`.
 **PROC:** PBS-mean baseline → 20-step midpoint IG per cell → average + rank per gene.
 **OUT:** `binary_ig.parquet (cytokine, gene, ig, mean_expression, rank_ig)`; `S_X` = top-50.
+
+## 7. Worked numbers (real IG run, planted `CytA→CytB` synthetic)
+Ran `cascadir` end-to-end locally (`preprocess → 4 tubes → 5-epoch encoder → 40-epoch
+binary CytA-vs-PBS & CytB-vs-PBS → derive_signatures(top_n=20)`; `signatures.py`).
+Planted: UP=`gene0–9` (CytA only), DOWN=`gene10–19` (both; CytA relays), noise=`gene20–59`.
+
+| signature | UP in top-20 | DOWN | noise | UP rank positions |
+|---|---:|---:|---:|---|
+| `S_CytA` (upstream)   | 5 | 4 | 11 | #2,#3,#4,#15,#16 (**high**) |
+| `S_CytB` (downstream) | 3 | 5 | 12 | #10,#14,#19 (**ig≈0.001**) |
+
+Top of `S_CytA`: gene18(DOWN,.0074), gene12(DOWN,.0060), **gene0(UP,.0057)**,
+gene8(UP,.0048), gene6(UP,.0036). Top of `S_CytB`: gene18(DOWN,.0111), gene12(DOWN,.0073),
+gene15(DOWN,.0039) — UP-block only at the bottom.
+
+**Read:** the **upstream** signature carries **both** programs; the **downstream** one carries
+**only its own**. CytB never elevates the UP-block (stays at baseline) ⇒ UP genes are
+non-discriminative for CytB-vs-PBS ⇒ ~0 IG ⇒ excluded. This asymmetry (UP high in
+`S_upstream`, absent in `S_downstream`) is exactly what makes `cross_asym > 0` for the
+upstream (M7). Noise leaks at ig≈0.001 vs program 0.005–0.011 ⇒ **magnitude** separates them;
+`top_n` is a knob (top-6 here ≈ pure program).
+
+**Collapse knob (→ polyIC, M9):** UP and DOWN share one `program_rate` here, so UP survives in
+`S_CytA`. Make the relayed DOWN program ≫ the UP-specific one and DOWN crowds UP out of the top
+⇒ `S_CytA ≈ S_CytB` ⇒ cross_asym sign loses its grip. That is the polyIC→IFNb failure (M5 §5).

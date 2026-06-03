@@ -37,7 +37,7 @@ legend: `[x]` taught + written · `[d]` reference drafted (interactive walkthrou
 - `[x]` M2 — Datasets → `02_datasets.md`
 - `[x]` M3 — Preprocessing & pseudo-tubes → `03_pseudotubes.md`
 - `[x]` M4 — AB-MIL model + hyperparameters → `04_model_and_hyperparams.md`
-- `[d]` M5 — Bridge: binary AB-MIL + Integrated Gradients → `05_bridge_ig.md`
+- `[x]` M5 — Bridge: binary AB-MIL + Integrated Gradients → `05_bridge_ig.md`
 - `[d]` M6 — Path A: latent geometry → `06_path_a_latent_geometry.md`
 - `[d]` M7 — Path B: the cross_asym crux → `07_cross_asym.md`
 - `[d]` M8 — Experiments & results → `08_experiments_results.md`
