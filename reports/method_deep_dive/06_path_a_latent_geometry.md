@@ -41,3 +41,24 @@ direction needs a different, antisymmetric-**yet-meaningful** statistic → that
 - **Path B = direction** (who is upstream).
 cross_asym gives **direction, not existence** — negatives can still have large `|cross_asym|`;
 deciding *whether* a pair is coupled is Path A's job (the honest caveat in M8).
+
+## 7. A SECOND coupling path — signature space (§28, 2026-06)
+Latent-geometry coupling has a known weakness: PBS-RC removes the *resting* baseline but not
+the **shared post-activation program**, so the embedding is partly "everyone activates" — it
+worked on Oesinghaus but had **no power on Sheu** (q=1 everywhere). The reframe measures
+coupling **in the cytokine-specific signature genes `S_X`** instead of the embedding: build
+`M[a,b]=s(a,S_b)−s(PBS,S_b)`, then **coupling = M[a,b]+M[b,a]** (symmetric) and
+**direction = M[a,b]−M[b,a]** (= cross_asym) — one matrix, two halves
+(`cytokine_mil/analysis/signature_coupling.py`).
+
+So there are now **two coupling paths**, mirror-image failure modes:
+
+| | Path 1 — latent space (this module) | Path 2 — gene signatures (§28) |
+|---|---|---|
+| pro | rich representation; donor-level FDR; the standing 121-axis result | specific/interpretable; gives direction for free; robust where the latent space is weak |
+| con | confounded by shared activation; needs rich data | rides on `S_X` specificity; gate over-permissive on broad spaces |
+| works | Oes ✓ | Sheu ✓ (recovered 2/2 cascades Path 1 missed) |
+| fails | Sheu ✗ (q=1) | Oes ⚠ gate too loose (894/1128) |
+
+They're **complementary**; likely endgame = Path 2's specificity + Path 1's donor-level
+discipline. Results: `reports/cascade_pairs/SIGNATURE_COUPLING_RESULTS.md`.

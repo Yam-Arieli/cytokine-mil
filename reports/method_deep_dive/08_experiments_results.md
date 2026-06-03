@@ -66,3 +66,18 @@ cross_asym working on all three is evidence it is a property of the **method**, 
 of one dataset. On each it beats its symmetric `directional_score` control (47% / – / 33%).
 The honest framing: a methodology demonstration on *known* cascades with small per-dataset n
 (17 / 7 / 6 directional axes) — strong, **reproducible** signal, modest sample size.
+
+## 7. Coupling reframe + Group-U direction FDR (2026-06) — one win, two honest negatives
+- **Signature-space coupling (§28 / M6 §7).** *Sheu: WIN* — coupling in cytokine-specific
+  signature genes recovers **2/2** MUST IFN cascades (LPS–IFNb, polyIC–IFNb) at **3hr AND 5hr**
+  that latent-geometry Path A missed (0/2, q=1). *Oes:* ran (48 cyt, 1128 pairs), right biology
+  at the top (IL-15/IL-2 #1) but the gate is over-permissive (**894/1128 coupled**) +
+  hub-dominated; Spearman 0.11 vs Path A. *ID:* not run. → `SIGNATURE_COUPLING_RESULTS.md`.
+- **Group-U direction FDR (§27).** Full Path A→B over all 121 Oes axes + a direction-permutation
+  null. P1 power PASS, but **P3 "discovery-capable" (π₀=0.038) is an over-power artifact**
+  (cell-level null × thousands of cells → ~all pairs `p=0.000`), and **P4 regression FAILED**
+  (labeled 6/11 vs §26 15/17 — chunked-encoder signature drift). **NOT a valid discovery
+  claim.** → `GROUP_U_RESULTS.md`.
+- **The shared lesson:** at single-cell scale, **cell-level nulls/gates are over-powered** —
+  coupling *existence* and direction *reliability* must be judged at the **donor** level (§16:
+  effective N ≈ donors, not cells). This is the next-round fix for both.

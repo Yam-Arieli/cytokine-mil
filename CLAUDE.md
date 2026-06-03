@@ -22,6 +22,18 @@ The project has produced **one** publication-grade contribution and **one** narr
 methodology contribution after a self-audit revised earlier claims downward.
 **All prior work, code, and results remain in the repo and on `main`.**
 
+**Update (2026-06-03)** (spec §27–§28; writeups `reports/cascade_pairs/GROUP_U_RESULTS.md`,
+`…/SIGNATURE_COUPLING_RESULTS.md`): two method explorations. (1) A **signature-space coupling
+reframe** — coupling measured in cytokine-specific genes (`S_X`) instead of the encoder
+embedding — **recovered the Sheu TLR→IFN cascades that latent-geometry Path A had missed
+(2/2 at 3hr and 5hr)**: a real win confirming the "shared-activation confound" diagnosis.
+(2) The first end-to-end **Group-U direction-FDR** (direct all 121 Path A axes, then test
+unlabeled-pair direction) and the Oesinghaus coupling gate both **over-call at the cell
+level** (over-powered permutation nulls → ~everything significant; plus a P4 signature
+regression), so **neither yields a valid discovery claim yet**. The open headline is
+**donor-level nulls** (§16). The standing results below (Path A 121 axes; cross_asym
+88/86/83% on *labeled* pairs) are unaffected.
+
 **Path A — axis discovery on Oesinghaus 24h PBMC (91 cytokines):**
 121 cytokine coupling axes recovered (17 textbook directional + 2 pre-registered + 29
 coregulated + 13 partial + 54 novel; ~50% lit-supported vs ~1% chance baseline). Result
@@ -1606,6 +1618,24 @@ labeled-positive |cross_median|`), top-K=10, and the calibration predictions:
   `submit_group_u_dag.sh` (dry-run via `SUBMIT=echo`). Output dir `results/group_u/`.
 - **Bottom line:** `reports/cascade_pairs/GROUP_U_RESULTS.md` + `results/group_u/pipeline_full121/per_axis_summary.csv`.
 
+### 27.6 Results (2026-06-03) — NOT a valid discovery claim (null over-powered + P4 regression)
+
+Ran end-to-end (jobs 30726479–30726489). **P1 (power) PASS** (11/11 labeled non-AMBIGUOUS
+pass the null). But the pre-registration's other checks falsified the headline:
+- **P3 over-power artifact.** The cell-level permutation null with thousands of cells per
+  (cytokine, cell-type) makes ~all pairs significant (`dir_p_emp = 0.0000` for 16/17 labeled);
+  Storey π₀ = 0.038 ("96% of Group-U reliable") is the null being trivially beatable at large
+  n, not biology. **The null must be donor-level** (§16: unit of independence = donor ≈10, not
+  cells).
+- **P4 regression FAIL.** Labeled cross_asym accuracy 6/11 non-AMBIGUOUS (≈10/16 by sign) vs
+  §26's 15/17; the all45 re-run does not reproduce the published signatures — likely because
+  `train_oesinghaus_binary_groupu.py` used a separate encoder per 8-way chunk (3 cytokines
+  each) instead of §26's single shared encoder.
+
+**Verdict:** the two-stage machinery runs, but the Group-U discovery question is **OPEN**,
+pending (a) a donor-level direction null, (b) reproducing the §26 signatures. The §26 88% and
+Path A's 121 axes are unaffected. Honest writeup: `reports/cascade_pairs/GROUP_U_RESULTS.md`.
+
 ---
 
 ## 28. Signature-space coupling — the "specific-dimensions" reframe of Path A (2026-06)
@@ -1656,3 +1686,22 @@ panel `S_X` may still be activation-dominated (the §22 collapse) — in which c
 signature coupling also struggles there, and the bottleneck is the panel, not the
 geometry. That is exactly what the Sheu test decides. Does NOT replace Path A's
 published 121-axis result until this is validated; it is a candidate reframe.
+
+### 28.1 Results (2026-06-03)
+
+- **Sheu — WIN (decisive).** Signature-space coupling recovers **2/2** MUST IFN cascades
+  (LPS–IFNb, polyIC–IFNb) at **both** 3hr and 5hr that latent-geometry Path A failed (0/2,
+  q=1); clean negatives (P3CSK–IFNb, CpG–IFNb) stay uncoupled. Direction: LPS→IFNb correct at
+  both frames; polyIC flips at 5hr (known ISG-collapse). Confirms the diagnosis — Sheu's Path
+  A failure was measuring shared activation, not a missing signal.
+- **Oesinghaus — signal present, gate too loose.** 48 cytokines / 1128 pairs; right biology at
+  the top (IL-15/IL-2 #1, IFN/KNOWN pairs); Spearman(coupling, Path A `axis_strength`) = 0.11
+  (ranks coupling very differently). BUT the gene-set null is over-permissive
+  (**894/1128 "coupled"**) and hub-dominated (IL-15 in 11/20 top pairs, CD40L in 5/20) — needs
+  a **donor-level + degree/hub correction** before it discriminates on the broad pair space.
+- **Immune Dictionary — not run.** ID currently has no coupling result (latent-geometry Path A
+  also never emitted output there); its §26 83% is direction-only on hand-picked pairs.
+- **Two coupling paths are complementary** (latent: rich but shared-activation-confounded,
+  needs rich data, works on Oes; signature: specific/interpretable but over-permissive gate,
+  rescues Sheu). Likely endgame: signature specificity + donor-level discipline. Full writeup:
+  `reports/cascade_pairs/SIGNATURE_COUPLING_RESULTS.md`.
