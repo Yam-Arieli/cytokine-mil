@@ -27,11 +27,19 @@ It is a **complete experiment runner**: from a brand-new dataset it does
 **preprocess → Path A (which pairs are coupled) → bridge (signatures) → Path B (who is
 upstream) → analysis (score against known labels)**.
 
-> **Two complementary questions.** **Path A** (`discover_axes`) answers *existence* — which
-> pairs are coupled at all — via latent-space geometry. **Path B** (`direction` / `cross_asym`)
-> answers *direction* — who is upstream — for a pair. They are separate by design: a pair that
-> is *not* coupled can still produce a large `|cross_asym|`, so cross_asym magnitude is **not**
-> a coupling test. Use Path A to decide *whether*, Path B to decide *which way*.
+> **Two complementary questions.** *Existence* — which pairs are coupled at all — and
+> *direction* — who is upstream — are separate by design: a pair that is *not* coupled can
+> still produce a large `|cross_asym|`, so cross_asym magnitude is **not** a coupling test.
+> Use a coupling method to decide *whether*, then `cross_asym` to decide *which way*.
+
+> **Coupling has TWO paths** (mirror-image trade-offs): **latent geometry**
+> (`discover_axes` — coupling in the encoder embedding; works on a broad panel with many
+> donors, no power on a targeted panel) and **signature space**
+> (`signature_coupling` — coupling in the cytokine-*specific* genes; works on targeted
+> panels / few donors and yields direction for free, but its gate over-calls on broad
+> data unless `donor_level=True`). **Read [`MANUAL.md`](MANUAL.md) — it tells you which
+> coupling path to use for your dataset, and is written for an agent driving a new
+> dataset end-to-end.**
 
 ---
 
@@ -122,10 +130,11 @@ validate_anndata        # strict suitability check
   → preprocess          # normalize/log1p + HVG (handles raw vs lognorm)
   → build_pseudotubes   # in-memory bags of cells, stratified by cell type
   → train_encoder       # Stage 1: cell-type-supervised cell encoder
-  ├─ discover_axes      # Path A: multiclass geometry → which pairs are COUPLED (existence)
+  ├─ discover_axes      # coupling path 1 (latent geometry): which pairs are COUPLED (existence)
   └─ train_all_binary   # Stage 2: one stimulus-vs-control AB-MIL per condition
        → derive_signatures   # Integrated Gradients → top-N discovered S_X per condition
-       → direction_call /    # Path B: cross_asym + null → STRONG/WEAK/AMBIGUOUS, who is upstream
+       → signature_coupling  # coupling path 2 (signature space): M[a,b]; coupling=M+Mᵀ, direction=M−Mᵀ
+       → direction_call /    # cross_asym + null → STRONG/WEAK/AMBIGUOUS, who is upstream
          direction_table
   → score_directions    # analysis: accuracy vs known (upstream, downstream) labels
 ```
@@ -137,7 +146,8 @@ On the estimator: `est.discover_axes()` (Path A), `est.direction_table()` (Path 
 est = cd.CascadeDirection(condition_col="cytokine", donor_col="donor",
                           celltype_col="cell_type", control_label="PBS").fit(adata)
 
-axes  = est.discover_axes()                 # AxisResult: coupled pairs + relay cell type
+axes  = est.discover_axes()                 # coupling path 1 (latent): coupled pairs + relay
+cpl   = est.signature_coupling(donor_level=True)  # coupling path 2 (signatures): coupling + cross_asym
 table = est.direction_table()               # who is upstream, per pair
 bench = est.benchmark([("IFNb", "IFNg")])   # score directions vs known labels
 print(axes.summary()); print(bench.summary())
@@ -178,11 +188,19 @@ A `DirectionCall` carries: `cross_asym_median`, `sign_consensus`, `classificatio
   (reproducible in isolation), so `null_p` values are not numerically identical to the original
   research runs (which advanced one shared RNG across all pairs). The direction sign and the
   STRONG/WEAK/AMBIGUOUS classification do not depend on the null and are unaffected.
-- **Path A needs several donors.** Coupling discovery uses a donor-level Wilcoxon signed-rank
-  test, so its `coupled` flag is statistically meaningful only with enough donors (with 3 donors
-  the one-sided test cannot reach p<0.05; the validated 121-axis run used ~10). With few donors,
-  `AxisResult.underpowered` is `True` — rank pairs by `axis_strength` rather than trusting
-  `coupled`. Path B (direction) is unaffected by this.
+- **Latent coupling needs several donors.** `discover_axes` uses a donor-level Wilcoxon
+  signed-rank test, so its `coupled` flag is meaningful only with enough donors (3 donors
+  cannot reach p<0.05; the validated 121-axis run used ~10). With few donors,
+  `AxisResult.underpowered` is `True` — rank by `axis_strength`, not `coupled`. And on a
+  *targeted* gene panel it has **no power at all** (every q≈1) — use `signature_coupling` there.
+- **`signature_coupling`'s cell-level gate is over-powered.** With thousands of cells, the
+  random-gene-set null flags almost everything (it over-calls on broad data, hub-dominated).
+  **The unit of independence is the donor** — pass `donor_level=True` for an honest (sign-test,
+  conservative) gate. A donor-level *direction* null is on the roadmap, not yet shipped.
+- **Which coupling path?** Broad panel + many donors → `discover_axes` (the standing result),
+  with `signature_coupling(donor_level=True)` as a specificity cross-check. Targeted panel /
+  few donors → `signature_coupling` is primary. See [`MANUAL.md`](MANUAL.md) §4. Direction
+  (`cross_asym`) is computed the same way regardless and is the most-validated output.
 
 ---
 

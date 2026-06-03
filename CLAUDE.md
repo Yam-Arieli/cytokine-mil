@@ -1705,3 +1705,28 @@ published 121-axis result until this is validated; it is a candidate reframe.
   needs rich data, works on Oes; signature: specific/interpretable but over-permissive gate,
   rescues Sheu). Likely endgame: signature specificity + donor-level discipline. Full writeup:
   `reports/cascade_pairs/SIGNATURE_COUPLING_RESULTS.md`.
+
+---
+
+## 29. `cascadir` — the reusable, dataset-agnostic package (2026-06)
+
+The method is packaged as a standalone, dataset-agnostic library at `cascadir/`
+(`cascadir/src/cascadir/`, its own `pyproject.toml`, tests, examples). Use it to re-run the
+whole method on a **new dataset** without touching the research scripts — it's pure in-memory
+(no cluster/SLURM/filesystem).
+
+**For a new dataset, read `cascadir/MANUAL.md` first** — the agent-facing guide: data
+contract, the one-call `CascadeDirection`, the **two coupling paths + which to use per
+dataset** (the Oes/Sheu lesson), the donor-level/over-power caveat, a step-by-step recipe,
+and the validated calibration numbers (88/86/83%).
+
+- One call: `cd.CascadeDirection(condition_col=…, donor_col=…, celltype_col=…,
+  control_label="PBS").fit(adata)`.
+- Coupling path 1 — latent geometry: `est.discover_axes()` (broad panel + many donors).
+- Coupling path 2 — signature space: `est.signature_coupling(donor_level=True)` (the §28
+  reframe — `coupling = M+Mᵀ`, `cross_asym = M−Mᵀ` from one cross-engagement matrix; use on
+  targeted panels / few donors).
+- Direction: `est.direction_table()` (cross_asym; the validated 88/86/83% output).
+
+`cascadir` mirrors the research code in `cytokine_mil/analysis/…` but is decoupled from the
+cluster. When the method changes, update both (and `cascadir/MANUAL.md`).

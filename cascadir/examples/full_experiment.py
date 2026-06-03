@@ -43,11 +43,15 @@ def main() -> None:
     print("[validate]")
     print(est.validation_report.summary(), "\n")
 
-    # 2) Path A — coupling discovery (existence)
+    # 2) Coupling path 1 — latent geometry (existence; direction-agnostic)
     axes = est.discover_axes()
-    print("[Path A] coupling axes (existence; direction-agnostic)")
+    print("[coupling 1: latent geometry] coupling axes (existence)")
     print(axes.summary())
     print(axes.axes.to_string(index=False), "\n")
+
+    # 2b) Coupling path 2 — signature space (coupling + direction from one matrix)
+    print("[coupling 2: signature space] coupling = M+Mᵀ, cross_asym = M−Mᵀ (donor-level gate)")
+    print(est.signature_coupling(donor_level=True).to_string(index=False), "\n")
 
     # 3) Path B — direction (who is upstream)
     print("[Path B] direction table (cross_asym)")

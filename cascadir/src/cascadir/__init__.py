@@ -48,6 +48,12 @@ from cascadir.coupling import (
     test_directional_significance,
 )
 
+# Coupling (signature-space) — the second coupling path
+from cascadir.signature_coupling import (
+    cross_engagement_matrix,
+    signature_coupling,
+)
+
 # Cross_asym core
 from cascadir.cross_asym import (
     aggregate_direction,
@@ -166,6 +172,9 @@ __all__ = [
     "compute_pbs_centroids_per_cell_type",
     "compute_directional_bias_per_donor",
     "test_directional_significance",
+    # coupling (signature-space — second path)
+    "cross_engagement_matrix",
+    "signature_coupling",
     # analysis / benchmark
     "score_directions",
     # types

@@ -32,6 +32,7 @@ from cascadir.config import (
 )
 from cascadir.coupling import discover_axes
 from cascadir.cross_asym import direction_call, direction_table
+from cascadir.signature_coupling import signature_coupling as _signature_coupling
 from cascadir.exceptions import NotFittedError
 from cascadir.preprocess import preprocess
 from cascadir.pseudotubes import build_pseudotubes
@@ -282,6 +283,45 @@ class CascadeDirection:
             direction_mode=direction_mode,
             alpha=alpha,
             device=self.device,
+        )
+
+    def signature_coupling(
+        self,
+        *,
+        donor_level: bool = False,
+        coupling_alpha: float = 0.05,
+    ) -> pd.DataFrame:
+        """Second coupling path: coupling in cytokine-SPECIFIC genes (signature space).
+
+        Builds the cross-engagement matrix ``M[a,b]=s(a,S_b)`` and returns, per pair, the
+        SYMMETRIC coupling (``M+Mᵀ`` — existence) and the ANTISYMMETRIC cross_asym
+        (``M−Mᵀ`` — direction; matches :meth:`direction_table`). Complementary to
+        :meth:`discover_axes` (latent geometry): use this on targeted panels / where the
+        latent gate has no power; use ``discover_axes`` on broad panels with several
+        donors. See ``cascadir/MANUAL.md`` for which path fits which dataset.
+
+        Args:
+            donor_level: aggregate coupling per donor and gate with a sign test across
+                donors (recommended — the cell-level null is over-powered; see the
+                module docstring).
+            coupling_alpha: significance threshold for the ``coupled`` flag.
+        """
+        self._check_fitted()
+        assert self.tube_set is not None and self._cells_by_pair is not None
+        per_donor = None
+        if donor_level:
+            per_donor = {
+                d: self.tube_set.cells_by_pair(donors=[d])
+                for d in self.tube_set.donors
+            }
+        return _signature_coupling(
+            self._cells_by_pair,
+            self.signatures,
+            self.tube_set.gene_names,
+            control_label=self.control_label,
+            config=self.cross_asym_config,
+            cells_by_pair_per_donor=per_donor,
+            coupling_alpha=coupling_alpha,
         )
 
     def benchmark(
