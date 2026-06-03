@@ -1,0 +1,5 @@
+| Dataset           | System                          | Species   | Stimuli            | Donors           | Genes                 | Time point          | Setting   | Role                                 |
+|:------------------|:--------------------------------|:----------|:-------------------|:-----------------|:----------------------|:--------------------|:----------|:-------------------------------------|
+| Oesinghaus        | human PBMC (mixed blood)        | human     | 91 cytokines + PBS | 12               | ~4000 HVGs            | 24 h                | ex vivo   | scale + the standing coupling result |
+| Sheu              | mouse BMDM (macrophages)        | mouse     | 7 stimuli + PBS    | ~4 pseudo-donors | 500-gene immune panel | time-course 1/3/5 h | ex vivo   | clean textbook TLR cascades          |
+| Immune Dictionary | mouse lymph node (whole tissue) | mouse     | 86 cytokines + PBS | 3 mice           | ~4000 HVGs (of 31k)   | 4 h                 | in vivo   | in-vivo cross-check                  |
