@@ -55,10 +55,17 @@ Conditions IL-12/18/15/IFN-γ/IL-4/PBS; curated relay panel (52/67 genes present
   within-condition cross-cell residual unpredictable at 4h. (Does not affect the published §26 ID
   cross_asym 83% — different quantity.)
 
-## Sanity-check of the RED — IN PROGRESS (job 30830112)
-Sweep α∈{1,10,100} × cell-types{NK+Mac, 4-type} × panel{IFN+ISG, full} × seeds{42,123} on the
-NK→Macrophage relay. Pass = a config with R²_test>0 AND asym>0 reliable in BOTH seeds AND IL-4
-negative NOT reliable. Result: _pending — to be filled in._
+## Sanity-check of the RED — DONE (job 30830112) → **RED CONFIRMED**
+Swept α∈{1,10,100} × cell-types{NK+Mac, 4-type} × panel{IFN+ISG, full} × seeds{42,123} (24 configs) on
+the NK→Macrophage relay. Pass = R²_test>0 AND asym>0 reliable in BOTH seeds AND IL-4 negative NOT
+reliable. **No config passed.**
+- Stronger ridge / full panel / more types **does** fix R²_test (best: full+4type+α=100 → R²≈0.13>0), so
+  the earlier negative R² was partly under-regularization — but it changes nothing about direction:
+- In every config the **IL-4 negative control fires the same "reliable" asymmetry as the positive**
+  (e.g. full/4type/α=100: asym 0.244 [seed42] vs 0.099 [seed123], `reliable=True` for BOTH positive and
+  negative). Positives and negatives stay **indistinguishable**, and the asymmetry is **not seed-stable**.
+- Conclusion: the RED is **robust**, not a power/config artifact. ID 4h snapshots carry no separable,
+  stable, within-condition cross-cell relay direction — consistent with the toy's tube-level collapse.
 
 ## Decisions / next
 - If sanity **confirms RED**: do NOT build Stage 2 (attention) — no signal to model. **Pivot direction
