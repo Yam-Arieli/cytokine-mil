@@ -88,6 +88,19 @@ pre-reg `LEARNING_ORDER_PREREGISTRATION.md`; results `LEARNING_ORDER_RESULTS.md`
 - Same root cause as the relay RED: in 3hr snapshots, source & downstream IFN genes are both expressed and
   co-learnable; learning order is set by effect size, not cascade depth.
 
-**Net for the gene-cascade-direction line:** two independent angles (relay snapshot; training-dynamics
-learning-order) both NEGATIVE under validated controls. Snapshots don't carry recoverable gene-cascade
-*direction*; the honest remaining avenue is genuinely time-resolved trajectories, not single frames.
+**Net (after Phases 1–2):** two snapshot-based angles (relay; learning-order) both NEGATIVE under
+validated controls. The honest remaining avenue is genuinely time-resolved trajectories.
+
+## Phase 3 — Time-resolved cascades (Sheu 0.25→8/24hr), DONE → **metric-AMBER, biology-VISIBLE**
+Files: `cytokine_mil/analysis/temporal_cascade.py`, `scripts/run_sheu_temporal_cascade.py`,
+pre-reg `reports/sheu2024_temporal/TEMPORAL_CASCADE_PREREGISTRATION.md`, results `…/TEMPORAL_CASCADE_RESULTS.md`.
+Job 30833076 (PIC, LPS). Apparatus validated on synthetic (planted early→late: AUC=1.0).
+- **The IFN cascade IS visible in real kinetics** (cascade_{PIC,LPS}.png): IRF3-direct (source) induced
+  early (~1h bump, ≈0.7–0.85 above baseline) while IFNAR-induced ISGs stay flat (~0) until 3h, in BOTH
+  stimuli — textbook TRIF→IRF3→autocrine IFN-β→ISG, read off real time. **First positive sighting in this line.**
+- **But the pre-registered metric (50%-of-OWN-max activation) is AMBER/RED**: it's dominated by the
+  sustained 3–24h plateau, so every gene "activates" at 3h (V1 AUC≈0.55–0.63, ns). Diagnosed, not a null.
+- **Fix:** absolute-threshold / early-window onset metric (source crosses ~0.5 at ~1h, downstream at ~3h)
+  recovers the ordering — a transparent metric correction (50%-max conflates onset with peak).
+- **Overall takeaway:** direction needs real time (it appears here; snapshots collapsed). The remaining
+  work is just the onset metric to quantify the visible cascade.
