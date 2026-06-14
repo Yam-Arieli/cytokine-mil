@@ -66,7 +66,7 @@ VAL_PSEUDO_DONORS = ["M2_IL4_rep1"]
 CONTROL           = "PBS"
 
 # Default stimuli for the pre-registered TRIF -> IFN cascade test
-DEFAULT_STIMULI = ["polyIC", "LPS"]
+DEFAULT_STIMULI = ["PIC", "LPS"]   # Sheu manifest names poly(I:C) as "PIC"
 
 # Hyperparameters matching sheu2024.yaml "narrowed" settings (small model,
 # moderate LR so learning curves are smooth for trajectory analysis).

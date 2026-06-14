@@ -97,7 +97,7 @@ def run_real(args):
         h1ok = np.mean([r["h1"]["p_matched"] <= 0.05 and r["h1"]["observed"] > 0 for r in rows])
         h2ok = np.mean([r["h2"]["p_partial"] <= 0.05 and r["h2"]["partial_spearman"] > 0 for r in rows])
         return h1ok >= 0.5 and h2ok >= 0.5
-    green = all(passes(s) for s in ["polyIC", "LPS"] if any(k.startswith(s) for k in out["per"]))
+    green = all(passes(s) for s in ["PIC", "LPS"] if any(k.startswith(s) for k in out["per"]))
     out["_verdict"] = "GREEN" if green else "AMBER/RED"
     _log(f"  VERDICT: {out['_verdict']}")
     return out
