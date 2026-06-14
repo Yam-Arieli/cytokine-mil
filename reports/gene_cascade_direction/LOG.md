@@ -114,7 +114,32 @@ Absolute-threshold onset (≥0.5) instead of 50%-of-max. Results `…/TEMPORAL_C
 - **Pre-registered gate (both stimuli + donor-stable): AMBER/RED**, but the LPS pooled recovery is a
   genuine mechanism-consistent positive. Gap to clean GREEN = more cells/donor/timepoint + PIC kinetics.
 
-**FINAL throughline (Phases 1–3b):** gene-cascade DIRECTION is unrecoverable from snapshots (relay RED;
+## Phase 4 — Distribution BEYOND the mean: early-vs-late variance/spread/bimodality (Sheu), DONE → **H1 refuted; onset-locked + producer-burst**
+User ask: compare timestamps, find early-vs-late differences in MORE aspects than onset of the mean —
+variance, spread, dispersion, bimodality. Pure statistics, no training. Files:
+`cytokine_mil/analysis/temporal_gene_stats.py`, `scripts/run_sheu_temporal_gene_stats.py`,
+`slurm/run_sheu_temporal_gene_stats.slurm`; pre-reg `…/EARLY_LATE_STATS_PREREGISTRATION.md`; results
+`…/EARLY_LATE_STATS_RESULTS.md`. Job 30833452 (LPS, PIC). Battery designed via a 4-lens design workflow
+(shape-statistician / single-cell biologist / confound-adversary / viz) → 11 per-(gene,timepoint) stats +
+6 trajectory features, with the mean-variance coupling trap controlled (Fano-residual + matched-mean),
+tested at DONOR level (n_eff). Apparatus validated on synthetic (decoupled AUC 1.0; raw mean not discriminating).
+- **Pre-reg H1 (late cascade products MORE overdispersed at intermediate t): REFUTED.** After mean-decoupling,
+  `fano_res` AUC(late>early) ≤0.5 everywhere (LPS 0.06/0.36, PIC 0.34/0.20; ns); raw var differences
+  (source>late, AUC 0.00–0.05) are pure mean-coupling. Controls at null (random-split 0.44/0.59). Verdict RED.
+- **Real finding #1 — heterogeneity is ONSET-LOCKED, not cascade-depth-locked.** `distributions_*.png`: every
+  gene is most spread/bimodal AT ITS OWN ONSET (partial cell penetrance) and converges to uniform-high as it
+  saturates. Spread re-encodes the onset timing; it adds no new direction beyond Phase-3 onset.
+- **Real finding #2 — producer-cell burstiness at the SOURCE (mean-decoupled, replicated).** `det_res`
+  AUC=1.00 (p=0.00) + negative detection-residual for source in both stimuli: Ifnb1 + chemokines (Ccl5,Cxcl10)
+  expressed in FEWER cells than their bulk level implies (bursty/producer-restricted); late ISGs broad. INVERTS
+  the naive prediction (heterogeneity at the producer step, not the responder step).
+- **Bimodality is mostly dropout** — late-gene Sarle-BC at 0.25h collapses on expressing-cells-only (H2 fails its
+  dropout gate). Timing features `disp_peak_time`/`het_lag` corrupted for late genes by the low-mean-early floor.
+
+**FINAL throughline (Phases 1–4):** gene-cascade DIRECTION is unrecoverable from snapshots (relay RED;
 learning-order SNR-AMBER) but DOES appear once you use real biological time (LPS IFN cascade recovered,
 pooled). The method (onset timing + directed precedence on a real time course) works; the bar to a fully
-donor-stable, multi-stimulus claim is data power, not method.
+donor-stable, multi-stimulus claim is data power, not method. The DISTRIBUTION beyond the mean (variance/
+spread/bimodality) does NOT add new directional info — it is onset-locked (each gene's spread pulse tracks
+its own onset) — but it does reveal a producer-cell burstiness signature at cascade SOURCES (Ifnb1/chemokines
+restricted to a minority of cells) vs broad downstream ISG responses.
