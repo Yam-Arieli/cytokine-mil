@@ -104,3 +104,17 @@ Job 30833076 (PIC, LPS). Apparatus validated on synthetic (planted early→late:
   recovers the ordering — a transparent metric correction (50%-max conflates onset with peak).
 - **Overall takeaway:** direction needs real time (it appears here; snapshots collapsed). The remaining
   work is just the onset metric to quantify the visible cascade.
+
+## Phase 3b — Onset-metric re-run (job 30833205) → **LPS cascade recovered (pooled); gate AMBER (donor power)**
+Absolute-threshold onset (≥0.5) instead of 50%-of-max. Results `…/TEMPORAL_CASCADE_RESULTS.md`.
+- **LPS GREEN (pooled):** IRF3-direct source genes onset 0.25–1h (Ccl5 0.25, Cxcl10/Ifit2 0.5, Ifnb1 1h);
+  ISGs onset 3h. **V1 AUC=0.938 p=0.008; 15/15 directed edges source→downstream.** First clean positive.
+- **PIC weak:** only Ccl5 early; rest at 3h → AUC=0.58 ns.
+- **Donor-stable = false (both):** per-donor onset noisy (few cells/donor/timepoint) — power limitation.
+- **Pre-registered gate (both stimuli + donor-stable): AMBER/RED**, but the LPS pooled recovery is a
+  genuine mechanism-consistent positive. Gap to clean GREEN = more cells/donor/timepoint + PIC kinetics.
+
+**FINAL throughline (Phases 1–3b):** gene-cascade DIRECTION is unrecoverable from snapshots (relay RED;
+learning-order SNR-AMBER) but DOES appear once you use real biological time (LPS IFN cascade recovered,
+pooled). The method (onset timing + directed precedence on a real time course) works; the bar to a fully
+donor-stable, multi-stimulus claim is data power, not method.
