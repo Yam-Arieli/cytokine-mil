@@ -214,10 +214,77 @@ def run_real(args, out_dir):
     return out
 
 
+def _restrict_cols(tubes, cols):
+    """Slice each tube's per-type arrays to gene columns `cols` (sorted)."""
+    cols = np.array(sorted(cols))
+    out = []
+    for t in tubes:
+        out.append({"cytokine": t["cytokine"], "donor": t["donor"],
+                    "by_type": {ct: arr[:, cols] for ct, arr in t["by_type"].items()}})
+    return out, len(cols)
+
+
+def run_sanity(args, out_dir):
+    """Is the RED a config artifact? Sweep alpha x cell-type-set x panel-size across
+    seeds. A real signal would survive as: R2_test>0 AND NK->Mac predictability asym>0
+    reliable in BOTH seeds AND the IL-4 negative NOT reliable. Otherwise RED is confirmed."""
+    _log("\n=== SANITY sweep: alpha x types x panel x seed (NK -> Macrophage relay) ===")
+    panel = rc.panel_gene_list()
+    tubes, present = load_relay_tubes_real(args.manifest, args.conditions, panel,
+                                           np.random.default_rng(args.seed))
+    pos = {g: i for i, g in enumerate(present)}
+    ifn = [pos[g] for g in (rc.RELAY_PANEL["ifng_producer"] + rc.RELAY_PANEL["ifng_transactivator"]) if g in pos]
+    isg = [pos[g] for g in rc.RELAY_PANEL["isg_target"] if g in pos]
+    full_cols = list(range(len(present)))
+    min_cols = sorted(set(ifn + isg))
+    remap = lambda genes, cols: [{c: i for i, c in enumerate(sorted(cols))}[c] for c in genes if c in set(cols)]
+    seeds = [int(s) for s in args.sanity_seeds.split(",")]
+    alphas = [float(a) for a in args.alphas.split(",")]
+    fit_conds = ["IL-12", "IL-18", "IL-15"]
+
+    grid = [("IFN+ISG", min_cols), ("full", full_cols)]
+    type_sets = [("NK+Mac", ["NK_cell", "Macrophage"]),
+                 ("4type", ["NK_cell", "Macrophage", "cDC1", "B_cell"])]
+    rows, any_clean = [], False
+    _log(f"  {'panel':8} {'types':7} {'alpha':>6} {'seed':>4} {'R2_test':>8} {'asym':>7} {'rel':>4} {'negRel':>6}")
+    for gene_label, cols in grid:
+        sub, ng = _restrict_cols(tubes, cols)
+        edge = ("NK_cell", remap(ifn, cols), "Macrophage", remap(isg, cols))
+        fit_tubes = [t for t in sub if t["cytokine"] in fit_conds or t["cytokine"] == "PBS"]
+        neg_tubes = [t for t in sub if t["cytokine"] in ("IL-4", "PBS")]
+        for types_label, types in type_sets:
+            for alpha in alphas:
+                per_seed = []
+                for seed in seeds:
+                    try:
+                        p = fit_and_eval(fit_tubes, types, ng, edge, alpha, args.held_frac,
+                                         args.n_draws, 1, 80, seed)
+                        n = fit_and_eval(neg_tubes, types, ng, edge, alpha, args.held_frac,
+                                         args.n_draws, 1, 80, seed)
+                        r2t = p["r2_test"]; asym = p["direction_pred"]["asymmetry"]
+                        rel = p["direction_boot"]["reliable"]; negrel = n["direction_boot"]["reliable"]
+                        per_seed.append((r2t, asym, rel, negrel))
+                        _log(f"  {gene_label:8} {types_label:7} {alpha:6.0f} {seed:4d} "
+                             f"{r2t:8.3f} {asym:7.3f} {str(rel):>4} {str(negrel):>6}")
+                    except Exception as ex:
+                        _log(f"  {gene_label:8} {types_label:7} {alpha:6.0f} {seed:4d} ERROR {ex}")
+                clean = (len(per_seed) == len(seeds)
+                         and all(r2 > 0 and a > 0.1 and rel and not nr for (r2, a, rel, nr) in per_seed))
+                any_clean = any_clean or clean
+                rows.append({"panel": gene_label, "types": types_label, "alpha": alpha,
+                             "per_seed": per_seed, "clean": bool(clean)})
+    verdict = "RECONSIDER (a clean stable config exists)" if any_clean else "RED CONFIRMED (no config)"
+    _log(f"\n  SANITY VERDICT: {verdict}")
+    return {"args": vars(args), "grid_rows": rows, "_sanity_verdict": verdict}
+
+
 # ---------------------------------------------------------------------------
 def _parse_args():
     p = argparse.ArgumentParser(description="relay cascade (ID) — Stage 1")
     p.add_argument("--synthetic", action="store_true", help="run local apparatus self-test")
+    p.add_argument("--sanity", action="store_true", help="run the RED-verdict config sweep")
+    p.add_argument("--alphas", default="1,10,100", help="ridge alphas for the sanity sweep")
+    p.add_argument("--sanity_seeds", default="42,123", help="seeds for the sanity sweep")
     p.add_argument("--manifest", default="/cs/labs/mornitzan/yam.arieli/datasets/"
                                          "ImmuneDictionary_pseudotubes/manifest.json")
     p.add_argument("--conditions", nargs="+",
@@ -241,7 +308,12 @@ def main():
     _LOG = open(out_dir / "train.log", "w")
     t0 = time.time()
     _log(f"relay_cascade_id | seed={args.seed} synthetic={args.synthetic}")
-    res = run_synthetic(args, out_dir) if args.synthetic else run_real(args, out_dir)
+    if args.synthetic:
+        res = run_synthetic(args, out_dir)
+    elif args.sanity:
+        res = run_sanity(args, out_dir)
+    else:
+        res = run_real(args, out_dir)
     res["elapsed_sec"] = round(time.time() - t0, 1)
     with open(out_dir / "metrics.json", "w") as f:
         json.dump(res, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else str(o))
