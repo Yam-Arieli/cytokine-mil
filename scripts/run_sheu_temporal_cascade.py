@@ -59,9 +59,14 @@ def _source_downstream():
 
 
 # ---------------------------------------------------------------------------
-def _analyze_one(above_baseline, time_hrs, gene_names, src_genes, dwn_genes, floor, margin, rng):
-    act = tc.activation_time(above_baseline, time_hrs)
-    ind = tc.induced_mask(above_baseline, floor)
+def _analyze_one(above_baseline, time_hrs, gene_names, src_genes, dwn_genes, floor, margin, rng,
+                 metric="onset", onset_threshold=0.5):
+    if metric == "onset":
+        act = tc.onset_time(above_baseline, time_hrs, onset_threshold)
+        ind = tc.induced_mask(above_baseline, max(floor, onset_threshold))
+    else:
+        act = tc.activation_time(above_baseline, time_hrs)
+        ind = tc.induced_mask(above_baseline, floor)
     gi = {g: i for i, g in enumerate(gene_names)}
     src_idx = [gi[g] for g in src_genes if g in gi and ind[gi[g]]]
     dwn_idx = [gi[g] for g in dwn_genes if g in gi and ind[gi[g]]]
@@ -81,7 +86,8 @@ def run_synthetic(args, out_dir):
                  [f"bg{i}" for i in range(ab.shape[0] - len(src) - len(dwn))]
     src_genes = gene_names[:len(src)]
     dwn_genes = gene_names[len(src):len(src) + len(dwn)]
-    res = _analyze_one(ab, time_hrs, gene_names, src_genes, dwn_genes, floor=0.3, margin=0.5, rng=rng)
+    res = _analyze_one(ab, time_hrs, gene_names, src_genes, dwn_genes, floor=0.3, margin=0.5, rng=rng,
+                       metric=args.activation_metric, onset_threshold=args.onset_threshold)
     v1, v2 = res["V1"], res["V2"]
     _log(f"  V1 AUC(src earlier)={v1['auc']:.3f} p={v1['p']:.3f}  (median src={v1['median_source']:.2f}h "
          f"down={v1['median_downstream']:.2f}h)")
@@ -118,7 +124,8 @@ def run_real(args, out_dir):
             _log(f"  SKIP {stim}: not in data"); continue
         _log(f"\n-- {stim} (label={label})")
         ab, time_hrs, _pbs = crt._compute_time_series(adata, label, gene_names)
-        res = _analyze_one(ab, time_hrs, gene_names, src_genes, dwn_genes, args.floor, args.margin, rng)
+        res = _analyze_one(ab, time_hrs, gene_names, src_genes, dwn_genes, args.floor, args.margin, rng,
+                           metric=args.activation_metric, onset_threshold=args.onset_threshold)
         v1, v2 = res["V1"], res["V2"]
         _log(f"   V1 AUC(src earlier)={v1['auc']:.3f} p={v1['p']:.3f} "
              f"(median src={v1['median_source']:.2f}h down={v1['median_downstream']:.2f}h; "
@@ -131,7 +138,8 @@ def run_real(args, out_dir):
             if (sub.obs[crt.CYTOKINE_COL] == label).sum() < 30:
                 continue
             ab_d, th_d, _ = crt._compute_time_series(sub, label, gene_names)
-            rd = _analyze_one(ab_d, th_d, gene_names, src_genes, dwn_genes, args.floor, args.margin, rng)
+            rd = _analyze_one(ab_d, th_d, gene_names, src_genes, dwn_genes, args.floor, args.margin, rng,
+                              metric=args.activation_metric, onset_threshold=args.onset_threshold)
             donor_aucs.append(rd["V1"]["auc"])
         v1["donor_aucs"] = [float(x) for x in donor_aucs if np.isfinite(x)]
         v1["donor_consistent"] = bool(v1["donor_aucs"] and
@@ -197,6 +205,11 @@ def _parse_args():
     p.add_argument("--raw_dir", default="/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024/raw")
     p.add_argument("--hvg", default="/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/hvg_list.json")
     p.add_argument("--stimuli", nargs="+", default=["PIC", "LPS"])
+    p.add_argument("--activation_metric", choices=["onset", "frac_max"], default="onset",
+                   help="onset=first crossing of an absolute threshold (separates early/late); "
+                        "frac_max=first crossing of 50%% of own max (plateau-dominated, pre-reg).")
+    p.add_argument("--onset_threshold", type=float, default=0.5,
+                   help="absolute above-baseline threshold for onset metric")
     p.add_argument("--floor", type=float, default=0.15, help="min max-above-baseline for an 'induced' gene")
     p.add_argument("--margin", type=float, default=0.4, help="min activation-time gap (hr) for a directed edge")
     p.add_argument("--seed", type=int, default=42)

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sheu_tcasc
-#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/sheu_temporal_cascade/slurm_%j.out
-#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/sheu_temporal_cascade/slurm_%j.err
+#SBATCH --output=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/sheu_temporal_cascade_onset/slurm_%j.out
+#SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/sheu_temporal_cascade_onset/slurm_%j.err
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
 #SBATCH --time=01:30:00
@@ -16,9 +16,13 @@
 set -e
 cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 export MPLCONFIGDIR=/cs/labs/mornitzan/yam.arieli/.matplotlib_cache
-mkdir -p results/sheu_temporal_cascade
+mkdir -p results/sheu_temporal_cascade_onset
 
+# Onset metric (absolute-threshold first-crossing) — separates early- vs late-induced
+# genes (the pre-registered 50%-of-own-max metric was plateau-dominated; see RESULTS.md).
 /cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python \
     scripts/run_sheu_temporal_cascade.py \
     --stimuli PIC LPS \
-    --output_dir results/sheu_temporal_cascade
+    --activation_metric onset \
+    --onset_threshold 0.5 \
+    --output_dir results/sheu_temporal_cascade_onset

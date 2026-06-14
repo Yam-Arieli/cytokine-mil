@@ -36,6 +36,20 @@ def activation_time(above_baseline, time_hrs, frac: float = 0.5):
     return out
 
 
+def onset_time(above_baseline, time_hrs, threshold: float = 0.5):
+    """First time (hr) each gene's above-baseline reaches an ABSOLUTE `threshold`.
+    This is ONSET (when a gene first rises meaningfully) — it separates early- vs
+    late-induced genes, unlike `activation_time` (50%-of-OWN-max), which is dominated
+    by a sustained plateau and pins everything at the plateau time. NaN if never reached."""
+    times = np.asarray(time_hrs, dtype=np.float64)
+    out = np.full(above_baseline.shape[0], np.nan)
+    for g in range(above_baseline.shape[0]):
+        idx = np.where(np.nan_to_num(above_baseline[g], nan=-np.inf) >= threshold)[0]
+        if idx.size:
+            out[g] = times[idx[0]]
+    return out
+
+
 def peak_time(above_baseline, time_hrs):
     times = np.asarray(time_hrs, dtype=np.float64)
     out = np.full(above_baseline.shape[0], np.nan)
