@@ -73,3 +73,21 @@ reliable. **No config passed.**
   apparatus transfers, only the direction readout changes (time axis vs population→cell predictability).
 - If sanity finds a **clean stable config**: revisit that configuration before any pivot.
 - Standing results unaffected: published cytokine axes (121) and cross_asym (88/86/83%).
+
+## Phase 2 — Gradient learning-order (training dynamics, Sheu 3hr), DONE → **AMBER/RED**
+Hypothesis: cascade-SOURCE genes are learned before DOWNSTREAM genes (follow per-gene gradient over
+epochs). Files: `cytokine_mil/analysis/{attribution,learning_order}.py`,
+`scripts/{train_sheu_binary_learning_order,extract_gene_attribution_trajectory,compute_sheu_realtime_emergence,analyze_gene_learning_order}.py`;
+pre-reg `LEARNING_ORDER_PREREGISTRATION.md`; results `LEARNING_ORDER_RESULTS.md`. Jobs 30830386 (train) →
+30830578 (analyze), seeds 42/123/7, PIC & LPS vs PBS.
+- Apparatus validated on synthetic: controls (H1 effect-size-matched, H2 partial-vs-real-time) correctly
+  PASS a real cascade-order regime and REJECT an SNR-confound regime (raw "source-first" fires in both).
+- Real data: **both controls reject.** H1 p_matched not significant / not seed-stable (LPS 0.06/1/1;
+  PIC 0.67/0.68/0.78); H2 partial ≈ 0 (|≤0.07|, p≥0.17). Any raw source-first is an SNR/learnability
+  artifact, not cascade order. H1 (no real-time) rejects on its own → robust.
+- Same root cause as the relay RED: in 3hr snapshots, source & downstream IFN genes are both expressed and
+  co-learnable; learning order is set by effect size, not cascade depth.
+
+**Net for the gene-cascade-direction line:** two independent angles (relay snapshot; training-dynamics
+learning-order) both NEGATIVE under validated controls. Snapshots don't carry recoverable gene-cascade
+*direction*; the honest remaining avenue is genuinely time-resolved trajectories, not single frames.
