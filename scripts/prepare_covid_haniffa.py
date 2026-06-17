@@ -98,7 +98,7 @@ def _resolve_nonneg(sub):
     if sub.raw is not None and _xmin(sub.raw.X) is not None and _xmin(sub.raw.X) >= 0:
         print("[expr] using adata.raw (X was scaled/negative)")
         return _ad.AnnData(X=sub.raw.X.copy(), obs=sub.obs.copy(), var=sub.raw.var.copy())
-    for key in ("counts", "raw_counts", "lognorm", "log1p", "data", "normalized"):
+    for key in ("raw", "counts", "raw_counts", "lognorm", "log1p", "data", "normalized"):
         if key in sub.layers and _xmin(sub.layers[key]) >= 0:
             print(f"[expr] using layer {key!r} (X was scaled/negative)")
             return _ad.AnnData(X=sub.layers[key].copy(), obs=sub.obs.copy(), var=sub.var.copy())
