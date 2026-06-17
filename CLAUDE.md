@@ -1730,3 +1730,87 @@ and the validated calibration numbers (88/86/83%).
 
 `cascadir` mirrors the research code in `cytokine_mil/analysis/…` but is decoupled from the
 cluster. When the method changes, update both (and `cascadir/MANUAL.md`).
+
+---
+
+## 30. Disease-progression extension — cascade direction on the COVID-Haniffa scRNA atlas (2026-06)
+
+**Headline.** Extend the validated `cross_asym` cascade-**direction** method (§26/§28) from
+cytokine perturbations to **disease progression**, on a public scRNA atlas. The novelty: recover
+the **direction of a progression from a single cross-sectional snapshot**, validated against the
+known clinical ordering — the disease analog of the cytokine cascade-direction result. This is the
+§28 signature-coupling path on real cells; there is **no MIL collapse** (real single cells) and
+**no forecast/Cox/EHR machinery** (cross-sectional data has no per-subject future — the earlier
+UK-Biobank/MIMIC EHR plan was aborted as gated/un-downloadable).
+
+**Dataset.** Stephenson et al. 2021 "Haniffa" COVID-19 PBMC atlas (public, no-auth; download
+`scripts/download_covid_haniffa.sh` → `datasets/COVID_Haniffa/raw/haniffa21.processed.h5ad`,
+7.2 GB, ~647K cells, log-normalized + author annotations). obs: a severity field
+(`Status_on_day_collection_summary`: Healthy / Asymptomatic / Mild / Moderate / Severe / Critical
++ LPS + Non_covid arms — auto-detected/validated at prepare time), `patient_id`, and cell-type
+annotations `initial_clustering` (coarse, primary) / `full_clustering` (fine, robustness).
+
+**Knob mapping.** condition = COVID **severity grade** (the 5 ordered grades; drop LPS/Non_covid);
+control_label = `Healthy`; donor = `patient_id`; cell type = `initial_clustering`. **Direction
+oracle** = the clinical severity order — all C(5,2)=10 ordered grade pairs, less-severe = upstream
+(expected `cross_asym` sign); the 4 adjacent pairs are the cleanest.
+
+**Two design subtleties (both real, both mitigated).**
+1. **Nested donors.** Each patient has exactly ONE grade → donors are nested in conditions (unlike
+   the cytokine data). Pooled `cross_asym` `M[a,b]=mean(grade-a cells on S_b)−mean(Healthy cells on
+   S_b)` and `CascadeDirection.fit().direction_table()` still work (population statistic; control =
+   healthy donors). But per-donor-paired `signature_coupling(donor_level=True)` and Path A
+   `discover_axes` do **NOT** apply (no within-donor pairing / no per-donor control centroid).
+   Donor-level rigor therefore comes from a **donor-bootstrap** (resample donors within each grade
+   and within Healthy; recompute pooled `cross_asym`), unit = donor — `cascadir.progression`.
+2. **Magnitude confound.** Severity is monotone-intensity (severe ≈ "more of" mild) → grade
+   signatures overlap on a shared inflammation program and `cross_asym` could reflect magnitude,
+   not a genuine "seed." Mitigations: report `cross_accuracy` vs the **symmetric `directional_score`
+   control** (`score_directions`; if cross ≫ dirscore≈chance, direction is real beyond magnitude);
+   a synthetic apparatus that explicitly tests a **monotone-intensity ladder**; per-cell-type sign
+   consensus (a real seed is consistent across cell types).
+
+**Method (reuse).** Fit-from-h5ad: `CascadeDirection(condition_col="severity",
+donor_col="patient_id", celltype_col="initial_clustering", control_label="Healthy").fit(adata,
+assume="auto").direction_table()` + `.benchmark(labels)`. Single GPU ~4 h for this scale.
+
+**New reusable helpers** → `cascadir/src/cascadir/progression.py` (+ `tests/test_progression.py`):
+`bootstrap_cross_asym` (nested-donor donor-bootstrap CI), `recover_order` (Borda / topological sort
+of pairwise `cross_asym` → a total order) + `kendall_tau` vs the true order.
+
+**Apparatus GO/NO-GO** (`scripts/apparatus_cross_asym_ladder.py`, CPU, before trusting real
+results): (A) **distinct-program** ladder — `cross_asym` MUST recover the order (hard gate);
+(B) **monotone-intensity** ladder — report whether `cross_asym` recovers order or is
+magnitude-fooled (calibrates the COVID interpretation). Uses `cytokine_mil/data/synthetic_cascade_sim.py`
++ `coupling_direction`.
+
+**Analysis + figures** (`scripts/analyze_covid_progression.py`): `score_directions` vs the oracle;
+donor-bootstrap; `recover_order` + Kendall τ; 7 figures (direction-accuracy bar cross_asym vs
+symmetric control; per-pair cross_asym bar; grade×grade cross-engagement heatmap; per-cell-type
+sign consensus; signature scatter for the cleanest adjacent pair; **severity-order recovery** ladder
+vs truth — the headline; donor-bootstrap CIs). Reuses `scripts/make_report_figures.py` (fig9/fig10)
+and `cytokine_mil/analysis/eda_pair_plots.py`.
+
+**Cluster orchestration — SLURM DAG** `slurm/covid_progression/` + `submit_covid_dag.sh`
+(`sbatch --parsable` + `--dependency=afterok:$JOBID`; `SUBMIT=echo` dry-run; mirrors
+`slurm/group_u/submit_group_u_dag.sh`): `apparatus` (CPU, independent) ∥ `prepare` (CPU) →
+`fit` (GPU) → `analysis` (CPU, depends on `afterok:fit:apparatus`). Outputs under
+`results/covid_progression/` (figures in `plots/`).
+
+**Pre-registration** (`reports/covid_progression/PRE_REGISTRATION.md`, committed BEFORE the analysis
+job runs — §25.1): the 10 ordered grade pairs + expected signs; P1 apparatus distinct-gate ≥ 90%,
+P2 monotone-ladder characterization, P3 cross_accuracy ≫ symmetric dirscore on COVID, P4 donor-
+bootstrap CI excludes chance + Kendall τ ≥ 0.6. **GREEN** = cross_accuracy ≥ 0.8 AND dirscore
+clearly below AND bootstrap CI excludes 0.5 AND τ ≥ 0.6 AND apparatus distinct-gate passed;
+**AMBER**/**RED** scale down. Honest results → `reports/covid_progression/COVID_PROGRESSION_RESULTS.md`.
+
+**Validity boundaries (honest caveats).** Cross-sectional (no per-subject future — direction, not
+forecast); nested donors (donor-bootstrap, not within-donor pairing); severity = one-disease
+monotone axis (magnitude confound; this is "state-of-health → state-of-health", NOT "disease A →
+disease B"); PBMC blood only; direction ≠ causation; single dataset.
+
+**File layout (new).** `cascadir/src/cascadir/progression.py` (+test); `scripts/{download_covid_haniffa.sh,
+prepare_covid_haniffa.py, run_covid_cascadir.py, apparatus_cross_asym_ladder.py,
+analyze_covid_progression.py}`; `slurm/covid_progression/{apparatus,prepare,fit,analysis}.slurm`
++ `submit_covid_dag.sh`; `reports/covid_progression/{PRE_REGISTRATION,APPARATUS_GATE_RESULTS,
+COVID_PROGRESSION_RESULTS}.md`.
