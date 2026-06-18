@@ -294,6 +294,58 @@ def donor_excess_matrix(
     return out
 
 
+def _degree_center(C: np.ndarray) -> np.ndarray:
+    """Additive double-centering of a SYMMETRIC coupling matrix (diagonal = NaN).
+
+    R[i,j] = C[i,j] - d_i - d_j + g, where d_i = mean off-diagonal coupling of
+    cytokine i (its 'strength'/degree) and g = grand off-diagonal mean. Removes
+    each cytokine's overall engagement level (the hub/degree artifact: e.g. IL-15
+    couples to everything), leaving pair-SPECIFIC residual coupling. NaNs (absent
+    pairs / the diagonal) are excluded from the means.
+    """
+    with np.errstate(all="ignore"):
+        d = np.nanmean(C, axis=1)                       # node strength (diag NaN -> excluded)
+        g = float(np.nanmean(C))
+    return C - d[:, None] - d[None, :] + g
+
+
+def donor_residual_coupling_matrix(
+    cells_by_pair: Dict[Tuple[str, str], np.ndarray],
+    sig_idx_dict: Dict[str, np.ndarray],
+    global_cyts: List[str],
+    pbs_label: str = "PBS",
+    min_cells: int = 10,
+) -> np.ndarray:
+    """One donor's HUB-CORRECTED (degree-centered) coupling per pair.
+
+    coupling_d[a,b] = M_d[a,b] + M_d[b,a]; then :func:`_degree_center` removes each
+    cytokine's overall strength. No random-gene null is needed — the centering
+    removes the shared-activation/degree baseline, so a pair's positive residual
+    means SPECIFIC engagement beyond what the two cytokines' general levels
+    predict. Returns (G, G) aligned to ``global_cyts`` (NaN where absent).
+    """
+    G = len(global_cyts)
+    gidx = {c: k for k, c in enumerate(global_cyts)}
+    out = np.full((G, G), np.nan, dtype=np.float64)
+    cyts, cell_types, E = engagement_per_celltype(
+        cells_by_pair, sig_idx_dict, pbs_label, min_cells)
+    if not cyts:
+        return out
+    M = cross_engagement_matrix(E)
+    n = len(cyts)
+    C = np.full((n, n), np.nan, dtype=np.float64)
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                C[i, j] = M[i, j] + M[j, i]
+    R = _degree_center(C)
+    for i in range(n):
+        for j in range(n):
+            if i != j and np.isfinite(R[i, j]):
+                out[gidx[cyts[i]], gidx[cyts[j]]] = R[i, j]
+    return out
+
+
 def _signflip_p(vals: np.ndarray, n_signflip: int,
                 rng: np.random.Generator) -> Tuple[float, float]:
     """One-sided sign-flip permutation p for H1: mean(vals) > 0.

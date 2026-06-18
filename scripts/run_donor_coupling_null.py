@@ -39,7 +39,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import run_signature_ablation as rsa  # noqa: E402
 from cytokine_mil.analysis.signature_coupling import (  # noqa: E402
-    donor_excess_matrix, donor_coupling_test,
+    donor_excess_matrix, donor_residual_coupling_matrix, donor_coupling_test,
 )
 
 VARIANTS = ["IG_vsPBS", "IG_vsPanel"]
@@ -118,8 +118,12 @@ def main() -> None:
     global_cyts = sorted(sig_cyts)
     log(f"{len(global_cyts)} cytokines; gene order from {donors[0]} ({time.time()-t0:.0f}s)")
 
-    # per-donor excess matrices (one donor in memory at a time)
-    stacks: Dict[str, List[np.ndarray]] = {v: [] for v in VARIANTS}
+    # per-donor matrices (one donor in memory at a time):
+    #   raw  = excess over random-gene baseline (cell-null removed, hub NOT)
+    #   hub  = degree-centered residual coupling (hub/degree removed)
+    MODES = ["raw", "hub"]
+    stacks: Dict[str, Dict[str, List[np.ndarray]]] = {
+        m: {v: [] for v in VARIANTS} for m in MODES}
     used_donors: List[str] = []
     for d in donors:
         t0 = time.time()
@@ -130,12 +134,15 @@ def main() -> None:
             log(f"  WARN: gene order differs for {d}; skipping"); del cells_d; continue
         rng = np.random.default_rng(args.null_seed)
         for v in VARIANTS:
-            stacks[v].append(donor_excess_matrix(
+            stacks["raw"][v].append(donor_excess_matrix(
                 cells_d, sig_idx[v], global_cyts, pbs_label=args.pbs_label,
                 min_cells=args.min_cells, n_perm=args.n_perm, rng=rng))
+            stacks["hub"][v].append(donor_residual_coupling_matrix(
+                cells_d, sig_idx[v], global_cyts, pbs_label=args.pbs_label,
+                min_cells=args.min_cells))
         used_donors.append(d)
         del cells_d
-        log(f"  donor {d}: excess computed ({time.time()-t0:.0f}s)")
+        log(f"  donor {d}: raw+hub computed ({time.time()-t0:.0f}s)")
 
     # cell-level reference (from the ablation summary)
     cell_frac = {}
@@ -156,73 +163,79 @@ def main() -> None:
             status_map[tuple(sorted((str(r["axis_a"]), str(r["axis_b"])))) ] = r["pair_status"]
 
     summary_rows = []
-    for v in VARIANTS:
-        rng = np.random.default_rng(args.null_seed + 1)
-        rows = donor_coupling_test(
-            np.stack(stacks[v], axis=0), global_cyts,
-            min_donors=args.min_donors, n_signflip=4000, rng=rng)
-        df = pd.DataFrame(rows)
-        for col, thr in [("coupled_q05", 0.05), ("coupled_q10", 0.10)]:
-            df[col] = df["q_donor"] < thr
-        df["is_benchmark"] = df.apply(
-            lambda r: tuple(sorted((r["axis_a"], r["axis_b"]))) in bench_pairs, axis=1)
-        df["pair_status"] = df.apply(
-            lambda r: status_map.get(tuple(sorted((r["axis_a"], r["axis_b"]))), ""), axis=1)
-        df.to_csv(out / f"donor_coupling_{v}.csv", index=False)
+    for mode in MODES:
+        for v in VARIANTS:
+            rng = np.random.default_rng(args.null_seed + 1)
+            rows = donor_coupling_test(
+                np.stack(stacks[mode][v], axis=0), global_cyts,
+                min_donors=args.min_donors, n_signflip=4000, rng=rng)
+            df = pd.DataFrame(rows)
+            for col, thr in [("coupled_q05", 0.05), ("coupled_q10", 0.10)]:
+                df[col] = df["q_donor"] < thr
+            df["is_benchmark"] = df.apply(
+                lambda r: tuple(sorted((r["axis_a"], r["axis_b"]))) in bench_pairs, axis=1)
+            df["pair_status"] = df.apply(
+                lambda r: status_map.get(tuple(sorted((r["axis_a"], r["axis_b"]))), ""), axis=1)
+            df.to_csv(out / f"donor_coupling_{mode}_{v}.csv", index=False)
 
-        n_tested = len(df)
-        n_q05, n_q10 = int(df["coupled_q05"].sum()), int(df["coupled_q10"].sum())
-        bench_tested = df[df["is_benchmark"]]
-        recall10 = (int(bench_tested["coupled_q10"].sum()), len(bench_tested))
-        hub = _hub_in_top20(rows)
-        summary_rows.append({
-            "variant": v,
-            "cell_level_coupled_frac": cell_frac.get(v, float("nan")),
-            "donor_tested_pairs": n_tested,
-            "donor_coupled_q05": n_q05,
-            "donor_coupled_q05_frac": n_q05 / n_tested if n_tested else float("nan"),
-            "donor_coupled_q10": n_q10,
-            "donor_coupled_q10_frac": n_q10 / n_tested if n_tested else float("nan"),
-            "benchmark_recall_q10": f"{recall10[0]}/{recall10[1]}",
-            "top20_max_cyt": hub["top20_max_cyt"],
-            "top20_max_cyt_count": hub["top20_max_cyt_count"],
-        })
-        log(f"  {v}: donor q<0.10 coupled {n_q10}/{n_tested} "
-            f"(cell-level {cell_frac.get(v, float('nan')):.0%}); "
-            f"benchmark recall {recall10[0]}/{recall10[1]}")
+            n_tested = len(df)
+            n_q05, n_q10 = int(df["coupled_q05"].sum()), int(df["coupled_q10"].sum())
+            bench_tested = df[df["is_benchmark"]]
+            recall10 = (int(bench_tested["coupled_q10"].sum()), len(bench_tested))
+            hub = _hub_in_top20(rows)
+            summary_rows.append({
+                "mode": mode, "variant": v,
+                "cell_level_coupled_frac": cell_frac.get(v, float("nan")),
+                "donor_tested_pairs": n_tested,
+                "donor_coupled_q05": n_q05,
+                "donor_coupled_q05_frac": n_q05 / n_tested if n_tested else float("nan"),
+                "donor_coupled_q10": n_q10,
+                "donor_coupled_q10_frac": n_q10 / n_tested if n_tested else float("nan"),
+                "benchmark_recall_q10": f"{recall10[0]}/{recall10[1]}",
+                "top20_max_cyt": hub["top20_max_cyt"],
+                "top20_max_cyt_count": hub["top20_max_cyt_count"],
+            })
+            log(f"  [{mode}] {v}: donor q<0.10 coupled {n_q10}/{n_tested} "
+                f"(cell-level {cell_frac.get(v, float('nan')):.0%}); "
+                f"benchmark recall {recall10[0]}/{recall10[1]}")
 
     summ = pd.DataFrame(summary_rows)
     summ.to_csv(out / "donor_coupling_summary.csv", index=False)
 
     # report
-    L = ["# Donor-level coupling gate — validation", ""]
+    L = ["# Donor-level coupling gate — validation (raw vs hub-corrected)", ""]
     L.append(f"- donors used: {used_donors} (N={len(used_donors)})")
-    L.append(f"- per-donor: excess = coupling - mean(random-gene coupling); across "
-             f"donors: one-sided sign-flip test (exact), BH-FDR. min_donors={args.min_donors}.")
-    L.append("- **Key comparison**: donor-level coupled fraction vs the over-powered "
-             "cell-level fraction. A discriminating gate drops WELL below ~77% while "
-             "keeping the known-cascade benchmark pairs (recall).")
+    L.append("- **raw**: per-donor excess over random-gene baseline (removes cell "
+             "over-power, NOT hubs). **hub**: degree-centered residual coupling "
+             "(each cytokine's overall strength subtracted -> pair-SPECIFIC signal).")
+    L.append(f"- across donors: one-sided sign-flip test (exact), BH-FDR. "
+             f"min_donors={args.min_donors}.")
+    L.append("- **Key comparison**: does hub correction drop the coupled fraction "
+             "toward sparsity while KEEPING benchmark recall, and does IL-15 stop "
+             "dominating the top?")
     L.append("")
-    L.append(rsa._md(summ, ["variant", "cell_level_coupled_frac", "donor_tested_pairs",
-                            "donor_coupled_q05", "donor_coupled_q05_frac",
+    L.append(rsa._md(summ, ["mode", "variant", "cell_level_coupled_frac",
+                            "donor_tested_pairs", "donor_coupled_q05_frac",
                             "donor_coupled_q10_frac", "benchmark_recall_q10",
                             "top20_max_cyt", "top20_max_cyt_count"]))
     L.append("")
     L.append("## How to read")
-    L.append("- donor frac ≪ cell-level frac → the over-power was the problem; donor "
-             "gate discriminates.")
-    L.append("- IG_vsPanel coupled-frac < IG_vsPBS at equal/better benchmark recall → "
-             "**specificity helps coupling once the null is honest** (the open question).")
-    L.append("- both still ~77% → specificity is NOT enough; coupling needs more than a "
-             "donor null (e.g. hub/degree correction).")
+    L.append("- cell-level ~77% → raw-donor ~53% → **hub** much lower at equal recall → "
+             "the hub/degree artifact was the remaining over-call; corrected gate "
+             "discriminates.")
+    L.append("- IL-15 disappears from `top20_max_cyt` under **hub** → degree correction "
+             "worked (broad signatures no longer look coupled to everything).")
+    L.append("- IG_vsPanel ≤ IG_vsPBS coupled-frac at equal recall under **hub** → "
+             "panel-residualised + hub-corrected is the signature+gate to standardize.")
     L.append("")
-    for v in VARIANTS:
-        df = pd.read_csv(out / f"donor_coupling_{v}.csv")
-        top = df.sort_values("excess_mean", ascending=False).head(15)
-        L.append(f"## {v} — top-15 donor-coupled pairs")
-        L.append(rsa._md(top, ["axis_a", "axis_b", "excess_mean", "n_donors",
-                               "p_donor", "q_donor", "is_benchmark", "pair_status"]))
-        L.append("")
+    for mode in MODES:
+        for v in VARIANTS:
+            df = pd.read_csv(out / f"donor_coupling_{mode}_{v}.csv")
+            top = df.sort_values("excess_mean", ascending=False).head(15)
+            L.append(f"## [{mode}] {v} — top-15 by residual coupling")
+            L.append(rsa._md(top, ["axis_a", "axis_b", "excess_mean", "n_donors",
+                                   "p_donor", "q_donor", "is_benchmark", "pair_status"]))
+            L.append("")
     (out / "donor_coupling_report.md").write_text("\n".join(L) + "\n")
     log(f"\nwrote {out/'donor_coupling_report.md'}")
     log("DONE.")
