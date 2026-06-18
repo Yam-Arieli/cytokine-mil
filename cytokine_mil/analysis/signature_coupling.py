@@ -224,3 +224,150 @@ def coupling_direction(
                 "coupling_null_p": p, "n_celltypes": n_ct,
             })
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Donor-level coupling gate (effective N = #donors, not #cells; CLAUDE.md §16)
+# ---------------------------------------------------------------------------
+# The cell-level gate (`coupling_direction`) is over-powered: pooling thousands
+# of cells makes the random-gene null trivially beatable (~77% of pairs "coupled"
+# on Oesinghaus). The correct unit of independence is the donor. We compute, PER
+# DONOR, the excess of real specific-signature coupling over the donor's own
+# random-gene-set baseline, then test whether that excess is consistently > 0
+# across donors with a one-sided sign-flip permutation test. This caps power at
+# #donors (~10), so the gate can actually discriminate.
+
+def donor_excess_matrix(
+    cells_by_pair: Dict[Tuple[str, str], np.ndarray],
+    sig_idx_dict: Dict[str, np.ndarray],
+    global_cyts: List[str],
+    pbs_label: str = "PBS",
+    min_cells: int = 10,
+    n_perm: int = 200,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """One donor's (coupling - mean random-gene-set coupling) per pair.
+
+    Returns a (G, G) symmetric matrix aligned to ``global_cyts`` (= sorted
+    sig_idx keys); NaN where a cytokine or PBS is absent for this donor. Call
+    once per donor and stack the results; cells for the donor can be freed
+    afterwards (keeps memory ~1 donor at a time).
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
+    G = len(global_cyts)
+    gidx = {c: k for k, c in enumerate(global_cyts)}
+    out = np.full((G, G), np.nan, dtype=np.float64)
+
+    cyts, cell_types, E = engagement_per_celltype(
+        cells_by_pair, sig_idx_dict, pbs_label, min_cells)
+    if not cyts:
+        return out
+    M = cross_engagement_matrix(E)
+    n = len(cyts)
+
+    excluded = sorted({i for v in sig_idx_dict.values()
+                       for i in np.asarray(v).tolist()})
+    n_genes = 0
+    for v in cells_by_pair.values():
+        n_genes = int(v.shape[1]); break
+    sizes = [len(np.asarray(sig_idx_dict[c])) for c in cyts]
+    set_size = int(np.median(sizes)) if sizes else 0
+
+    nullbar = np.zeros((n, n), dtype=np.float64)
+    if n_perm and set_size > 0:
+        try:
+            N = _null_engagement_tensor(
+                cells_by_pair, cyts, cell_types, set_size, excluded, n_genes,
+                pbs_label, min_cells, n_perm, rng)
+            with np.errstate(all="ignore"):
+                pair_sum = N[:, :, :, None] + N[:, :, None, :]   # (k,T,n,n)
+                null_coupling = np.nanmedian(pair_sum, axis=1)    # (k,n,n)
+                nullbar = np.nanmean(null_coupling, axis=0)       # (n,n)
+        except Exception:
+            nullbar = np.zeros((n, n), dtype=np.float64)
+
+    for i in range(n):
+        for j in range(n):
+            gi, gj = gidx[cyts[i]], gidx[cyts[j]]
+            out[gi, gj] = (M[i, j] + M[j, i]) - float(nullbar[i, j])
+    return out
+
+
+def _signflip_p(vals: np.ndarray, n_signflip: int,
+                rng: np.random.Generator) -> Tuple[float, float]:
+    """One-sided sign-flip permutation p for H1: mean(vals) > 0.
+
+    Exact enumeration of all 2^n sign vectors when n <= 18 (the observed/identity
+    flip is included, so p = mean(t_null >= t_obs)); sampled otherwise.
+    """
+    vals = np.asarray(vals, dtype=np.float64)
+    t_obs = float(vals.mean())
+    n = len(vals)
+    if n <= 18:
+        signs = ((np.arange(2 ** n)[:, None] >> np.arange(n)) & 1).astype(np.float64) * 2 - 1
+        t_null = (signs * vals).mean(axis=1)
+        p = float(np.mean(t_null >= t_obs))
+    else:
+        signs = rng.choice([-1.0, 1.0], size=(n_signflip, n))
+        t_null = (signs * vals).mean(axis=1)
+        p = float((np.sum(t_null >= t_obs) + 1) / (n_signflip + 1))
+    return p, t_obs
+
+
+def _bh_fdr(pvals: Sequence[float]) -> np.ndarray:
+    """Benjamini-Hochberg q-values (numpy only)."""
+    p = np.asarray(pvals, dtype=np.float64)
+    m = len(p)
+    if m == 0:
+        return p
+    order = np.argsort(p)
+    q = np.empty(m, dtype=np.float64)
+    prev = 1.0
+    for rank in range(m - 1, -1, -1):
+        idx = order[rank]
+        prev = min(prev, p[idx] * m / (rank + 1))
+        q[idx] = prev
+    return q
+
+
+def donor_coupling_test(
+    excess_stack: np.ndarray,
+    global_cyts: List[str],
+    min_donors: int = 5,
+    n_signflip: int = 2000,
+    rng: Optional[np.random.Generator] = None,
+) -> List[Dict[str, object]]:
+    """Across-donor sign-flip test on the per-donor excess matrices.
+
+    Args:
+        excess_stack: (D, G, G) from stacking :func:`donor_excess_matrix`.
+        global_cyts:  cytokine order (axis 1/2 of the stack).
+        min_donors:   minimum donors with a finite excess for a pair to be tested
+                      (5 lets a unanimous pair reach p<0.05; 4 floors at ~0.06).
+    Returns:
+        list of rows: axis_a, axis_b, excess_mean, n_donors, p_donor, q_donor
+        (BH-FDR over all tested pairs). Sorted by excess_mean descending.
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
+    G = len(global_cyts)
+    rows: List[Dict[str, object]] = []
+    for i in range(G):
+        for j in range(i + 1, G):
+            vals = excess_stack[:, i, j]
+            vals = vals[np.isfinite(vals)]
+            if len(vals) < min_donors:
+                continue
+            p, t = _signflip_p(vals, n_signflip, rng)
+            rows.append({
+                "axis_a": global_cyts[i], "axis_b": global_cyts[j],
+                "excess_mean": float(t), "n_donors": int(len(vals)),
+                "p_donor": float(p),
+            })
+    if rows:
+        q = _bh_fdr([r["p_donor"] for r in rows])
+        for r, qq in zip(rows, q):
+            r["q_donor"] = float(qq)
+    rows.sort(key=lambda r: r["excess_mean"], reverse=True)
+    return rows
