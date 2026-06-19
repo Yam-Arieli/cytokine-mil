@@ -77,11 +77,14 @@ def _hub_in_top20(rows: List[dict]) -> Dict:
 
 def _parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", default="oesinghaus", choices=["oesinghaus"])
+    p.add_argument("--dataset", default="oesinghaus", choices=["oesinghaus", "sheu"])
     p.add_argument("--binary_ig_parquet", required=True)
     p.add_argument("--manifest_path", required=True)
     p.add_argument("--hvg_path", required=True)
-    p.add_argument("--audit_csv", required=True)
+    p.add_argument("--audit_csv", default=None,
+                   help="oesinghaus only: cytokine_axes_audited.csv. Sheu uses "
+                        "pre-registered labeled_pair_status (no CSV needed).")
+    p.add_argument("--time_filter", default=None, help="Sheu single-frame, e.g. 5hr")
     p.add_argument("--ablation_summary", default=None,
                    help="ablation_summary.csv for the cell-level coupled_frac reference")
     p.add_argument("--output_dir", required=True)
@@ -101,22 +104,39 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     log = lambda m="": print(m, flush=True)
 
-    from cytokine_mil.analysis.oesinghaus_cell_loader import load_oesinghaus_cells_by_pair
-
     donors = _donors_from_manifest(args.manifest_path, args.exclude_donors or [])
-    log(f"donors (train): {donors}")
+    log(f"donors: {donors}")
 
-    # signatures need gene order -> load one donor first
-    t0 = time.time()
-    cells0, gene_names = load_oesinghaus_cells_by_pair(
-        manifest_path=args.manifest_path, cytokines=["PBS"], hvg_path=args.hvg_path,
-        pbs_label=args.pbs_label, include_donors=[donors[0]])
-    del cells0
+    # dataset-aware per-donor loader + gene order
+    if args.dataset == "oesinghaus":
+        from cytokine_mil.analysis.oesinghaus_cell_loader import load_oesinghaus_cells_by_pair
+        _c0, gene_names = load_oesinghaus_cells_by_pair(
+            manifest_path=args.manifest_path, cytokines=["PBS"], hvg_path=args.hvg_path,
+            pbs_label=args.pbs_label, include_donors=[donors[0]])
+        del _c0
+
+        def _load(donor, cyts):
+            return load_oesinghaus_cells_by_pair(
+                manifest_path=args.manifest_path, cytokines=cyts, hvg_path=args.hvg_path,
+                pbs_label=args.pbs_label, include_donors=[donor])
+    else:  # sheu
+        import json
+        from cytokine_mil.analysis.eda_pair_benchmark import load_phase1_cells
+        with open(args.hvg_path) as fh:
+            gene_names = json.load(fh)
+
+        def _load(donor, cyts):
+            cells, gn = load_phase1_cells(
+                manifest_path=args.manifest_path, gene_names=gene_names,
+                time_filter=args.time_filter, donors=[donor])
+            keep = set(cyts) | {args.pbs_label}
+            return {k: v for k, v in cells.items() if k[0] in keep}, gn
+
     sigs, sig_cyts = _build_ig_variants(args.binary_ig_parquet, gene_names, args.top_n)
     sig_idx = {v: {c: a for c, a in rsa._to_idx(s, gene_names).items() if len(a) > 0}
                for v, s in sigs.items()}
     global_cyts = sorted(sig_cyts)
-    log(f"{len(global_cyts)} cytokines; gene order from {donors[0]} ({time.time()-t0:.0f}s)")
+    log(f"{len(global_cyts)} cytokines; {len(gene_names)} genes")
 
     # per-donor matrices (one donor in memory at a time):
     #   raw  = excess over random-gene baseline (cell-null removed, hub NOT)
@@ -127,11 +147,11 @@ def main() -> None:
     used_donors: List[str] = []
     for d in donors:
         t0 = time.time()
-        cells_d, gn = load_oesinghaus_cells_by_pair(
-            manifest_path=args.manifest_path, cytokines=global_cyts,
-            hvg_path=args.hvg_path, pbs_label=args.pbs_label, include_donors=[d])
+        cells_d, gn = _load(d, global_cyts)
         if list(gn) != list(gene_names):
             log(f"  WARN: gene order differs for {d}; skipping"); del cells_d; continue
+        if not any(k[0] == args.pbs_label for k in cells_d):
+            log(f"  WARN: no PBS cells for {d}; skipping"); del cells_d; continue
         rng = np.random.default_rng(args.null_seed)
         for v in VARIANTS:
             stacks["raw"][v].append(donor_excess_matrix(
@@ -144,6 +164,10 @@ def main() -> None:
         del cells_d
         log(f"  donor {d}: raw+hub computed ({time.time()-t0:.0f}s)")
 
+    if len(used_donors) < args.min_donors:
+        log(f"FATAL: only {len(used_donors)} usable donors < min_donors={args.min_donors}.")
+        sys.exit(3)
+
     # cell-level reference (from the ablation summary)
     cell_frac = {}
     if args.ablation_summary and Path(args.ablation_summary).exists():
@@ -152,15 +176,30 @@ def main() -> None:
             if v in s.index:
                 cell_frac[v] = float(s.loc[v, "coupled_frac"])
 
-    # audited directional benchmark pairs (known cascades -> recall target)
-    audit = pd.read_csv(args.audit_csv)
-    bench = audit[audit["counts_in_benchmark"].astype(str).str.lower() == "true"]
-    bench_pairs = {tuple(sorted((str(r["axis_a"]), str(r["axis_b"]))))
-                   for _, r in bench.iterrows()}
-    status_map = {}
-    if "pair_status" in audit.columns:
-        for _, r in audit.iterrows():
-            status_map[tuple(sorted((str(r["axis_a"]), str(r["axis_b"])))) ] = r["pair_status"]
+    # benchmark pairs: oesinghaus -> audited directional pairs (recall target);
+    # sheu -> pre-registered MUST (positive) / MUST-NOT (negative) coupling labels.
+    bench_pairs: set = set()      # should be coupled (recall)
+    neg_pairs: set = set()        # should NOT be coupled (false-positive check)
+    status_map: dict = {}
+    if args.dataset == "oesinghaus" and args.audit_csv and Path(args.audit_csv).exists():
+        audit = pd.read_csv(args.audit_csv)
+        bench = audit[audit["counts_in_benchmark"].astype(str).str.lower() == "true"]
+        bench_pairs = {tuple(sorted((str(r["axis_a"]), str(r["axis_b"]))))
+                       for _, r in bench.iterrows()}
+        if "pair_status" in audit.columns:
+            for _, r in audit.iterrows():
+                status_map[tuple(sorted((str(r["axis_a"]), str(r["axis_b"]))))] = r["pair_status"]
+    else:  # sheu pre-registered labels
+        from cytokine_mil.analysis.eda_pair_benchmark import labeled_pair_status
+        for i in range(len(global_cyts)):
+            for j in range(i + 1, len(global_cyts)):
+                a, b = global_cyts[i], global_cyts[j]
+                lab = labeled_pair_status(a, b)
+                key = tuple(sorted((a, b)))
+                if lab == "positive":
+                    bench_pairs.add(key); status_map[key] = "MUST"
+                elif lab == "negative":
+                    neg_pairs.add(key); status_map[key] = "MUST-NOT"
 
     summary_rows = []
     for mode in MODES:
@@ -174,6 +213,8 @@ def main() -> None:
                 df[col] = df["q_donor"] < thr
             df["is_benchmark"] = df.apply(
                 lambda r: tuple(sorted((r["axis_a"], r["axis_b"]))) in bench_pairs, axis=1)
+            df["is_negative"] = df.apply(
+                lambda r: tuple(sorted((r["axis_a"], r["axis_b"]))) in neg_pairs, axis=1)
             df["pair_status"] = df.apply(
                 lambda r: status_map.get(tuple(sorted((r["axis_a"], r["axis_b"]))), ""), axis=1)
             df.to_csv(out / f"donor_coupling_{mode}_{v}.csv", index=False)
@@ -182,6 +223,8 @@ def main() -> None:
             n_q05, n_q10 = int(df["coupled_q05"].sum()), int(df["coupled_q10"].sum())
             bench_tested = df[df["is_benchmark"]]
             recall10 = (int(bench_tested["coupled_q10"].sum()), len(bench_tested))
+            neg_tested = df[df["is_negative"]]
+            neg_fp10 = (int(neg_tested["coupled_q10"].sum()), len(neg_tested))
             hub = _hub_in_top20(rows)
             summary_rows.append({
                 "mode": mode, "variant": v,
@@ -192,12 +235,13 @@ def main() -> None:
                 "donor_coupled_q10": n_q10,
                 "donor_coupled_q10_frac": n_q10 / n_tested if n_tested else float("nan"),
                 "benchmark_recall_q10": f"{recall10[0]}/{recall10[1]}",
+                "neg_coupled_q10": f"{neg_fp10[0]}/{neg_fp10[1]}",
                 "top20_max_cyt": hub["top20_max_cyt"],
                 "top20_max_cyt_count": hub["top20_max_cyt_count"],
             })
-            log(f"  [{mode}] {v}: donor q<0.10 coupled {n_q10}/{n_tested} "
-                f"(cell-level {cell_frac.get(v, float('nan')):.0%}); "
-                f"benchmark recall {recall10[0]}/{recall10[1]}")
+            log(f"  [{mode}] {v}: donor q<0.10 coupled {n_q10}/{n_tested}; "
+                f"benchmark(MUST) recall {recall10[0]}/{recall10[1]}; "
+                f"negatives(MUST-NOT) coupled {neg_fp10[0]}/{neg_fp10[1]}")
 
     summ = pd.DataFrame(summary_rows)
     summ.to_csv(out / "donor_coupling_summary.csv", index=False)
@@ -217,7 +261,7 @@ def main() -> None:
     L.append(rsa._md(summ, ["mode", "variant", "cell_level_coupled_frac",
                             "donor_tested_pairs", "donor_coupled_q05_frac",
                             "donor_coupled_q10_frac", "benchmark_recall_q10",
-                            "top20_max_cyt", "top20_max_cyt_count"]))
+                            "neg_coupled_q10", "top20_max_cyt", "top20_max_cyt_count"]))
     L.append("")
     L.append("## How to read")
     L.append("- cell-level ~77% → raw-donor ~53% → **hub** much lower at equal recall → "
