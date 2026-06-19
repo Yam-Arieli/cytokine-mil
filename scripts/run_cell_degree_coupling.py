@@ -53,7 +53,10 @@ def _load_pooled(args, sig_cyts):
             time_filter=args.time_filter, donors=None)
         keep = set(sig_cyts) | {args.pbs_label}
         return {k: v for k, v in cells.items() if k[0] in keep}, gn
-    else:  # oesinghaus
+    else:  # oesinghaus or id -- both are generic (cyt, cell_type) manifests;
+        # load_oesinghaus_cells_by_pair wraps load_phase1_cells, which pools any
+        # manifest with path/cytokine keys and obs["cell_type"] (the ID §26 pathB
+        # run already used this loader on the ID manifest -- _oesinghaus_filtered_*.json).
         from cytokine_mil.analysis.oesinghaus_cell_loader import load_oesinghaus_cells_by_pair
         return load_oesinghaus_cells_by_pair(
             manifest_path=args.manifest_path, cytokines=sorted(sig_cyts),
@@ -61,9 +64,28 @@ def _load_pooled(args, sig_cyts):
             exclude_donors=args.exclude_donors)
 
 
+def _labels_from_csv(axes_csv):
+    """Build (pos, neg) coupling labels from an axes-labeled CSV (e.g. ID's
+    id_axes_labeled.csv). Maps the directional pair_status to a COUPLING (existence)
+    label: a real cascade (DIRECTIONAL_* / BIDIRECTIONAL) is a coupled positive; an
+    antagonism (NEGATIVE_NO_CASCADE) is a not-coupled negative; UNKNOWN / OVERLAP_*
+    pairs are descriptive (excluded from recall/false-positive). Keys are canonical
+    sorted (axis_a, axis_b) tuples."""
+    lab = pd.read_csv(axes_csv)
+    pos, neg = set(), set()
+    for _, r in lab.iterrows():
+        key = tuple(sorted((str(r["axis_a"]), str(r["axis_b"]))))
+        st = str(r.get("pair_status", "")).strip()
+        if st.startswith("DIRECTIONAL") or st == "BIDIRECTIONAL":
+            pos.add(key)
+        elif st == "NEGATIVE_NO_CASCADE":
+            neg.add(key)
+    return pos, neg
+
+
 def _parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", default="sheu", choices=["sheu", "oesinghaus"])
+    p.add_argument("--dataset", default="sheu", choices=["sheu", "oesinghaus", "id"])
     p.add_argument("--binary_ig_parquet", required=True)
     p.add_argument("--manifest_path", required=True)
     p.add_argument("--hvg_path", required=True)
@@ -75,6 +97,10 @@ def _parse_args():
     p.add_argument("--null_seed", type=int, default=42)
     p.add_argument("--time_filter", default=None)
     p.add_argument("--exclude_donors", nargs="+", default=None)
+    p.add_argument("--axes_csv", default=None,
+                   help="If set, coupling pos/neg labels come from this CSV's "
+                        "pair_status column (e.g. ID id_axes_labeled.csv) instead of "
+                        "the hardcoded Sheu/Oes labeled_pair_status.")
     return p.parse_args()
 
 
@@ -92,18 +118,23 @@ def main() -> None:
         f"({time.time()-t0:.0f}s)")
     sigs, sig_cyts = _build_ig_variants(args.binary_ig_parquet, gene_names, args.top_n)
 
-    # benchmark labels
-    from cytokine_mil.analysis.eda_pair_benchmark import labeled_pair_status
-    pos, neg = set(), set()
-    gc = sorted(sig_cyts)
-    for i in range(len(gc)):
-        for j in range(i + 1, len(gc)):
-            lab = labeled_pair_status(gc[i], gc[j])
-            key = tuple(sorted((gc[i], gc[j])))
-            if lab == "positive":
-                pos.add(key)
-            elif lab == "negative":
-                neg.add(key)
+    # benchmark labels: CSV pair_status (ID) or hardcoded labeled_pair_status (Sheu/Oes)
+    if args.axes_csv:
+        pos, neg = _labels_from_csv(args.axes_csv)
+        log(f"labels from {args.axes_csv}: {len(pos)} coupled-positive, "
+            f"{len(neg)} not-coupled-negative pairs")
+    else:
+        from cytokine_mil.analysis.eda_pair_benchmark import labeled_pair_status
+        pos, neg = set(), set()
+        gc = sorted(sig_cyts)
+        for i in range(len(gc)):
+            for j in range(i + 1, len(gc)):
+                lab = labeled_pair_status(gc[i], gc[j])
+                key = tuple(sorted((gc[i], gc[j])))
+                if lab == "positive":
+                    pos.add(key)
+                elif lab == "negative":
+                    neg.add(key)
 
     summary = []
     for v in VARIANTS:
