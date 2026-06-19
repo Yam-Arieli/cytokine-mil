@@ -168,6 +168,15 @@ def main() -> None:
         log(f"FATAL: only {len(used_donors)} usable donors < min_donors={args.min_donors}.")
         sys.exit(3)
 
+    # diagnostic: per-pair donor coverage (how many donors have a finite value)
+    diag = np.stack(stacks["hub"][VARIANTS[0]], axis=0)   # (D, G, G)
+    G = len(global_cyts)
+    cov = np.array([np.sum(np.isfinite(diag[:, i, j]))
+                    for i in range(G) for j in range(i + 1, G)])
+    log(f"per-pair donor coverage: max={cov.max() if cov.size else 0}, "
+        f"median={int(np.median(cov)) if cov.size else 0}, "
+        f">= min_donors({args.min_donors}): {int(np.sum(cov >= args.min_donors))}/{cov.size}")
+
     # cell-level reference (from the ablation summary)
     cell_frac = {}
     if args.ablation_summary and Path(args.ablation_summary).exists():
@@ -208,6 +217,14 @@ def main() -> None:
             rows = donor_coupling_test(
                 np.stack(stacks[mode][v], axis=0), global_cyts,
                 min_donors=args.min_donors, n_signflip=4000, rng=rng)
+            if not rows:
+                log(f"  [{mode}] {v}: NO testable pairs (coverage < min_donors="
+                    f"{args.min_donors}); skipping.")
+                summary_rows.append({"mode": mode, "variant": v,
+                                     "donor_tested_pairs": 0,
+                                     "benchmark_recall_q10": "0/0",
+                                     "neg_coupled_q10": "0/0"})
+                continue
             df = pd.DataFrame(rows)
             for col, thr in [("coupled_q05", 0.05), ("coupled_q10", 0.10)]:
                 df[col] = df["q_donor"] < thr
@@ -274,7 +291,12 @@ def main() -> None:
     L.append("")
     for mode in MODES:
         for v in VARIANTS:
-            df = pd.read_csv(out / f"donor_coupling_{mode}_{v}.csv")
+            fp = out / f"donor_coupling_{mode}_{v}.csv"
+            if not fp.exists():
+                L.append(f"## [{mode}] {v} — no testable pairs (coverage too low)")
+                L.append("")
+                continue
+            df = pd.read_csv(fp)
             top = df.sort_values("excess_mean", ascending=False).head(15)
             L.append(f"## [{mode}] {v} — top-15 by residual coupling")
             L.append(rsa._md(top, ["axis_a", "axis_b", "excess_mean", "n_donors",

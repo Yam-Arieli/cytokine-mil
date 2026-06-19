@@ -29,7 +29,7 @@ $PY scripts/run_donor_coupling_null.py \
     --manifest_path "$MAN" \
     --hvg_path "$HVG" \
     --time_filter 5hr \
-    --top_n 50 --min_cells 10 --n_perm 200 --min_donors 4 \
+    --top_n 50 --min_cells 5 --n_perm 200 --min_donors 3 \
     --output_dir results/sig_ablation/sheu5hr/donor_coupling
 
 echo "DONE. report at results/sig_ablation/sheu5hr/donor_coupling/donor_coupling_report.md"
