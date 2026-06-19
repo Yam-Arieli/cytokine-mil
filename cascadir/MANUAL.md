@@ -88,15 +88,19 @@ There are **two coupling paths with mirror-image failure modes.** Choose by data
 | space | encoder embedding (128-d), PBS-RC | cytokine-specific genes `S_X` |
 | stats | donor-level Wilcoxon + FDR | gene-set null (cell-level) **or** donor sign-test (`donor_level=True`) |
 | strength | rich representation; the standing published result | specific/interpretable; gives direction for free |
-| weakness | **dominated by shared activation**; needs a broad panel + several donors | gate **over-calls on broad data** unless donor-gated |
-| **works on** | broad whole-transcriptome, many donors (human PBMC) | targeted panels / few donors (mouse BMDM) |
-| **fails on** | targeted panel / few donors → **q ≈ 1, no power** | broad data → ~80% of pairs "coupled", hub-dominated |
+| weakness | **dominated by shared activation**; needs a broad panel + several donors | raw gate over-calls; **fixed by `degree_correct=True` (default)** + donor-level |
+| **works on** | broad whole-transcriptome, many donors (human PBMC) | targeted panels / few donors (mouse BMDM) **and** broad data once degree-corrected |
+| **fails on** | targeted panel / few donors → **q ≈ 1, no power** | (raw, no degree correction) broad data → ~80% "coupled", hub-dominated |
 
 **Rule of thumb for a new dataset:**
-- **Broad transcriptome (≥~4000 HVGs) AND ≥ ~8 donors** → `discover_axes` is the primary
-  coupling call; run `signature_coupling(donor_level=True)` as a specificity cross-check.
-- **Targeted/curated gene panel OR few donors** → `signature_coupling` is the primary
-  coupling call (latent geometry will likely have no power). Always set `donor_level=True`.
+- **Broad transcriptome (≥~4000 HVGs) AND ≥ ~8 donors** → `discover_axes` is one coupling
+  call; also run `signature_coupling(donor_level=True)` — with `degree_correct=True` (default)
+  and the donor-level gate this discriminates well (validated: see §8).
+- **Targeted/curated gene panel OR few donors** → `signature_coupling` is the primary call
+  (latent geometry will likely have no power). Keep `degree_correct=True`. **`donor_level`
+  needs ~8+ well-covered donors** — on few-donor data (≈3–4) per-pair donor coverage
+  collapses and the donor gate becomes inapplicable, so leave `donor_level=False` and rely
+  on the cell-level **degree-corrected** gate (validated on the Sheu targeted panel, §8).
 - Either way, **direction** (`direction_table`) is computed the same and is the most
   validated output; gate it on whichever coupling call you trust for that dataset.
 
@@ -104,19 +108,26 @@ WHY: latent geometry measures cytokines' deviation in the encoder embedding, whi
 dominated by the **shared post-activation program** every cytokine co-induces (PBS-RC only
 removes the *resting* baseline, not shared activation). On a targeted immune panel *every*
 gene is a shared-activation gene → no specific signal → no power. Signature space works in
-each cytokine's *specific* genes, so it survives there — but on broad data those signatures
-still carry some shared-activation genes, so its gate over-calls.
+each cytokine's *specific* genes. Its raw gate over-called because a broadly-engaged
+("hub") signature looks coupled to everything; **the degree correction (`degree_correct`,
+on by default) subtracts each condition's overall engagement strength, leaving
+pair-SPECIFIC residual coupling — the validated fix in both regimes (§8).** Being
+symmetric, it changes only coupling (existence), never `cross_asym` (direction).
 
 ---
 
 ## 5. Honest caveats (do NOT skip — these are real, current limitations)
 
-1. **Over-power / donor-level.** The cell-level gene-set null (`coupling_null_p`, and the
-   `direction` `null_p`) is **over-powered**: with thousands of cells almost everything is
-   "significant." **The unit of independence is the donor (effective N ≈ #donors, not
-   #cells).** For coupling, use `signature_coupling(donor_level=True)` (sign test across
-   donors — conservative/underpowered, which is correct). Treat cell-level p-values as
-   exploratory. *(A donor-level direction null is on the roadmap; not yet in the package.)*
+1. **Over-power / donor-level / hubs.** The cell-level gene-set null (`coupling_null_p`,
+   and the `direction` `null_p`) is **over-powered**: with thousands of cells almost
+   everything is "significant." **The unit of independence is the donor (effective N ≈
+   #donors, not #cells).** For coupling, use `signature_coupling(donor_level=True)` (sign
+   test across donors) **when you have ~8+ well-covered donors** — on few-donor datasets
+   the per-pair donor coverage collapses and the donor gate can't run (keep it off and lean
+   on the degree correction). Treat cell-level p-values as exploratory. Separately, the raw
+   gate is **hub-dominated** (a broadly-engaged signature looks coupled to everything) —
+   this is handled by `degree_correct=True` (default), the validated fix (§8). *(A
+   donor-level direction null is on the roadmap; not yet in the package.)*
 2. **Direction ≠ existence.** A non-coupled pair can still have a large `|cross_asym|`.
    Never use `|cross_asym|` as a coupling gate — decide coupling with a coupling method,
    then read direction on coupled pairs.
@@ -174,8 +185,16 @@ first if you need to trade speed for fidelity.
 - **Latent coupling** (`discover_axes`): on broad human PBMC → 121 coupling axes, ~50%
   literature-supported vs ~1% chance. On a targeted mouse panel → q ≈ 1 (no power).
 - **Signature coupling** (`signature_coupling`): recovered the 2/2 textbook IFN cascades
-  on the targeted panel that latent geometry missed; on broad data the *cell-level* gate
-  flags ~80% of pairs (use `donor_level=True`).
+  on the targeted panel that latent geometry missed. **Degree correction (`degree_correct`,
+  default on) is the validated over-call fix in both regimes:**
+  - *Broad + many donors (Oesinghaus, donor-level):* over-call 77% → **31%** while recall on
+    known cascades *rose* 8/17 → **11/17** (≈2.1× enrichment vs ~1× for the raw gate).
+  - *Targeted + few donors (Sheu 3hr, cell-level):* keeps the 2/2 IFN cascades (PIC–IFNb the
+    #1 coupled pair, LPS–IFNb top-5), suppresses **all 3** pre-registered negatives, over-call
+    ~80% → **~40%**. (The one MUST it drops, LPS–TNF, is the both-hub NF-κB pair — expected.)
+  - Without degree correction the cell-level gate flags ~80% of pairs and is hub-dominated.
+  - Caveat: the donor sign-flip/sign-test gauges *consistency*, not effect size — rank by
+    `coupling` (the degree-corrected value) and apply a magnitude sense-check at the tail.
 
 If your new dataset is broad+many-donor and `discover_axes` returns near-zero coupled
 pairs at q≤0.05, that's the known underpower (rank by `axis_strength` instead, and lean on

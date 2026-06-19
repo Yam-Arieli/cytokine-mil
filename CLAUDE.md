@@ -1706,6 +1706,29 @@ published 121-axis result until this is validated; it is a candidate reframe.
   rescues Sheu). Likely endgame: signature specificity + donor-level discipline. Full writeup:
   `reports/cascade_pairs/SIGNATURE_COUPLING_RESULTS.md`.
 
+### 28.2 Gate fix — donor-level + degree(hub) correction (VALIDATED 2026-06-19)
+
+The §28.1 over-call was diagnosed and fixed. Two orthogonal nulls/transforms, validated via
+`scripts/run_signature_ablation.py` (2×2 {IG,DE}×{vsPBS,vsPanel}), `run_donor_coupling_null.py`
+(donor sign-flip null + degree correction), and `run_cell_degree_coupling.py` (cell-level
+degree). Code in `cytokine_mil/analysis/signature_coupling.py`
+(`donor_excess_matrix`, `donor_residual_coupling_matrix`, `donor_coupling_test`,
+`_degree_center`, `cell_coupling_degree`). Findings:
+- **Signature definition (ablation):** IG_vsPBS reproduces ~88% direction; **DE ≠ IG**
+  (Jaccard 0.11, DE direction 59%≈chance) → the encoder/IG is *not* replaceable by DE (keep
+  it). **IG_vsPanel** (panel-residualised, removes shared activation) == IG_vsPBS on direction,
+  slightly less hub-dominated → adopt as default signature. Specificity alone does NOT fix the
+  gate (the cell-level null is over-powered regardless).
+- **Degree (hub) correction is THE fix** (double-center the coupling matrix → pair-specific
+  residual; symmetric, so `cross_asym`/direction unaffected). *Oesinghaus donor+degree:*
+  over-call 77%→**31%**, recall 8→**11/17** (≈2.1× enrichment). *Sheu cell+degree:* keeps
+  2/2 IFN cascades (PIC–IFNb #1), suppresses all 3 negatives, over-call ~80%→~40% (drops only
+  the both-hub LPS–TNF).
+- **Boundary:** the donor-level null needs ~8+ well-covered donors (Oesinghaus). Sheu (4) / ID
+  (3) are too few → donor gate inapplicable; use cell-level degree correction there.
+- **Ported to `cascadir`** (`signature_coupling(..., degree_correct=True)` default; no-op for
+  <3 conditions; donor path degree-corrected). MANUAL §4/§5/§8 updated. cascadir tests pass.
+
 ---
 
 ## 29. `cascadir` — the reusable, dataset-agnostic package (2026-06)

@@ -112,6 +112,40 @@ def _pair_rows(conditions: list[str], M: np.ndarray) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Degree (hub) correction
+# ---------------------------------------------------------------------------
+
+
+def _degree_center(C: np.ndarray) -> np.ndarray:
+    """Additive double-centering of a SYMMETRIC coupling matrix (diagonal = NaN).
+
+    ``R[i,j] = C[i,j] - d_i - d_j + g``, where ``d_i`` = mean off-diagonal coupling of
+    condition ``i`` (its overall engagement "strength"/degree) and ``g`` = grand
+    off-diagonal mean. Removes each condition's overall level — the HUB/DEGREE artifact
+    where a broadly-engaged signature (e.g. IL-15) appears coupled to everything —
+    leaving pair-SPECIFIC residual coupling. NaNs (absent pairs / diagonal) are excluded
+    from the means.
+
+    Validated to be the fix for the gate over-call in BOTH regimes (CLAUDE.md §28.1):
+    donor-level on broad many-donor data (Oesinghaus: over-call 77%->31%, recall 8->11/17)
+    and cell-level on a targeted few-donor panel (Sheu: preserves the 2/2 IFN cascades,
+    suppresses all negatives, over-call ~80%->~40%). Being symmetric, it changes only the
+    coupling (existence) half — ``cross_asym`` (direction) is unaffected.
+    """
+    with np.errstate(all="ignore"):
+        d = np.nanmean(C, axis=1)        # node strength (diagonal NaN -> excluded)
+        g = float(np.nanmean(C))
+    return C - d[:, None] - d[None, :] + g
+
+
+def _coupling_matrix(M: np.ndarray) -> np.ndarray:
+    """Symmetric coupling C[i,j] = M[i,j] + M[j,i] (diagonal NaN)."""
+    C = M + M.T
+    np.fill_diagonal(C, np.nan)
+    return C
+
+
+# ---------------------------------------------------------------------------
 # Gene-set null on the SYMMETRIC coupling (cell-level; exploratory)
 # ---------------------------------------------------------------------------
 
@@ -187,6 +221,7 @@ def signature_coupling(
     config: CrossAsymConfig | None = None,
     cells_by_pair_per_donor: Optional[dict[str, dict[tuple[str, str], np.ndarray]]] = None,
     coupling_alpha: float = 0.05,
+    degree_correct: bool = True,
 ) -> pd.DataFrame:
     """Signature-space coupling + direction for every unordered pair.
 
@@ -200,10 +235,16 @@ def signature_coupling(
             **donor-level** gate (recommended): coupling is aggregated per donor and tested
             with a sign test across donors (conservative; respects effective N = donors).
         coupling_alpha: significance threshold for the ``coupled`` flag.
+        degree_correct: subtract each condition's overall engagement strength (row+column
+            "degree") from the coupling matrix before gating (:func:`_degree_center`).
+            **Default True** — this is the validated fix for the gate over-call (hub
+            conditions otherwise look coupled to everything). Symmetric, so ``cross_asym``
+            (direction) is unaffected. Set False for the raw ``M[a,b]+M[b,a]`` coupling.
 
     Returns:
         DataFrame, one row per unordered pair, sorted by descending ``coupling``:
-        ``condition_a, condition_b, coupling, cross_asym, coupling_null_p`` (cell-level,
+        ``condition_a, condition_b, coupling`` (degree-corrected by default), ``coupling_raw``
+        (uncorrected ``m_ab+m_ba``), ``cross_asym, coupling_null_p`` (cell-level,
         exploratory); and if donor-level: ``donor_coupling_mean, donor_consensus,
         donor_sign_p, n_donors``; plus ``coupled`` (bool by the best available gate).
     """
@@ -220,8 +261,22 @@ def signature_coupling(
     rows = _pair_rows(conditions, M)
     idx_of = {c: i for i, c in enumerate(conditions)}
 
-    # cell-level gene-set null (exploratory; over-powered — see module docstring)
-    null_cmat = None
+    # symmetric coupling matrix; degree-correct (remove hub/degree bias) by default.
+    # cross_asym (direction) is untouched — degree centering is symmetric. Degree
+    # centering is degenerate for < 3 conditions (residual collapses to 0), so it is a
+    # no-op there.
+    do_degree = degree_correct and len(conditions) >= 3
+    C_raw = _coupling_matrix(M)
+    C_used = _degree_center(C_raw) if do_degree else C_raw
+    for r in rows:
+        i, j = idx_of[r["condition_a"]], idx_of[r["condition_b"]]
+        r["coupling_raw"] = float(C_raw[i, j])
+        r["coupling"] = float(C_used[i, j])  # corrected value drives the gate + sort
+
+    # cell-level gene-set null (exploratory; over-powered — see module docstring).
+    # When degree-correcting, the null matrices are degree-centered the SAME way
+    # (apples-to-apples), so the p-value tests the pair-SPECIFIC residual.
+    null_used = None
     if cfg.n_null_perms and cfg.n_null_perms > 0:
         excluded = {i for idx in sig_idx.values() for i in np.asarray(idx).tolist()}
         sizes = [len(np.asarray(sig_idx[c])) for c in conditions]
@@ -232,36 +287,44 @@ def signature_coupling(
                 excluded_indices=excluded, control_label=control_label,
                 min_cells=cfg.min_cells, n_perm=cfg.n_null_perms, seed=cfg.null_seed,
             )
+            if do_degree:
+                null_used = np.full_like(null_cmat, np.nan)
+                for k in range(null_cmat.shape[0]):
+                    Ck = null_cmat[k].copy()
+                    np.fill_diagonal(Ck, np.nan)
+                    null_used[k] = _degree_center(Ck)
+            else:
+                null_used = null_cmat
         except ValueError:
-            null_cmat = None
+            null_used = None
 
-    # donor-level coupling (recommended gate)
-    donor_M: list[np.ndarray] = []
+    # donor-level coupling (recommended gate); degree-corrected per donor when enabled.
+    donor_C: list[np.ndarray] = []
     if cells_by_pair_per_donor:
         for _d, cbp_d in cells_by_pair_per_donor.items():
             conds_d, M_d = cross_engagement_matrix(
                 cbp_d, sig_idx, control_label=control_label, min_cells=cfg.min_cells
             )
-            # re-index M_d onto the global `conditions` order (NaN for missing)
             full = np.full((len(conditions), len(conditions)), np.nan)
             local = {c: k for k, c in enumerate(conds_d)}
             for a in conds_d:
                 for b in conds_d:
                     full[idx_of[a], idx_of[b]] = M_d[local[a], local[b]]
-            donor_M.append(full)
+            C_d = _coupling_matrix(full)
+            donor_C.append(_degree_center(C_d) if do_degree else C_d)
 
     for r in rows:
         i, j = idx_of[r["condition_a"]], idx_of[r["condition_b"]]
-        if null_cmat is not None:
-            nc = null_cmat[:, i, j]
+        if null_used is not None:
+            nc = null_used[:, i, j]
             nc = nc[np.isfinite(nc)]
             r["coupling_null_p"] = (
                 float(np.mean(nc >= r["coupling"])) if nc.size else float("nan")
             )
         else:
             r["coupling_null_p"] = float("nan")
-        if donor_M:
-            cpl = np.array([dM[i, j] + dM[j, i] for dM in donor_M], dtype=np.float64)
+        if donor_C:
+            cpl = np.array([dC[i, j] for dC in donor_C], dtype=np.float64)
             cpl = cpl[np.isfinite(cpl)]
             nd = cpl.size
             r["n_donors"] = int(nd)
@@ -269,7 +332,6 @@ def signature_coupling(
                 r["donor_coupling_mean"] = float(np.mean(cpl))
                 n_pos = int(np.sum(cpl > 0))
                 r["donor_consensus"] = float(n_pos / nd)
-                # one-sided sign test: P(>= n_pos positives | p=0.5)
                 r["donor_sign_p"] = float(
                     sum(comb(nd, k) for k in range(n_pos, nd + 1)) / (2 ** nd)
                 )
@@ -279,7 +341,7 @@ def signature_coupling(
                 r["donor_sign_p"] = float("nan")
 
     df = pd.DataFrame(rows)
-    if donor_M:
+    if donor_C:
         df["coupled"] = (df["donor_sign_p"] <= coupling_alpha) & (df["donor_coupling_mean"] > 0)
     else:
         df["coupled"] = df["coupling_null_p"] < coupling_alpha

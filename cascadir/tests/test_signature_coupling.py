@@ -79,3 +79,72 @@ def test_donor_level_path_runs():
     for col in ("donor_coupling_mean", "donor_consensus", "donor_sign_p", "n_donors", "coupled"):
         assert col in df.columns
     assert int(df.iloc[0]["n_donors"]) == 2
+
+
+def _toy_hub(seed=0, n_genes=40, n_cells=60):
+    """4 conditions: A,B specifically coupled; H is a HUB (broadly engaged); C peripheral.
+    Degree correction should keep A-B but suppress H's pairs."""
+    rng = np.random.default_rng(seed)
+    sig = {"A": np.arange(0, 8), "B": np.arange(8, 16),
+           "C": np.arange(16, 24), "H": np.arange(24, 32)}
+    cbp = {}
+    for T in ("T0", "T1"):
+        def base():
+            return rng.gamma(1.0, 0.3, size=(n_cells, n_genes)).astype(np.float64)
+        cP = base()
+        cA, cB, cC, cH = base(), base(), base(), base()
+        cA[:, sig["A"]] += 1.0; cA[:, sig["B"]] += 0.6           # A<->B specific
+        cB[:, sig["B"]] += 1.0; cB[:, sig["A"]] += 0.6
+        cC[:, sig["C"]] += 1.0
+        cH[:, sig["H"]] += 1.0
+        for c in (cH,):  # H broadly engages everyone's signature (hub)
+            c[:, sig["A"]] += 0.7; c[:, sig["B"]] += 0.7; c[:, sig["C"]] += 0.7
+        for c in (cA, cB, cC):  # everyone engages H's signature (promiscuous H sig)
+            c[:, sig["H"]] += 0.7
+        cbp[("A", T)] = cA; cbp[("B", T)] = cB
+        cbp[("C", T)] = cC; cbp[("H", T)] = cH; cbp[("PBS", T)] = cP
+    genes = tuple(f"g{i}" for i in range(n_genes))
+    sigs = {k: Signature(k, tuple(genes[i] for i in v), (1.0,) * len(v), len(v))
+            for k, v in sig.items()}
+    return cbp, genes
+
+
+def _coupling_of(df, a, b):
+    lo, hi = sorted((a, b))
+    row = df[(df["condition_a"] == lo) & (df["condition_b"] == hi)].iloc[0]
+    return row
+
+
+def _hub_sigs():
+    sig_map = {"A": range(0, 8), "B": range(8, 16), "C": range(16, 24), "H": range(24, 32)}
+    return {k: Signature(k, tuple(f"g{i}" for i in v), (1.0,) * len(list(v)), 8)
+            for k, v in sig_map.items()}
+
+
+def test_degree_correction_suppresses_hub_keeps_specific():
+    cbp, genes = _toy_hub(seed=1)
+    sigs = _hub_sigs()
+    cfg = CrossAsymConfig(n_null_perms=0)
+    raw = signature_coupling(cbp, sigs, genes, config=cfg, degree_correct=False)
+    hub = signature_coupling(cbp, sigs, genes, config=cfg, degree_correct=True)
+    # raw: the hub pair looks coupled too (the over-call)
+    assert _coupling_of(raw, "A", "H")["coupling"] > 0
+    # degree correction: A-B specific coupling stays above the hub pairs A-H / B-H
+    ab = _coupling_of(hub, "A", "B")["coupling"]
+    ah = _coupling_of(hub, "A", "H")["coupling"]
+    bh = _coupling_of(hub, "B", "H")["coupling"]
+    assert ab > ah and ab > bh
+    # coupling_raw column is preserved (uncorrected)
+    assert "coupling_raw" in hub.columns
+
+
+def test_degree_correct_preserves_cross_asym():
+    cbp, genes = _toy_hub(seed=2)
+    sigs = _hub_sigs()
+    cfg = CrossAsymConfig(n_null_perms=0)
+    raw = signature_coupling(cbp, sigs, genes, config=cfg, degree_correct=False)
+    hub = signature_coupling(cbp, sigs, genes, config=cfg, degree_correct=True)
+    # cross_asym (direction) is symmetric-invariant -> identical with/without correction
+    for a, b in [("A", "B"), ("A", "H"), ("C", "H")]:
+        assert np.isclose(_coupling_of(raw, a, b)["cross_asym"],
+                          _coupling_of(hub, a, b)["cross_asym"], atol=1e-9)

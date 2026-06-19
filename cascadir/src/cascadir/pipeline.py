@@ -290,6 +290,7 @@ class CascadeDirection:
         *,
         donor_level: bool = False,
         coupling_alpha: float = 0.05,
+        degree_correct: bool = True,
     ) -> pd.DataFrame:
         """Second coupling path: coupling in cytokine-SPECIFIC genes (signature space).
 
@@ -303,8 +304,12 @@ class CascadeDirection:
         Args:
             donor_level: aggregate coupling per donor and gate with a sign test across
                 donors (recommended — the cell-level null is over-powered; see the
-                module docstring).
+                module docstring). NOTE: needs ~8+ well-covered donors; on few-donor
+                datasets (≈3-4) the per-pair coverage collapses — keep ``donor_level=False``
+                and rely on ``degree_correct`` at the cell level instead.
             coupling_alpha: significance threshold for the ``coupled`` flag.
+            degree_correct: remove the hub/degree bias before gating (default True; the
+                validated fix for the gate over-call). See :func:`signature_coupling`.
         """
         self._check_fitted()
         assert self.tube_set is not None and self._cells_by_pair is not None
@@ -322,6 +327,7 @@ class CascadeDirection:
             config=self.cross_asym_config,
             cells_by_pair_per_donor=per_donor,
             coupling_alpha=coupling_alpha,
+            degree_correct=degree_correct,
         )
 
     def benchmark(
