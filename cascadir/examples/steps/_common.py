@@ -15,7 +15,7 @@ _EXAMPLES = Path(__file__).resolve().parents[1]
 if str(_EXAMPLES) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES))
 
-from synthetic_data import make_synthetic_anndata  # noqa: E402
+from synthetic_data import make_synthetic_anndata, make_hub_anndata  # noqa: E402
 
 import cascadir as cd  # noqa: E402
 
@@ -27,6 +27,13 @@ CONTROL = "PBS"
 def raw_anndata(seed: int = 0):
     """A fresh raw-count AnnData with a planted CytA -> CytB cascade."""
     return make_synthetic_anndata(seed=seed)
+
+
+def hub_anndata(seed: int = 0):
+    """Raw-count AnnData with >= 3 conditions and a planted HUB (CytH) — for the
+    degree-correction lesson (step 08). CytA<->CytB specifically coupled, CytC
+    independent, CytH coupled-to-everyone in the raw gate."""
+    return make_hub_anndata(seed=seed)
 
 
 def preprocessed(seed: int = 0):
