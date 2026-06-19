@@ -346,6 +346,79 @@ def donor_residual_coupling_matrix(
     return out
 
 
+def cell_coupling_degree(
+    cells_by_pair: Dict[Tuple[str, str], np.ndarray],
+    sig_idx_dict: Dict[str, np.ndarray],
+    pbs_label: str = "PBS",
+    min_cells: int = 10,
+    n_perm: int = 200,
+    rng: Optional[np.random.Generator] = None,
+) -> List[Dict[str, object]]:
+    """Cell-level (pooled) coupling, RAW and DEGREE-corrected, each gene-set-null gated.
+
+    For few-donor datasets where the donor-level gate is inapplicable, this tests
+    whether the degree correction (hub removal) preserves real coupling while cutting
+    the over-call -- at the cell level, where all pairs are testable. The null
+    matrices are degree-centered the SAME way as the observed (apples-to-apples), so
+    ``null_p_hub`` asks whether the pair-specific residual exceeds random genes.
+
+    Returns rows: axis_a, axis_b, coupling_raw, coupling_hub, cross_asym,
+    null_p_raw, null_p_hub.
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
+    cyts, cell_types, E = engagement_per_celltype(
+        cells_by_pair, sig_idx_dict, pbs_label, min_cells)
+    M = cross_engagement_matrix(E)
+    n = len(cyts)
+    C = np.full((n, n), np.nan, dtype=np.float64)
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                C[i, j] = M[i, j] + M[j, i]
+    C_hub = _degree_center(C)
+
+    null_raw = null_hub = None
+    if n_perm and n > 0:
+        excluded = sorted({i for v in sig_idx_dict.values()
+                           for i in np.asarray(v).tolist()})
+        n_genes = next(int(v.shape[1]) for v in cells_by_pair.values())
+        sizes = [len(np.asarray(sig_idx_dict[c])) for c in cyts]
+        set_size = int(np.median(sizes)) if sizes else 0
+        if set_size > 0:
+            try:
+                N = _null_engagement_tensor(
+                    cells_by_pair, cyts, cell_types, set_size, excluded, n_genes,
+                    pbs_label, min_cells, n_perm, rng)
+                with np.errstate(all="ignore"):
+                    pair_sum = N[:, :, :, None] + N[:, :, None, :]
+                    null_raw = np.nanmedian(pair_sum, axis=1)        # (k,n,n)
+                null_hub = np.full_like(null_raw, np.nan)
+                for k in range(null_raw.shape[0]):
+                    Ck = null_raw[k].copy()
+                    np.fill_diagonal(Ck, np.nan)
+                    null_hub[k] = _degree_center(Ck)
+            except Exception:
+                null_raw = null_hub = None
+
+    rows: List[Dict[str, object]] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            row = {"axis_a": cyts[i], "axis_b": cyts[j],
+                   "coupling_raw": float(C[i, j]), "coupling_hub": float(C_hub[i, j]),
+                   "cross_asym": float(M[i, j] - M[j, i]),
+                   "null_p_raw": float("nan"), "null_p_hub": float("nan")}
+            if null_raw is not None:
+                nr = null_raw[:, i, j]; nr = nr[np.isfinite(nr)]
+                nh = null_hub[:, i, j]; nh = nh[np.isfinite(nh)]
+                if nr.size and np.isfinite(C[i, j]):
+                    row["null_p_raw"] = float(np.mean(nr >= C[i, j]))
+                if nh.size and np.isfinite(C_hub[i, j]):
+                    row["null_p_hub"] = float(np.mean(nh >= C_hub[i, j]))
+            rows.append(row)
+    return rows
+
+
 def _signflip_p(vals: np.ndarray, n_signflip: int,
                 rng: np.random.Generator) -> Tuple[float, float]:
     """One-sided sign-flip permutation p for H1: mean(vals) > 0.
