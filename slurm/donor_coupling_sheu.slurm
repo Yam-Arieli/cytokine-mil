@@ -8,18 +8,20 @@
 #SBATCH --partition=short
 
 # Generalization test (2nd dataset): donor-level + degree-corrected coupling gate on
-# Sheu 5hr (targeted 500-gene panel, mouse BMDM). 6 pseudo-donors -> donor null is
-# small but valid (unanimous-6 -> p=1/64). Benchmark = pre-registered MUST (LPS-TNF,
-# PIC-IFNb) / MUST-NOT (P3CSK-IFNb, CpG-IFNb, TNF-IFNb) coupling labels. Key question:
-# does the degree correction keep the textbook IFN cascades coupled while suppressing
-# the MUST-NOTs, on a panel where EVERY gene is shared-activation? Research code only.
+# Sheu 3hr (targeted 500-gene panel, mouse BMDM). NOTE: the canonical pseudotube
+# manifest is 3hr-only (stimulated tubes have time_point='3hr'); ~4 pseudo-donors at
+# 3hr -> donor null is underpowered (unanimous-4 -> p=1/16), so the RANKING (MUST vs
+# MUST-NOT by excess_mean) is the deliverable, not the q-significance. Benchmark =
+# pre-registered MUST (LPS-TNF, PIC-IFNb) / MUST-NOT (P3CSK-IFNb, CpG-IFNb, TNF-IFNb).
+# Key question: does the degree correction keep the textbook IFN cascades top-ranked
+# while suppressing the MUST-NOTs, on a panel where EVERY gene is shared-activation?
 
 set -e
 cd /cs/labs/mornitzan/yam.arieli/cytokine-mil
 export MPLCONFIGDIR=/cs/labs/mornitzan/yam.arieli/.matplotlib_cache
 PY=/cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python
 
-IG=results/sheu_cascade/5hr/binary_ig/binary_ig.parquet
+IG=results/sheu_cascade/3hr/binary_ig/binary_ig.parquet
 MAN=/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json
 HVG=/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/hvg_list.json
 
@@ -28,8 +30,8 @@ $PY scripts/run_donor_coupling_null.py \
     --binary_ig_parquet "$IG" \
     --manifest_path "$MAN" \
     --hvg_path "$HVG" \
-    --time_filter 5hr \
+    --time_filter 3hr \
     --top_n 50 --min_cells 5 --n_perm 200 --min_donors 3 \
-    --output_dir results/sig_ablation/sheu5hr/donor_coupling
+    --output_dir results/sig_ablation/sheu3hr/donor_coupling
 
 echo "DONE. report at results/sig_ablation/sheu5hr/donor_coupling/donor_coupling_report.md"
