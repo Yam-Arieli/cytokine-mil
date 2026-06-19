@@ -193,14 +193,24 @@ A `DirectionCall` carries: `cross_asym_median`, `sign_consensus`, `classificatio
   cannot reach p<0.05; the validated 121-axis run used ~10). With few donors,
   `AxisResult.underpowered` is `True` — rank by `axis_strength`, not `coupled`. And on a
   *targeted* gene panel it has **no power at all** (every q≈1) — use `signature_coupling` there.
-- **`signature_coupling`'s cell-level gate is over-powered.** With thousands of cells, the
-  random-gene-set null flags almost everything (it over-calls on broad data, hub-dominated).
-  **The unit of independence is the donor** — pass `donor_level=True` for an honest (sign-test,
-  conservative) gate. A donor-level *direction* null is on the roadmap, not yet shipped.
-- **Which coupling path?** Broad panel + many donors → `discover_axes` (the standing result),
-  with `signature_coupling(donor_level=True)` as a specificity cross-check. Targeted panel /
-  few donors → `signature_coupling` is primary. See [`MANUAL.md`](MANUAL.md) §4. Direction
-  (`cross_asym`) is computed the same way regardless and is the most-validated output.
+- **`signature_coupling`'s raw gate over-calls — fixed by `degree_correct=True` (default).**
+  Two issues compound on the raw gate: the cell-level null is *over-powered* (thousands of
+  cells → almost everything "significant"; the unit of independence is the **donor**), and the
+  coupling value is *hub-dominated* (a broadly-engaged signature looks coupled to everything).
+  The **degree correction** (`degree_correct=True`, on by default) double-centers the coupling
+  matrix → pair-SPECIFIC residual, and is the validated fix: on broad human data it cut the
+  over-call **77%→31%** while *raising* known-cascade recall **8/17→11/17** (≈2.1× enrichment);
+  on a targeted mouse panel it kept the textbook IFN cascades and suppressed the negatives.
+  Being symmetric it changes only coupling — `cross_asym` (direction) is untouched. For added
+  rigor pass `donor_level=True` (sign test across donors) **when you have ~8+ well-covered
+  donors**; few-donor datasets can't support it (per-pair coverage collapses) — keep
+  `donor_level=False` and rely on the cell-level degree correction. A donor-level *direction*
+  null is on the roadmap, not yet shipped.
+- **Which coupling path?** Broad panel + many donors → `discover_axes` (the standing result)
+  **and** `signature_coupling(donor_level=True)` (degree-corrected — now discriminates well).
+  Targeted panel / few donors → `signature_coupling` is primary (keep `degree_correct=True`,
+  `donor_level=False`). See [`MANUAL.md`](MANUAL.md) §4/§8. Direction (`cross_asym`) is computed
+  the same way regardless and is the most-validated output.
 
 ---
 
