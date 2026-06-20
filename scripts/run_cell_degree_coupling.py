@@ -61,25 +61,42 @@ def _load_pooled(args, sig_cyts):
         return load_oesinghaus_cells_by_pair(
             manifest_path=args.manifest_path, cytokines=sorted(sig_cyts),
             hvg_path=args.hvg_path, pbs_label=args.pbs_label,
+            include_donors=args.include_donors,
             exclude_donors=args.exclude_donors)
 
 
 def _labels_from_csv(axes_csv):
-    """Build (pos, neg) coupling labels from an axes-labeled CSV (e.g. ID's
-    id_axes_labeled.csv). Maps the directional pair_status to a COUPLING (existence)
-    label: a real cascade (DIRECTIONAL_* / BIDIRECTIONAL) is a coupled positive; an
-    antagonism (NEGATIVE_NO_CASCADE) is a not-coupled negative; UNKNOWN / OVERLAP_*
-    pairs are descriptive (excluded from recall/false-positive). Keys are canonical
-    sorted (axis_a, axis_b) tuples."""
+    """Build (pos, neg) coupling labels from an axes-labeled CSV. Two conventions:
+
+    - **Oes audit** (CSV has a ``counts_in_benchmark`` column, e.g.
+      ``cytokine_axes_audited.csv``): positives = rows with
+      ``counts_in_benchmark`` truthy (same rule as run_donor_coupling_null.py, so
+      recall is comparable to the §28.2 donor-level Oes baseline); negatives =
+      ``pair_status=="NEGATIVE_NO_CASCADE"`` if present, else none (Oes has no
+      negative set — the comparison is recall + over-call).
+    - **ID** (no ``counts_in_benchmark``, e.g. ``id_axes_labeled.csv``): maps the
+      directional ``pair_status`` to coupling existence — a real cascade
+      (DIRECTIONAL_* / BIDIRECTIONAL) is a coupled positive; an antagonism
+      (NEGATIVE_NO_CASCADE) is a not-coupled negative; UNKNOWN / OVERLAP_* are
+      descriptive (excluded).
+
+    Keys are canonical sorted (axis_a, axis_b) tuples."""
     lab = pd.read_csv(axes_csv)
     pos, neg = set(), set()
+    use_benchmark = "counts_in_benchmark" in lab.columns
     for _, r in lab.iterrows():
         key = tuple(sorted((str(r["axis_a"]), str(r["axis_b"]))))
         st = str(r.get("pair_status", "")).strip()
-        if st.startswith("DIRECTIONAL") or st == "BIDIRECTIONAL":
-            pos.add(key)
-        elif st == "NEGATIVE_NO_CASCADE":
-            neg.add(key)
+        if use_benchmark:
+            if str(r.get("counts_in_benchmark", "")).strip().lower() == "true":
+                pos.add(key)
+            elif st == "NEGATIVE_NO_CASCADE":
+                neg.add(key)
+        else:
+            if st.startswith("DIRECTIONAL") or st == "BIDIRECTIONAL":
+                pos.add(key)
+            elif st == "NEGATIVE_NO_CASCADE":
+                neg.add(key)
     return pos, neg
 
 
@@ -97,6 +114,10 @@ def _parse_args():
     p.add_argument("--null_seed", type=int, default=42)
     p.add_argument("--time_filter", default=None)
     p.add_argument("--exclude_donors", nargs="+", default=None)
+    p.add_argument("--include_donors", nargs="+", default=None,
+                   help="Restrict coupling to these donors only (oesinghaus/id). "
+                        "Mutually exclusive with --exclude_donors at the loader "
+                        "(exclude wins if both given). Used by the donor-count test.")
     p.add_argument("--axes_csv", default=None,
                    help="If set, coupling pos/neg labels come from this CSV's "
                         "pair_status column (e.g. ID id_axes_labeled.csv) instead of "
