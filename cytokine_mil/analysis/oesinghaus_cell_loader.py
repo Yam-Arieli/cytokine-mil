@@ -124,12 +124,19 @@ def load_oesinghaus_cells_by_pair(
         )
 
     # ---- Write filtered manifest to a temp path so load_phase1_cells can read it ----
-    # We persist it next to the original manifest so it can be re-inspected
-    # post hoc, but with a deterministic name keyed off the cytokine list.
+    # We persist it next to the original manifest so it can be re-inspected post hoc,
+    # with a deterministic name keyed off BOTH the cytokine list AND the donor set.
+    # The donor token is REQUIRED for concurrency-safety: array tasks that share the
+    # cytokine set but differ in donors (e.g. the donor-count test) would otherwise
+    # write/read the SAME path and clobber each other (JSONDecodeError / wrong donors).
     cyt_hash = "_".join(sorted(c.replace("/", "_") for c in keep_cyt))[:80]
+    if donor_include_set is None:
+        donor_tok = "alldonors"
+    else:
+        donor_tok = "_".join(sorted(donor_include_set)).replace("/", "_")[:80]
     tmp_manifest_path = (
         Path(manifest_path).parent
-        / f"_oesinghaus_filtered_{cyt_hash}.json"
+        / f"_oesinghaus_filtered_{cyt_hash}__{donor_tok}.json"
     )
     with open(tmp_manifest_path, "w") as fh:
         json.dump(filtered, fh)
