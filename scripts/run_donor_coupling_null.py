@@ -77,7 +77,8 @@ def _hub_in_top20(rows: List[dict]) -> Dict:
 
 def _parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", default="oesinghaus", choices=["oesinghaus", "sheu"])
+    p.add_argument("--dataset", default="oesinghaus",
+                   choices=["oesinghaus", "sheu", "oelen"])
     p.add_argument("--binary_ig_parquet", required=True)
     p.add_argument("--manifest_path", required=True)
     p.add_argument("--hvg_path", required=True)
@@ -107,8 +108,9 @@ def main() -> None:
     donors = _donors_from_manifest(args.manifest_path, args.exclude_donors or [])
     log(f"donors: {donors}")
 
-    # dataset-aware per-donor loader + gene order
-    if args.dataset == "oesinghaus":
+    # dataset-aware per-donor loader + gene order. oesinghaus + oelen use the generic
+    # manifest loader (path/cytokine + obs cell_type); only sheu needs the time_filter path.
+    if args.dataset in ("oesinghaus", "oelen"):
         from cytokine_mil.analysis.oesinghaus_cell_loader import load_oesinghaus_cells_by_pair
         _c0, gene_names = load_oesinghaus_cells_by_pair(
             manifest_path=args.manifest_path, cytokines=["PBS"], hvg_path=args.hvg_path,
@@ -190,7 +192,7 @@ def main() -> None:
     bench_pairs: set = set()      # should be coupled (recall)
     neg_pairs: set = set()        # should NOT be coupled (false-positive check)
     status_map: dict = {}
-    if args.dataset == "oesinghaus" and args.audit_csv and Path(args.audit_csv).exists():
+    if args.audit_csv and Path(args.audit_csv).exists():
         audit = pd.read_csv(args.audit_csv)
         bench = audit[audit["counts_in_benchmark"].astype(str).str.lower() == "true"]
         bench_pairs = {tuple(sorted((str(r["axis_a"]), str(r["axis_b"]))))

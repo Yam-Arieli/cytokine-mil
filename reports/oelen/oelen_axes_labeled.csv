@@ -1,0 +1,10 @@
+axis_a,axis_b,pair_status,counts_in_benchmark,expected_sign,note
+24hCA,3hCA,SAME_PATHOGEN_PROGRESSION,True,-1,Same pathogen (C. albicans) 3h vs 24h -- coupled (same biology); progression 3h upstream so axis_b(3hCA) upstream -> expected cross_asym sign -1 (magnitude-confound caveat per sec30).
+24hPA,3hPA,SAME_PATHOGEN_PROGRESSION,True,-1,Same pathogen (P. aeruginosa) 3h vs 24h -- coupled; 3h upstream -> -1.
+24hMTB,3hMTB,SAME_PATHOGEN_PROGRESSION,True,-1,Same pathogen (M. tuberculosis) 3h vs 24h -- coupled; 3h upstream -> -1.
+3hCA,3hPA,SHARED_INNATE,False,,Cross-pathogen same-time -- coupled only via the shared innate program (PRR->NF-kB); the hub the gate should rank BELOW same-pathogen pairs.
+3hCA,3hMTB,SHARED_INNATE,False,,Cross-pathogen same-time shared-innate hub.
+3hPA,3hMTB,SHARED_INNATE,False,,Cross-pathogen same-time shared-innate hub.
+24hCA,24hPA,SHARED_INNATE,False,,Cross-pathogen same-time shared-innate hub.
+24hCA,24hMTB,SHARED_INNATE,False,,Cross-pathogen same-time shared-innate hub.
+24hPA,24hMTB,SHARED_INNATE,False,,Cross-pathogen same-time shared-innate hub.
