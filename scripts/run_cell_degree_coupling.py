@@ -102,7 +102,8 @@ def _labels_from_csv(axes_csv):
 
 def _parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", default="sheu", choices=["sheu", "oesinghaus", "id"])
+    p.add_argument("--dataset", default="sheu",
+                   choices=["sheu", "oesinghaus", "id", "cano_gamez"])
     p.add_argument("--binary_ig_parquet", required=True)
     p.add_argument("--manifest_path", required=True)
     p.add_argument("--hvg_path", required=True)

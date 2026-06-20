@@ -1,0 +1,7 @@
+axis_a,axis_b,pair_status,counts_in_benchmark,note
+Th17,iTreg,COUPLED_TGFB,True,Th17 and iTreg both require TGF-beta; the dataset's own clusters merge them (TCM2/TEM (Th17/iTreg)). Known coupled pair.
+Th17,Th2,DISTINCT,False,Th17 (IL-6/IL-1b/IL-23 -> STAT3) vs Th2 (IL-4 -> STAT6) -- distinct lineages.
+Th2,iTreg,DISTINCT,False,Th2 (STAT6) vs iTreg (TGF-beta/SMAD) -- distinct lineages.
+Th0,Th17,ACTIVATION_HUB,False,Th0 = TCR/CD28 activation only (no polarizing cytokine); shared-activation hub -- expect degree correction to suppress.
+Th0,Th2,ACTIVATION_HUB,False,Th0 activation hub vs Th2.
+Th0,iTreg,ACTIVATION_HUB,False,Th0 activation hub vs iTreg.
