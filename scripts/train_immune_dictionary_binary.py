@@ -133,8 +133,14 @@ def _train_one_binary_model(
     hidden_dims,
     attention_hidden_dim,
     val_donors,
+    single_stage=False,
+    single_stage_lr=1e-3,
 ):
-    """Train one binary AB-MIL (target vs control), shared frozen encoder."""
+    """Train one binary AB-MIL (target vs control).
+
+    Two-stage (default): deep-copy the shared frozen Stage-1 encoder. Single-stage
+    (``single_stage=True``, encoder-ablation): fresh random-init encoder trained
+    end-to-end with the rest of the model (no cell-type pre-training)."""
     log(f"\n{'=' * 50}")
     log(f"Training binary model: {target} vs {control}")
     log("=" * 50)
@@ -168,22 +174,35 @@ def _train_one_binary_model(
         str(val_m_path), label_enc, gene_names=gene_names, preload=True,
     )
 
-    encoder = copy.deepcopy(shared_encoder)
-    log("  Using deep copy of shared Stage 1 encoder")
-
-    model = build_mil_model(
-        encoder,
-        embed_dim=embed_dim,
-        attention_hidden_dim=attention_hidden_dim,
-        n_classes=label_enc.n_classes(),
-        encoder_frozen=True,
-    )
+    if single_stage:
+        # Encoder ablation: fresh random-init encoder, whole model trained end-to-end
+        # on the stimulus task (encoder UNFROZEN; no cell-type pre-training). The
+        # encoder's cell-type head (n_cell_types) is unused by the MIL.
+        encoder = InstanceEncoder(
+            input_dim=len(gene_names), embed_dim=embed_dim,
+            n_cell_types=2, hidden_dims=hidden_dims,
+        )
+        model = build_mil_model(
+            encoder, embed_dim=embed_dim, attention_hidden_dim=attention_hidden_dim,
+            n_classes=label_enc.n_classes(), encoder_frozen=False,
+        )
+        stage2_lr = single_stage_lr
+        log(f"  SINGLE-STAGE: random-init encoder, end-to-end (unfrozen), "
+            f"lr={stage2_lr}")
+    else:
+        encoder = copy.deepcopy(shared_encoder)
+        model = build_mil_model(
+            encoder, embed_dim=embed_dim, attention_hidden_dim=attention_hidden_dim,
+            n_classes=label_enc.n_classes(), encoder_frozen=True,
+        )
+        stage2_lr = STAGE2_LR
+        log("  TWO-STAGE: deep copy of shared frozen Stage-1 encoder")
 
     dynamics = train_mil(
         model,
         train_dataset,
         n_epochs=STAGE2_EPOCHS,
-        lr=STAGE2_LR,
+        lr=stage2_lr,
         momentum=STAGE2_MOMENTUM,
         log_every_n_epochs=LOG_EVERY,
         device=device,
@@ -277,6 +296,14 @@ def main():
     parser.add_argument("--targets", nargs="*", default=None,
                         help="Override benchmark cytokine list (for smoke runs); "
                              "default is BENCHMARK_CYTOKINES from this file.")
+    parser.add_argument("--single_stage", action="store_true",
+                        help="ENCODER-ABLATION: skip the Stage-1 cell-type pre-training; "
+                             "train each binary model end-to-end from a random-init "
+                             "encoder (encoder UNFROZEN). Tests whether the two-stage "
+                             "pre-training is needed vs a single end-to-end train.")
+    parser.add_argument("--single_stage_lr", type=float, default=1e-3,
+                        help="LR for single-stage end-to-end training (encoder learns "
+                             "from scratch, so > the frozen Stage-2 LR). Default 1e-3.")
     args = parser.parse_args()
 
     seed = args.seed if args.seed is not None else SEED
@@ -361,45 +388,52 @@ def main():
     # -----------------------------------------------------------------
     # Shared Stage 1 — encoder pre-training (cell-type classification)
     # -----------------------------------------------------------------
-    log("\n" + "=" * 60)
-    log("SHARED STAGE 1 — encoder pre-training (cell-type classification)")
-    log("=" * 60)
+    if args.single_stage:
+        log("\n" + "=" * 60)
+        log("SINGLE-STAGE ablation — SKIPPING Stage-1 cell-type pre-training")
+        log("Each binary model trains end-to-end from a random-init encoder.")
+        log("=" * 60)
+        encoder = None
+    else:
+        log("\n" + "=" * 60)
+        log("SHARED STAGE 1 — encoder pre-training (cell-type classification)")
+        log("=" * 60)
 
-    stage1_path = out_dir / "manifest_stage1_shared.json"
-    stage1_manifest = build_stage1_manifest(
-        filtered_manifest, save_path=str(stage1_path),
-    )
-    log(f"Stage 1 manifest: {len(stage1_manifest)} entries "
-        f"saved to {stage1_path.name}")
+        stage1_path = out_dir / "manifest_stage1_shared.json"
+        stage1_manifest = build_stage1_manifest(
+            filtered_manifest, save_path=str(stage1_path),
+        )
+        log(f"Stage 1 manifest: {len(stage1_manifest)} entries "
+            f"saved to {stage1_path.name}")
 
-    cell_dataset = CellDataset(
-        str(stage1_path), gene_names=gene_names, preload=True,
-    )
-    cell_loader = DataLoader(
-        cell_dataset, batch_size=256, shuffle=True, num_workers=0,
-    )
-    log(f"Stage 1 cells: {len(cell_dataset)}  |  "
-        f"Cell types: {cell_dataset.n_cell_types()}")
+        cell_dataset = CellDataset(
+            str(stage1_path), gene_names=gene_names, preload=True,
+        )
+        cell_loader = DataLoader(
+            cell_dataset, batch_size=256, shuffle=True, num_workers=0,
+        )
+        log(f"Stage 1 cells: {len(cell_dataset)}  |  "
+            f"Cell types: {cell_dataset.n_cell_types()}")
 
-    encoder = InstanceEncoder(
-        input_dim=len(gene_names),
-        embed_dim=embed_dim,
-        n_cell_types=cell_dataset.n_cell_types(),
-        hidden_dims=hidden_dims,
-    )
-    log(f"Stage 1: training shared encoder, "
-        f"n_cell_types={cell_dataset.n_cell_types()}")
+        encoder = InstanceEncoder(
+            input_dim=len(gene_names),
+            embed_dim=embed_dim,
+            n_cell_types=cell_dataset.n_cell_types(),
+            hidden_dims=hidden_dims,
+        )
+        log(f"Stage 1: training shared encoder, "
+            f"n_cell_types={cell_dataset.n_cell_types()}")
 
-    train_encoder(
-        encoder,
-        cell_loader,
-        n_epochs=STAGE1_EPOCHS,
-        lr=STAGE1_LR,
-        momentum=STAGE1_MOMENTUM,
-        device=device,
-    )
-    torch.save(encoder.state_dict(), out_dir / "encoder_shared_stage1.pt")
-    log("Shared encoder saved: encoder_shared_stage1.pt")
+        train_encoder(
+            encoder,
+            cell_loader,
+            n_epochs=STAGE1_EPOCHS,
+            lr=STAGE1_LR,
+            momentum=STAGE1_MOMENTUM,
+            device=device,
+        )
+        torch.save(encoder.state_dict(), out_dir / "encoder_shared_stage1.pt")
+        log("Shared encoder saved: encoder_shared_stage1.pt")
 
     # -----------------------------------------------------------------
     # Loop — one binary model per benchmark cytokine
@@ -422,6 +456,8 @@ def main():
                 hidden_dims=hidden_dims,
                 attention_hidden_dim=attention_hidden_dim,
                 val_donors=val_donors,
+                single_stage=args.single_stage,
+                single_stage_lr=args.single_stage_lr,
             )
             if payload is not None:
                 all_dynamics[target] = payload
