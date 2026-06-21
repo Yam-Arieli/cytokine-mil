@@ -262,6 +262,75 @@ class Signature:
 
 
 # ---------------------------------------------------------------------------
+# Recurrent-IG signature trajectories (opt-in; see cascadir.dynamics)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SignatureCheckpoint:
+    """One per-epoch snapshot of a condition's IG gene ranking.
+
+    Attributes:
+        epoch: Training epoch at which IG was captured.
+        genes: Genes ranked by mean IG (most-attributed first). Full ranking unless a
+            ``checkpoint_ig_top_n`` was set.
+        ig_scores: Mean IG attribution per gene, aligned to ``genes``.
+    """
+
+    epoch: int
+    genes: tuple[str, ...]
+    ig_scores: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.genes) != len(self.ig_scores):
+            raise ValueError(
+                f"SignatureCheckpoint epoch={self.epoch}: genes ({len(self.genes)}) "
+                f"and ig_scores ({len(self.ig_scores)}) length mismatch."
+            )
+
+
+@dataclass(frozen=True)
+class SignatureTrajectory:
+    """A condition's IG signature captured across training (recurrent IG).
+
+    The static ``Signature`` is the final checkpoint's top-``top_n``; the trajectory
+    keeps every captured epoch so recruitment order, rank trajectories, and the
+    per-epoch coupling panel can be reconstructed (see :mod:`cascadir.dynamics`).
+
+    Attributes:
+        condition: The stimulus this trajectory was captured for.
+        checkpoints: One :class:`SignatureCheckpoint` per captured epoch, in order.
+        total_epochs: The full training length (the last checkpoint's epoch may equal
+            this when ``total_epochs % checkpoint_every == 0``).
+    """
+
+    condition: str
+    checkpoints: tuple[SignatureCheckpoint, ...]
+    total_epochs: int
+
+    @property
+    def epochs(self) -> tuple[int, ...]:
+        return tuple(c.epoch for c in self.checkpoints)
+
+    def final(self) -> SignatureCheckpoint | None:
+        """The last captured checkpoint (``None`` if no checkpoints were taken)."""
+        return self.checkpoints[-1] if self.checkpoints else None
+
+    def signature_at(self, epoch: int, *, top_n: int | None = None) -> Signature:
+        """The :class:`Signature` (top-``top_n``) at a captured ``epoch``."""
+        for c in self.checkpoints:
+            if c.epoch == epoch:
+                k = len(c.genes) if top_n is None else min(top_n, len(c.genes))
+                return Signature(
+                    condition=self.condition,
+                    genes=c.genes[:k],
+                    ig_scores=c.ig_scores[:k],
+                    top_n=top_n if top_n is not None else len(c.genes),
+                )
+        raise KeyError(f"epoch {epoch} not in trajectory for {self.condition!r}.")
+
+
+# ---------------------------------------------------------------------------
 # Direction call
 # ---------------------------------------------------------------------------
 

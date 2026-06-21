@@ -32,6 +32,10 @@ from cascadir.config import (
 )
 from cascadir.coupling import discover_axes
 from cascadir.cross_asym import direction_call, direction_table
+from cascadir.dynamics import (
+    coupling_trajectory as _coupling_trajectory,
+    signature_trajectory_collector,
+)
 from cascadir.signature_coupling import signature_coupling as _signature_coupling
 from cascadir.exceptions import NotFittedError
 from cascadir.preprocess import preprocess
@@ -44,6 +48,7 @@ from cascadir.types import (
     DirectionCall,
     PseudoTubeSet,
     Signature,
+    SignatureTrajectory,
     ValidationReport,
 )
 from cascadir.validate import validate_anndata
@@ -94,6 +99,7 @@ class CascadeDirection:
         self.encoder = None
         self.models: dict = {}
         self.signatures: dict[str, Signature] = {}
+        self.signature_trajectories: dict[str, SignatureTrajectory] = {}
         self._cells_by_pair: dict | None = None
         self._fitted = False
 
@@ -106,6 +112,7 @@ class CascadeDirection:
         conditions: list[str] | None = None,
         assume: str = "auto",
         validate: bool = True,
+        ig_checkpoint_every: int | None = None,
     ) -> "CascadeDirection":
         """Run the full pipeline and store the fitted state.
 
@@ -117,6 +124,12 @@ class CascadeDirection:
             assume: Passed to :func:`cascadir.preprocess.preprocess`
                 ("auto" / "raw" / "lognorm").
             validate: Run strict validation first (recommended).
+            ig_checkpoint_every: OPT-IN recurrent IG. If a positive int N, capture an IG
+                signature every N epochs of binary training into
+                ``self.signature_trajectories`` (see :mod:`cascadir.dynamics`,
+                :meth:`signature_trajectory_table`, :meth:`coupling_trajectory`). ``None``
+                (default) falls back to ``train_config.checkpoint_ig_every_n_epochs``;
+                if that is also ``None``, behavior is unchanged (IG once on the final model).
 
         Returns:
             ``self`` (fitted).
@@ -184,6 +197,23 @@ class CascadeDirection:
             if conditions is not None
             else list(self.tube_set.stimulus_conditions)
         )
+
+        ig_every = (
+            ig_checkpoint_every
+            if ig_checkpoint_every is not None
+            else trc.checkpoint_ig_every_n_epochs
+        )
+        traj_factory = None
+        traj_store: dict | None = None
+        if ig_every:
+            traj_store, traj_factory = signature_trajectory_collector(
+                self.tube_set,
+                control_label=self.control_label,
+                n_steps=cac.n_ig_steps,
+                top_n=trc.checkpoint_ig_top_n,
+                device=self.device,
+            )
+
         self.models = train_all_binary(
             self.tube_set,
             self.encoder,
@@ -196,7 +226,19 @@ class CascadeDirection:
             encoder_frozen=trc.encoder_frozen,
             device=self.device,
             seed=self.seed,
+            checkpoint_every=ig_every if ig_every else None,
+            on_checkpoint_factory=traj_factory,
         )
+
+        if traj_store is not None:
+            self.signature_trajectories = {
+                cond: SignatureTrajectory(
+                    condition=cond,
+                    checkpoints=tuple(cks),
+                    total_epochs=trc.binary_epochs,
+                )
+                for cond, cks in traj_store.items()
+            }
 
         self.signatures = derive_signatures(
             self.models,
@@ -256,6 +298,67 @@ class CascadeDirection:
             pairs,
             control_label=self.control_label,
             config=self.cross_asym_config,
+        )
+
+    # -- Recurrent IG (opt-in; populated only when fit(ig_checkpoint_every=...)) ----
+
+    def signature_trajectory_table(self) -> pd.DataFrame:
+        """Tidy per-epoch IG ranking: ``condition, epoch, gene, ig, rank_ig``.
+
+        Empty (with the right columns) unless ``fit`` was run with recurrent IG on. This
+        is the long-format trajectory the research driver persists to parquet.
+        """
+        self._check_fitted()
+        cols = ["condition", "epoch", "gene", "ig", "rank_ig"]
+        rows = []
+        for cond, traj in self.signature_trajectories.items():
+            for ck in traj.checkpoints:
+                for rank, (gene, ig) in enumerate(zip(ck.genes, ck.ig_scores)):
+                    rows.append(
+                        {
+                            "condition": cond,
+                            "epoch": ck.epoch,
+                            "gene": gene,
+                            "ig": ig,
+                            "rank_ig": rank,
+                        }
+                    )
+        return pd.DataFrame(rows, columns=cols)
+
+    def coupling_trajectory(
+        self, *, degree_correct: bool = True, top_n: int | None = None
+    ) -> dict[int, pd.DataFrame]:
+        """Per-epoch degree-corrected cross-engagement panel (the "panel correction").
+
+        Reads ``coupling = M+Mᵀ`` (degree-corrected) and ``cross_asym = M-Mᵀ`` per pair
+        from each captured epoch's signatures (top-``top_n``, default
+        ``cross_asym_config.top_n``). Requires ``fit(ig_checkpoint_every=...)``; returns
+        ``{}`` otherwise. See :func:`cascadir.dynamics.coupling_trajectory`.
+        """
+        self._check_fitted()
+        if not self.signature_trajectories:
+            return {}
+        assert self.tube_set is not None and self._cells_by_pair is not None
+        tn = top_n if top_n is not None else self.cross_asym_config.top_n
+        epochs = sorted(
+            {ck.epoch for tr in self.signature_trajectories.values() for ck in tr.checkpoints}
+        )
+        sigs_by_epoch: dict[int, dict[str, Signature]] = {}
+        for ep in epochs:
+            per_cond: dict[str, Signature] = {}
+            for cond, tr in self.signature_trajectories.items():
+                try:
+                    per_cond[cond] = tr.signature_at(ep, top_n=tn)
+                except KeyError:
+                    continue
+            sigs_by_epoch[ep] = per_cond
+        return _coupling_trajectory(
+            sigs_by_epoch,
+            self._cells_by_pair,
+            self.tube_set.gene_names,
+            control_label=self.control_label,
+            min_cells=self.cross_asym_config.min_cells,
+            degree_correct=degree_correct,
         )
 
     # -- Path A (coupling) + analysis ---------------------------------------

@@ -74,6 +74,14 @@ class TrainConfig:
         encoder_frozen: Freeze the encoder during binary MIL training (True) so the
             discovered signatures come from the bag-level attention/classifier, not
             from re-fitting the cell encoder per condition.
+        checkpoint_ig_every_n_epochs: OPT-IN recurrent Integrated Gradients. ``None``
+            (default) = unchanged behavior (IG once on the final model). If a positive
+            int N, the binary trainer captures an IG signature every N epochs, turning
+            each static ``S_X`` into a *trajectory* (see :mod:`cascadir.dynamics`).
+            Costs one extra IG pass per checkpoint; default path is untouched.
+        checkpoint_ig_top_n: Genes to keep per captured checkpoint. ``None`` (default)
+            stores the **full** per-gene ranking (so recruitment / rank trajectories can
+            be reconstructed); set an int to store only the top-k per checkpoint.
     """
 
     embed_dim: int = 128
@@ -85,6 +93,8 @@ class TrainConfig:
     binary_lr: float = 3e-5
     momentum: float = 0.9
     encoder_frozen: bool = True
+    checkpoint_ig_every_n_epochs: int | None = None
+    checkpoint_ig_top_n: int | None = None
 
 
 @dataclass(frozen=True)

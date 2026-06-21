@@ -99,6 +99,13 @@ from cascadir.signatures import (
     integrated_gradients,
 )
 
+# Recurrent IG (opt-in signature trajectories — see cascadir.dynamics)
+from cascadir.dynamics import (
+    coupling_trajectory,
+    derive_signature_trajectory,
+    signature_trajectory_collector,
+)
+
 # Training
 from cascadir.train import (
     resolve_device,
@@ -118,6 +125,8 @@ from cascadir.types import (
     PseudoTube,
     PseudoTubeSet,
     Signature,
+    SignatureCheckpoint,
+    SignatureTrajectory,
     ValidationReport,
 )
 
@@ -158,6 +167,12 @@ __all__ = [
     "integrated_gradients",
     "derive_signature",
     "derive_signatures",
+    # recurrent IG (opt-in)
+    "derive_signature_trajectory",
+    "signature_trajectory_collector",
+    "coupling_trajectory",
+    "SignatureCheckpoint",
+    "SignatureTrajectory",
     # cross_asym
     "directional_asymmetry_test",
     "aggregate_direction",

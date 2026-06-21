@@ -79,6 +79,50 @@ off `M`); `signature_coupling` adds the symmetric coupling half.
 
 ---
 
+## 3.5 Recurrent IG — signature trajectories over training (OPT-IN)
+
+By default IG runs **once**, on the final binary model. You can instead capture IG **every
+N epochs** of binary training, turning each static `S_X` into a *trajectory* of gene
+rankings — and get the matching **per-epoch degree-corrected coupling panel**. This answers
+"*when* does each gene get recruited into a signature, and does the coupling/direction call
+stabilize over training?" (the analysis behind `hypotheses/recurrent_training_dynamics_IG.md`
+and CLAUDE.md §31). It is fully opt-in; the default path is unchanged.
+
+```python
+# one call: capture every 10 epochs (or set train_config.checkpoint_ig_every_n_epochs)
+est = cd.CascadeDirection(condition_col=..., donor_col=..., celltype_col=...,
+                          control_label="PBS")
+est.fit(adata, assume="auto", ig_checkpoint_every=10)
+
+traj = est.signature_trajectory_table()   # tidy: condition, epoch, gene, ig, rank_ig
+panels = est.coupling_trajectory()         # {epoch: DataFrame(coupling, cross_asym, ...)}
+```
+
+| method | returns |
+|---|---|
+| `est.fit(..., ig_checkpoint_every=N)` | captures into `est.signature_trajectories` (a `dict[str, SignatureTrajectory]`) during the **same** training pass |
+| `est.signature_trajectory_table()` | long DataFrame `condition, epoch, gene, ig, rank_ig` (the full per-gene ranking unless `train_config.checkpoint_ig_top_n` is set) |
+| `est.coupling_trajectory(degree_correct=True)` | `{epoch: DataFrame}` — `M+Mᵀ` (degree-corrected) and `M−Mᵀ` per pair, reusing `cross_engagement_matrix` + `_degree_center` unchanged |
+
+Composable, lower-level entry points (run your own loop / your own models):
+`cd.derive_signature_trajectory(tube_set, condition, encoder, checkpoint_every=10, ...)`
+(one condition), `cd.signature_trajectory_collector(...)` (a `(trajectories, factory)` pair
+to hand to `train_all_binary(checkpoint_every=..., on_checkpoint_factory=...)`), and
+`cd.coupling_trajectory(signatures_by_epoch, cells_by_pair, gene_names)`.
+
+**Cost:** one extra IG pass per checkpoint per condition (IG is cheap on GPU). The last
+checkpoint at `epoch == binary_epochs` is captured after the final step, so it equals the
+static `S_X` exactly (a built-in consistency anchor).
+
+**Caveat — what the trajectory is.** With a **frozen** Stage-1 encoder the gene→feature map
+is fixed across epochs, so recruitment *order* is the attention/classifier learning to
+weight encoder features (read-out learning), **not** the representation drifting.
+Cross-condition timing is comparable only because the encoder is shared. Treat
+recruitment-order claims as descriptive unless they are seed-stable and donor-robust (the
+honest-rigor bar in the hypotheses doc).
+
+---
+
 ## 4. THE KEY DECISION — which coupling path? (the Oesinghaus-vs-Sheu lesson)
 
 There are **two coupling paths with mirror-image failure modes.** Choose by dataset shape:

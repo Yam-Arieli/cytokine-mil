@@ -1837,3 +1837,60 @@ prepare_covid_haniffa.py, run_covid_cascadir.py, apparatus_cross_asym_ladder.py,
 analyze_covid_progression.py}`; `slurm/covid_progression/{apparatus,prepare,fit,analysis}.slurm`
 + `submit_covid_dag.sh`; `reports/covid_progression/{PRE_REGISTRATION,APPARATUS_GATE_RESULTS,
 COVID_PROGRESSION_RESULTS}.md`.
+
+---
+
+## 31. Recurrent IG over training dynamics — gene-recruitment trajectories (2026-06)
+
+**Headline.** Run Integrated Gradients **every 10 epochs** of binary-MIL (full-model,
+Stage-2) training instead of once on the final model, turning each static signature `S_X`
+into a **gene-recruitment trajectory**: *when* each gene enters (and leaves) a cytokine's
+top-50. Tests whether recruitment **order** carries biology — a within-model "primary
+anchor vs secondary relay" analog of §8.3, a temporal view of the §22/§28 shared-activation
+confound, and an *independent* (timing-based) corroboration of the `cross_asym` direction
+call (§26). Full hypotheses + falsifiable predictions: `hypotheses/recurrent_training_dynamics_IG.md`.
+
+**Scope:** Oesinghaus only, all 45 cytokines in `cytokine_axes.csv`, 3 seeds (42/123/7),
+single shared Stage-1 encoder per seed + the wide config (the §27.6 reproduction lesson).
+Direction-not-existence and not-causation caveats (§26.4) carry over. The recurrent IG is a
+**read-out** trajectory over a FROZEN encoder (the gene→feature map is fixed), so recruitment
+order is the attention/classifier learning to weight features, not the representation drifting.
+
+### 31.1 cascadir option (opt-in; does not overwrite the default path)
+`TrainConfig.checkpoint_ig_every_n_epochs` (+ `checkpoint_ig_top_n`); `train_binary_mil` /
+`train_all_binary` gain `checkpoint_every` / `on_checkpoint(_factory)` hooks;
+`CascadeDirection.fit(ig_checkpoint_every=N)` captures `self.signature_trajectories`, exposed
+via `signature_trajectory_table()` and `coupling_trajectory()` (per-epoch degree-corrected
+cross-engagement panel = the "panel matrix correction", reusing `cross_engagement_matrix` +
+`_degree_center` unchanged). New module `cascadir/dynamics.py`
+(`derive_signature_trajectory`, `signature_trajectory_collector`, `coupling_trajectory`) +
+types `SignatureCheckpoint`/`SignatureTrajectory`; `cascadir/tests/test_dynamics.py`;
+MANUAL.md §3.5. All default behavior unchanged when the option is off.
+
+### 31.2 Experiment (Part B) + analysis (Part C)
+`scripts/run_recurrent_ig_oesinghaus.py` reproduces §26 training faithfully and checkpoints
+the model every 10 epochs (reusing `train_mil`'s `checkpoint_dir/checkpoint_epochs`, so all
+250 epochs run as one momentum-preserving optimization), then runs IG (cascadir
+`integrated_gradients`) over each checkpoint → `ig_traj.parquet` (cytokine, gene, epoch, ig,
+rank_ig, seed) + `final_signatures.parquet`. `scripts/analyze_recurrent_ig.py` builds the
+recruitment table (`τ_in/τ_out/stab/vol/category`), tests P-A..P-E, builds the per-epoch
+coupling/cross_asym panel via cascadir, runs the **§26 final-epoch direction regression
+check**, renders ~9 figures, and writes the verdict.
+
+### 31.3 Pre-registration + verdict
+`reports/recurrent_ig/PRE_REGISTRATION.md` (locked BEFORE the analysis job; §25.1) fixes the
+operationalizations (band top-50, persistence 0.8, Anchor/Climber thirds, shared-gene
+fraction 0.25, timing-permutation n=1000) and the P-A..P-E GREEN/AMBER/RED gates. Verdict +
+objective "what visually emerges" read → `reports/recurrent_ig/RECURRENT_IG_RESULTS.md`.
+
+### 31.4 Cluster orchestration
+SLURM DAG `slurm/recurrent_ig/` + `submit_recurrent_ig_dag.sh` (`sbatch --parsable` +
+`--dependency=afterok`; `SUBMIT=echo` dry-run): `train.slurm` (GPU array 0-2, one seed each)
+→ `analysis.slurm` (CPU 128G, afterok). Output dir `results/recurrent_ig/`
+(`seed_<seed>/ig_traj.parquet`, `stats/*.csv`, `plots/*.png`).
+
+**File layout (new).** `cascadir/src/cascadir/dynamics.py` (+`tests/test_dynamics.py`);
+`scripts/{run_recurrent_ig_oesinghaus,analyze_recurrent_ig}.py`;
+`slurm/recurrent_ig/{train,analysis}.slurm` + `submit_recurrent_ig_dag.sh`;
+`reports/recurrent_ig/{PRE_REGISTRATION,RECURRENT_IG_RESULTS}.md`. Edits (additive, opt-in):
+`cascadir/src/cascadir/{config,train,types,pipeline,__init__}.py`, `cascadir/MANUAL.md`.

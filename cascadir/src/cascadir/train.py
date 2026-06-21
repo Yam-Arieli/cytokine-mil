@@ -17,6 +17,7 @@ disk. Every entry point takes a ``device`` so you choose where it runs.
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 import numpy as np
 import torch
@@ -225,6 +226,8 @@ def train_binary_mil(
     device: str | torch.device | None = None,
     seed: int = 42,
     verbose: bool = False,
+    checkpoint_every: int | None = None,
+    on_checkpoint: Callable[[int, AbMil], None] | None = None,
 ) -> AbMil:
     """Train one binary AB-MIL: ``condition`` vs ``control_label``.
 
@@ -239,6 +242,11 @@ def train_binary_mil(
         attention_hidden_dim / epochs / lr / momentum: Stage-2 schedule.
         encoder_frozen: Keep the encoder fixed (default; recommended).
         device / seed / verbose: Runtime controls.
+        checkpoint_every: OPT-IN. If a positive int N, call ``on_checkpoint`` every N
+            epochs (model temporarily in ``eval`` mode). ``None`` (default) =
+            unchanged behavior. Used for recurrent IG (:mod:`cascadir.dynamics`).
+        on_checkpoint: Callback ``(epoch, model) -> None`` invoked at each checkpoint.
+            Must not mutate the model's parameters (it may read/attribute only).
 
     Returns:
         The trained :class:`AbMil` (in ``eval`` mode).
@@ -281,6 +289,14 @@ def train_binary_mil(
             epoch_loss += _train_one_megabatch(
                 model, optimizer, tubes, criterion, dev
             )
+        if (
+            checkpoint_every
+            and on_checkpoint is not None
+            and epoch % checkpoint_every == 0
+        ):
+            model.eval()
+            on_checkpoint(epoch, model)
+            model.train()
         if verbose and (epoch % 50 == 0 or epoch == 1):
             logger.info(
                 "[Stage 2 %s] epoch %d/%d loss=%.5f",
@@ -300,6 +316,8 @@ def train_all_binary(
     conditions: list[str] | None = None,
     control_label: str | None = None,
     device: str | torch.device | None = None,
+    checkpoint_every: int | None = None,
+    on_checkpoint_factory: Callable[[str], Callable[[int, AbMil], None]] | None = None,
     **kwargs,
 ) -> dict[str, AbMil]:
     """Train one binary AB-MIL per stimulus condition.
@@ -310,6 +328,11 @@ def train_all_binary(
         conditions: Stimuli to model (default: all non-control conditions).
         control_label: Override the set's control label if needed.
         device: Where to train.
+        checkpoint_every: OPT-IN recurrent-IG interval, forwarded to each
+            :func:`train_binary_mil`. ``None`` (default) = unchanged behavior.
+        on_checkpoint_factory: ``condition -> (epoch, model) -> None``. Builds a fresh
+            per-condition checkpoint callback so each model's trajectory is captured
+            separately (see :mod:`cascadir.dynamics`). ``None`` = no checkpointing.
         **kwargs: Forwarded to :func:`train_binary_mil`.
 
     Returns:
@@ -320,12 +343,15 @@ def train_all_binary(
     models: dict[str, AbMil] = {}
     for cond in conds:
         logger.info("train_all_binary: training %s vs %s", cond, ctrl)
+        cb = on_checkpoint_factory(cond) if on_checkpoint_factory is not None else None
         models[cond] = train_binary_mil(
             tube_set,
             cond,
             encoder,
             control_label=ctrl,
             device=device,
+            checkpoint_every=checkpoint_every,
+            on_checkpoint=cb,
             **kwargs,
         )
     return models
