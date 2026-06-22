@@ -51,14 +51,14 @@ TIMEPOINT_CANDIDATES = [
 ]
 # coarse lineage (for T-cell subsetting): prefer Azimuth l1-style
 LINEAGE_CANDIDATES = [
-    "predicted.celltype.l1", "celltype.l1", "initial_clustering", "WCTcoursecelltype",
-    "cell_type_coarse", "coarse_celltype", "majority_voting", "CellType", "cell_type",
-    "celltype",
+    "celltypel1", "predicted.celltype.l1", "celltype.l1", "initial_clustering",
+    "WCTcoursecelltype", "cell_type_coarse", "coarse_celltype", "majority_voting",
+    "CellType", "cell_type", "celltype",
 ]
 # fine annotation (for annotation-based state): prefer Azimuth l2-style
 FINE_CANDIDATES = [
-    "predicted.celltype.l2", "celltype.l2", "fine_annotation", "cell_type_fine",
-    "annotation_fine", "full_clustering",
+    "celltypel2", "celltypel3", "predicted.celltype.l2", "celltype.l2", "fine_annotation",
+    "cell_type_fine", "annotation_fine", "full_clustering",
 ]
 
 # ADT surface-protein names for the maturation quadrant gating (fuzzy matched).
@@ -205,7 +205,8 @@ def _report(adata, donor_col, tp_col, lin_col, fine_col):
             print("[protein] CD45RA/CCR7 not both found -> protein gating unavailable")
     else:
         print("\n[protein] no obsm['protein'] -> protein gating unavailable")
-    print(f"\n[expr] X min={float(adata.X.min()):.3g} max={float(adata.X.max()):.3g}")
+    if not adata.isbacked:
+        print(f"\n[expr] X min={float(adata.X.min()):.3g} max={float(adata.X.max()):.3g}")
 
 
 # --------------------------- main ---------------------------
@@ -224,7 +225,7 @@ def main():
     args = ap.parse_args()
 
     print(f"[load] {args.raw}")
-    adata = ad.read_h5ad(args.raw)
+    adata = ad.read_h5ad(args.raw, backed="r" if args.inspect_only else None)
     obs = adata.obs
     print(f"[load] {adata.n_obs} cells × {adata.n_vars} genes; obs cols: {list(obs.columns)}")
 
