@@ -1894,3 +1894,68 @@ SLURM DAG `slurm/recurrent_ig/` + `submit_recurrent_ig_dag.sh` (`sbatch --parsab
 `slurm/recurrent_ig/{train,analysis}.slurm` + `submit_recurrent_ig_dag.sh`;
 `reports/recurrent_ig/{PRE_REGISTRATION,RECURRENT_IG_RESULTS}.md`. Edits (additive, opt-in):
 `cascadir/src/cascadir/{config,train,types,pipeline,__init__}.py`, `cascadir/MANUAL.md`.
+
+---
+
+## 32. T-cell maturation cascade — cascade direction on a SARS-CoV-2 vaccination PBMC atlas (2026-06)
+
+**Headline.** Extend the validated `cross_asym` cascade-**direction** method (§26/§28) from
+cytokine perturbations and disease progression (§30) to a **cell-state differentiation
+cascade**: recover the **naive → effector → memory** T-cell direction from a single
+cross-sectional snapshot, validated against the known differentiation order. This is the §30
+signature-coupling/progression machinery re-pointed at a *cell-state* axis instead of a
+clinical-severity axis. It is **direction VALIDATION on a gold-standard order, not discovery**
+(the state order is textbook; the novelty is recovering it from a snapshot, the same epistemic
+status as the §26 labeled-pair result). The cross-cell-type **relay** question (one cell type's
+state driving another's fate) is a *later* track this dataset also enables — out of scope here.
+
+**Dataset.** Multimodal SARS-CoV-2 vaccination + infection PBMC atlas (Stephenson-adjacent;
+*Nat Immunol* 2023, "Multimodal single-cell datasets characterize antigen-specific CD8+ T cells
+across SARS-CoV-2 vaccination and infection"). **Whole-PBMC CITE-seq** (`PBMC_vaccine_CITE.rds`,
+1.6 GB; 3′ RNA + 173 TotalSeq-A surface proteins), in vivo, **day 0/2/10/28**, ~6 donors,
+author cell annotations. Processed data are **free/no-auth on Zenodo `7555405`** (raw is
+dbGaP-gated; we never need raw). NOTE: Zenodo ships **R Seurat `.rds`**, so a `.rds → AnnData`
+conversion is the one new front-end (cascadir needs AnnData; raw is dbGaP-gated and not used).
+Cluster paths: `datasets/SARSCoV2_Vaccine/raw/` (rds + `vaccine_cite_raw.h5ad`),
+`…/prepared/vaccine_tcell_prepared.h5ad`.
+
+**Knob mapping (two framings, both run).**
+- **Primary — STATE.** condition = T-cell maturation state `{Naive, Effector, Memory}` (from
+  CITE **surface protein** gating — CD45RA/CCR7/CD27/CD95 — preferring an author state
+  annotation if present; protein labels are *independent of the RNA we score on* → breaks the
+  "states defined by the same genes" circularity); control = **day-0 cells relabeled
+  `"Resting"`** (kept distinct from the state conditions, exactly as `Healthy ∉ grades` in §30);
+  donor = `subject`; cell type = `tcell_lineage` (CD4/CD8); **oracle = Naive→Effector→Memory**.
+- **Secondary — TIMEPOINT (corroboration).** condition = `{D2, D10, D28}`; control = `D0`;
+  oracle = the clock (D0<D2<D10<D28). The *weaker* monotone-intensity framing (per §30's
+  magnitude caveat), run only to corroborate that states emerge in time order.
+
+**Method (reuse §30 verbatim).** `cd.CascadeDirection(condition_col=…, donor_col="subject",
+celltype_col="tcell_lineage", control_label=…).fit(adata, assume="auto").direction_table()`,
+then `cascadir.analysis.score_directions` (cross_asym vs the **symmetric `directional_score`
+control** — the magnitude check), `cascadir.progression.{bootstrap_cross_asym (nested/donor
+bootstrap CI + accuracy + Kendall τ), recover_order, kendall_tau}`, and the independent
+synthetic **apparatus** gate (`scripts/apparatus_cross_asym_ladder.py`). No edits to `cascadir/`
+or `cytokine_mil/`.
+
+**Honest caveats.** mRNA-vaccine memory at day 28 is **early** memory → claim
+naive→effector→**early**-memory, not the full central-memory arc. ~6 donors → rigor is the
+**donor-bootstrap** + cell-level **degree-corrected** coupling, NOT the 8+-donor gate (§28.2).
+Magnitude confound (activation is partly monotone-intensity) → the headline is
+`cross_accuracy ≫ dirscore_accuracy`. Direction ≠ causation; PBMC blood only; single dataset;
+validation not discovery.
+
+**Pre-registration** (`reports/vaccine_progression/PRE_REGISTRATION.md`, committed BEFORE the
+analysis job — §25.1): the state + timepoint oracles + expected signs; P1 apparatus
+distinct-gate passes; P2 `cross_accuracy ≥ 0.8` AND `≫` symmetric control; P3 donor-bootstrap
+accuracy CI excludes 0.5 AND Kendall τ ≥ 0.6. GREEN/AMBER/RED scale down. Honest results →
+`reports/vaccine_progression/VACCINE_PROGRESSION_RESULTS.md`.
+
+**File layout (new; clones §30 — no edits to existing COVID/cascadir/package files).**
+`scripts/{download_vaccine_multimodal.sh, convert_vaccine_rds_to_h5ad.R,
+assemble_vaccine_h5ad.py, prepare_vaccine_tcell.py, run_vaccine_cascadir.py,
+analyze_vaccine_progression.py}`; `slurm/vaccine_progression/{download,convert,prepare,
+fit_state,fit_timepoint,analysis_state,analysis_timepoint,apparatus}.slurm` +
+`submit_vaccine_dag.sh`; `reports/vaccine_progression/{PRE_REGISTRATION,
+VACCINE_PROGRESSION_RESULTS}.md`. Reuses `scripts/apparatus_cross_asym_ladder.py` and all of
+`cascadir.{analysis,progression}` unchanged.
