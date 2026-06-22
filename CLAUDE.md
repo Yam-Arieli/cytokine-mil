@@ -1926,8 +1926,9 @@ Cluster paths: `datasets/SARSCoV2_Vaccine/raw/` (rds + `vaccine_cite_raw.h5ad`),
   "states defined by the same genes" circularity); control = **day-0 cells relabeled
   `"Resting"`** (kept distinct from the state conditions, exactly as `Healthy ∉ grades` in §30);
   donor = `subject`; cell type = `tcell_lineage` (CD4/CD8); **oracle = Naive→Effector→Memory**.
-- **Secondary — TIMEPOINT (corroboration).** condition = `{D2, D10, D28}`; control = `D0`;
-  oracle = the clock (D0<D2<D10<D28). The *weaker* monotone-intensity framing (per §30's
+- **Secondary — TIMEPOINT (corroboration).** condition = `{D2, D11, D28}`; control = `D0`;
+  oracle = the clock (D0<D2<D11<D28; this atlas samples Day0/2/11/28). The *weaker*
+  monotone-intensity framing (per §30's
   magnitude caveat), run only to corroborate that states emerge in time order.
 
 **Method (reuse §30 verbatim).** `cd.CascadeDirection(condition_col=…, donor_col="subject",

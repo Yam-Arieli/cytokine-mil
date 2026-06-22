@@ -16,6 +16,6 @@ PY=/cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python
 $PY scripts/analyze_vaccine_progression.py \
     --fit_dir results/vaccine_progression/fit_timepoint \
     --output_dir results/vaccine_progression/timepoint \
-    --conditions D2,D10,D28 --control_label D0 --label timepoint \
+    --conditions D2,D11,D28 --control_label D0 --label timepoint \
     --report_path reports/vaccine_progression/VACCINE_PROGRESSION_RESULTS_timepoint.md \
     --n_boot 1000 --seed 42

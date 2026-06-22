@@ -35,8 +35,8 @@ recovers it (same epistemic status as the §26 labeled-pair benchmark).
 T cells). C(3,2)=3 ordered pairs (upstream, downstream): (Naive, Effector), (Naive, Memory),
 (Effector, Memory). Naive→Effector and Effector→Memory are the adjacent (cleanest) pairs.
 
-**TIMEPOINT (corroboration).** Ordered: **D2 < D10 < D28**; control = `D0`. C(3,2)=3 pairs:
-(D2, D10), (D2, D28), (D10, D28). The weaker monotone-intensity framing (§30 caveat), run to
+**TIMEPOINT (corroboration).** Ordered: **D2 < D11 < D28**; control = `D0`. C(3,2)=3 pairs:
+(D2, D11), (D2, D28), (D11, D28). The weaker monotone-intensity framing (§30 caveat), run to
 confirm states emerge in time order.
 
 (If a condition is absent after QC, the oracle is restricted to conditions present in
@@ -55,7 +55,7 @@ confirm states emerge in time order.
   activation magnitude.
 - **P4 (donor robustness).** The donor-bootstrap 95% CI of sign-accuracy excludes 0.5, and
   Kendall τ(recovered order, true order) ≥ 0.6.
-- **P5 (timepoint corroboration).** The TIMEPOINT framing recovers D0<D2<D10<D28 with
+- **P5 (timepoint corroboration).** The TIMEPOINT framing recovers D0<D2<D11<D28 with
   cross_accuracy ≥ 0.6 (states tracking the clock) — supportive, not a gate.
 
 ## Verdict thresholds (locked; applied to the STATE run as the headline)

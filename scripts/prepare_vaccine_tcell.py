@@ -39,7 +39,8 @@ OUT_DEFAULT = "/cs/labs/mornitzan/yam.arieli/datasets/SARSCoV2_Vaccine/prepared/
 
 CONTROL = "Resting"                       # day-0 baseline (the "PBS"/"Healthy" analog)
 STATES = ["Naive", "Effector", "Memory"]  # ordered: Naive -> Effector -> Memory
-TIMEPOINTS = ["D0", "D2", "D10", "D28"]   # ordered; D0 is the control for the timepoint run
+TIMEPOINTS = ["D0", "D2", "D11", "D28"]   # ordered; D0 is the control for the timepoint run
+                                          # (this atlas samples Day0/2/11/28, not Day10)
 
 DONOR_CANDIDATES = [
     "subject_id", "subject", "donor_id", "donor", "patient_id", "patient",
@@ -61,9 +62,11 @@ FINE_CANDIDATES = [
     "cell_type_fine", "annotation_fine", "full_clustering",
 ]
 
-# ADT surface-protein names for the maturation quadrant gating (fuzzy matched).
+# ADT surface-protein names for the maturation gating (fuzzy matched). CCR7/CD197 is
+# absent from some panels (incl. this one) — CD45RO + CD27 give an equivalent split.
 PROT_MARKERS = {
     "CD45RA": ["CD45RA", "Hu.CD45RA", "PTPRC-RA"],
+    "CD45RO": ["CD45RO", "Hu.CD45RO", "PTPRC-RO"],
     "CCR7":   ["CCR7", "CD197", "Hu.CD197", "Hu.CCR7"],
     "CD27":   ["CD27", "Hu.CD27"],
     "CD95":   ["CD95", "Hu.CD95", "Fas"],
@@ -83,13 +86,13 @@ def _detect_first(obs, candidates, what, required=True):
 
 
 def _canon_timepoint(v):
-    """Map a raw timepoint value to D0/D2/D10/D28, or None to drop."""
+    """Map a raw timepoint value (e.g. 'Day11') to D0/D2/D11/D28, or None to drop."""
     s = str(v).strip().lower()
     m = re.search(r"(\d+)", s)
     if not m:
         return None
     n = int(m.group(1))
-    return {0: "D0", 2: "D2", 10: "D10", 28: "D28"}.get(n, None)
+    return {0: "D0", 2: "D2", 11: "D11", 28: "D28"}.get(n, None)
 
 
 _NONT = re.compile(r"\b(nk|b cell|b_cell|plasma|mono|dc|platelet|hspc|prog|"
@@ -142,30 +145,40 @@ def _match_proteins(protein_names):
 
 
 def _state_from_protein(adata, tcell_mask):
-    """CD45RA/CCR7 quadrant -> {Naive, Effector, Memory} on T cells.
+    """Surface-protein gating -> {Naive, Effector, Memory} on T cells (RNA-independent).
 
-    Naive   = CD45RA high & CCR7 high
-    Effector= CD45RA high & CCR7 low   (TEMRA / terminal-effector-like)
-    Memory  = CD45RA low               (Tcm + Tem)
+    Preferred (if CCR7 present): CD45RA/CCR7 quadrant
+        Naive=RA+CCR7+, Effector=RA+CCR7- (TEMRA), Memory=RA-.
+    Fallback (CCR7 absent, this panel): CD45RO + CD27
+        Memory=RO+ (Tcm/Tem), Naive=RO- & CD27+ (CD45RA+CD27+), Effector=RO- & CD27-
+        (terminal effector that has lost CD27).
     Thresholds = per-protein median over the T-cell subset (binary high/low).
-    Returns (state_array_full_length_object, used_markers_dict) or (None, {}).
+    Returns (state_array_full_object, used_markers_dict, scheme_str) or (None, pidx, "..").
     """
     if "protein" not in adata.obsm or "protein_names" not in adata.uns:
-        return None, {}
+        return None, {}, "none"
     pidx = _match_proteins(list(adata.uns["protein_names"]))
-    if "CD45RA" not in pidx or "CCR7" not in pidx:
-        return None, pidx
     P = np.asarray(adata.obsm["protein"])
-    ra = P[:, pidx["CD45RA"]]
-    cc = P[:, pidx["CCR7"]]
     t = tcell_mask
-    ra_hi = ra > np.median(ra[t])
-    cc_hi = cc > np.median(cc[t])
+
+    def hi(name):
+        v = P[:, pidx[name]]
+        return v > np.median(v[t])
+
     state = np.full(adata.n_obs, "NA", dtype=object)
-    state[t & ra_hi & cc_hi] = "Naive"
-    state[t & ra_hi & ~cc_hi] = "Effector"
-    state[t & ~ra_hi] = "Memory"
-    return state, pidx
+    if "CD45RA" in pidx and "CCR7" in pidx:
+        ra_hi, cc_hi = hi("CD45RA"), hi("CCR7")
+        state[t & ra_hi & cc_hi] = "Naive"
+        state[t & ra_hi & ~cc_hi] = "Effector"
+        state[t & ~ra_hi] = "Memory"
+        return state, pidx, "CD45RA/CCR7"
+    if "CD45RO" in pidx and "CD27" in pidx:
+        ro_hi, c27_hi = hi("CD45RO"), hi("CD27")
+        state[t & ro_hi] = "Memory"
+        state[t & ~ro_hi & c27_hi] = "Naive"
+        state[t & ~ro_hi & ~c27_hi] = "Effector"
+        return state, pidx, "CD45RO/CD27"
+    return None, pidx, "insufficient"
 
 
 # --------------------------- report ---------------------------
@@ -197,12 +210,12 @@ def _report(adata, donor_col, tp_col, lin_col, fine_col):
         names = list(adata.uns["protein_names"])
         pidx = _match_proteins(names)
         print(f"\n[protein] {len(names)} surface proteins; gating markers matched: {pidx}")
-        st, _ = _state_from_protein(adata, tmask)
+        st, _, scheme = _state_from_protein(adata, tmask)
         if st is not None:
-            print("[protein -> state] (T cells):")
+            print(f"[protein -> state] scheme={scheme} (T cells):")
             print(pd.Series(st[tmask]).value_counts().to_string())
         else:
-            print("[protein] CD45RA/CCR7 not both found -> protein gating unavailable")
+            print(f"[protein] insufficient markers (scheme={scheme}) -> gating unavailable")
     else:
         print("\n[protein] no obsm['protein'] -> protein gating unavailable")
     if not adata.isbacked:
@@ -260,11 +273,11 @@ def main():
     src = args.state_source
     state = None
     if src in ("auto", "protein"):
-        state, pidx = _state_from_protein(sub, tmask_sub)
+        state, pidx, scheme = _state_from_protein(sub, tmask_sub)
         if state is not None:
-            print(f"[state] using PROTEIN gating (markers {pidx})")
+            print(f"[state] using PROTEIN gating scheme={scheme} (markers {pidx})")
         elif src == "protein":
-            raise SystemExit("--state_source protein but CD45RA/CCR7 not in panel.")
+            raise SystemExit("--state_source protein but no usable marker set in panel.")
     if state is None:  # auto-fallback or explicit annotation
         if fine_col is None:
             raise SystemExit("No protein gating and no fine annotation for state labeling.")
