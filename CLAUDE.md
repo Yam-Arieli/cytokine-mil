@@ -1960,3 +1960,29 @@ fit_state,fit_timepoint,analysis_state,analysis_timepoint,apparatus}.slurm` +
 `submit_vaccine_dag.sh`; `reports/vaccine_progression/{PRE_REGISTRATION,
 VACCINE_PROGRESSION_RESULTS}.md`. Reuses `scripts/apparatus_cross_asym_ladder.py` and all of
 `cascadir.{analysis,progression}` unchanged.
+
+### 32.1 Results (2026-06-22) — timeline recovered, state direction REVERSED (boundary found)
+
+Ran end-to-end on the cluster (jobs 30907134–30907138; .rds read via base-R `attr()` since
+SeuratObject is not installed; states from CITE protein CD45RO/CD27, CCR7 absent from the
+panel; atlas samples Day0/2/**11**/28, not Day10). Honest writeup:
+`reports/vaccine_progression/VACCINE_PROGRESSION_RESULTS.md`.
+
+- **Apparatus distinct-gate PASS** (cross 100% / τ+1; monotone-noseed cross 0%) → method sound.
+- **TIMEPOINT (corroboration): direction RECOVERED.** `cross_asym` recovers D2→D11→D28 at
+  100% with the symmetric control at 0% and Kendall τ=+1.0; **AMBER only** because the 6-donor
+  bootstrap CI is wide (underpowered), not because direction failed. The §30 progression result
+  reproduces on a vaccination time axis.
+- **STATE (headline): direction REVERSED (RED).** `cross_asym` recovers Effector→Memory→Naive
+  (τ=−1.0), the exact reverse, **consistently across CD4/CD8/other T**. Mechanism: the control
+  `Resting` ≈ **Naive**, so naive cells engage activation/maturation signatures *below* baseline
+  (`s(Naive,S_X)−Resting < 0`) while differentiated cells carry residual cross-program above
+  baseline ⇒ the antisymmetric statistic calls the differentiated state "upstream." Tell-tale:
+  **symmetric control 100% vs cross_asym 0%** (inverse of the cytokine/COVID pattern), i.e. the
+  apparatus monotone-noseed regime.
+- **Boundary lesson:** `cross_asym` direction transfers to a **temporal/disease-progression**
+  axis but **inverts** on a **cell-state differentiation** axis whose upstream root coincides
+  with the control baseline (Naive≈Resting). Differentiation is clean for the *timeline*, not
+  for the *naive-rooted state* direction — the "upstream carries the autocrine downstream
+  program" biology is cytokine-cascade-specific. Caveats: validation-not-discovery; early
+  (day-28) memory; ~6 donors (donor-bootstrap underpowered); direction ≠ causation.
