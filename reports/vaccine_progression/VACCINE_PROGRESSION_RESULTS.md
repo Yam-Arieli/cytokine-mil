@@ -57,37 +57,58 @@ The direction is **exactly inverted**, and the inversion is a **robust, consiste
 noise: `cross_asym(Memory, Naive)` is positive in **all three** lineages (CD4 T +0.14,
 CD8 T +0.23, other T +0.06); same for `cross_asym(Effector, Naive)`.
 
-### Why it reverses (the mechanism)
+### Why it reverses (the mechanism) — control-swap decomposition
 
-`cross_asym(a,b) = [s(a,S_b) − ctrl_{S_b}] − [s(b,S_a) − ctrl_{S_a}]`. The control here is
-`Resting` ≈ **Naive** (day-0 T cells are naive-like). So:
+`cross_asym(a,b) = raw_engagement(a,b) − control_term`, where `raw = s(a,S_b) − s(b,S_a)` and
+`control_term = ctrl_{S_b} − ctrl_{S_a}`. We held the signatures FIXED and swapped only the
+control (`scripts/analyze_vaccine_state_control_decomp.py`, run on the cluster) to separate
+**(a) control-composition** from **(b) retention-biology**:
 
-- `s(Naive, S_Effector) − Resting` and `s(Naive, S_Memory) − Resting` are **NEGATIVE** in the
-  data (e.g. CD8: −0.19 and −0.17): naive cells engage the activation/differentiation programs
-  *below* the resting baseline — Naive is an even "cleaner" baseline than Resting.
-- Effector/Memory cells, being transcriptionally active, carry **residual naive-program
-  expression above baseline** (`s(Memory, S_Naive) − Resting > 0`).
+| control | Eff–Nai | Mem–Nai | recovered order | τ |
+|---|---:|---:|---|---:|
+| Resting (orig) | +0.107 | +0.140 | Mem>Eff>Nai | −1.0 |
+| **ZERO = raw engagement (b)** | **+0.253** | **+0.588** | Mem>Eff>Nai | **−1.0** |
+| Balanced (removes naive/mem imbalance → tests a) | +0.121 | +0.146 | Mem>Eff>Nai | −1.0 |
+| Naive-as-control | +0.138 | +0.147 | Mem>Eff>Nai | −1.0 |
+| Memory-as-control | +0.159 | +0.161 | Mem>Eff>Nai | −1.0 |
+| Effector-as-control | +0.122 | +0.077 | Eff>Mem>Nai | −0.33 |
 
-⇒ the differentiated state "carries the other's signature" more than Naive does, so the
-antisymmetric statistic calls the **differentiated** state upstream. The tell-tale signature of
-this regime is **symmetric control = 100% while cross_asym = 0%** — the inverse of the healthy
-cytokine/COVID pattern (cross ≫ control), and exactly the apparatus **monotone-noseed** regime
-(cross 0.0). The "upstream carries the autocrine downstream program" biology that powers
-`cross_asym` is a *cytokine-cascade* mechanism; it does **not** hold for a differentiation axis
-whose upstream root (Naive) coincides with the resting control.
+(correct sign for an X–Naive pair is NEGATIVE = Naive upstream; every control gives POSITIVE.)
+
+**The inversion is effect (b), the retention biology — control-independent.** The RAW
+cross-engagement with NO control (ZERO) is the *most* inverted (Mem–Nai = +0.588), and the
+Resting control *reduces* it (to +0.140), not amplifies it. **No control choice un-inverts the
+Naive pairs** (Balanced, Naive-, Memory-as-control all keep Naive last, τ=−1). So my first-pass
+attribution to "Naive ≈ Resting baseline" (effect a) was wrong: a naive-like control actually
+*mitigates* the inversion; it is not the cause.
+
+The fundamental driver: **differentiation has the *opposite* cross-engagement asymmetry from a
+cytokine cascade.** `cross_asym` assumes "upstream *acquires* the downstream program" (a source
+cell gains the target's autocrine program). In differentiation, the *mature* cell *retains* the
+*progenitor's* program — memory T cells re-express the naive program (IL7R/TCF7/SELL/CCR7), so
+`s(Memory, S_Naive) ≫ s(Naive, S_Memory)` raw — pointing mature→naive. The statistic faithfully
+reads that retention asymmetry and so calls the differentiated state "upstream." The tell-tale
+is **symmetric control = 100% while cross_asym = 0%** (inverse of the cytokine/COVID pattern),
+the apparatus **monotone-noseed** fingerprint.
 
 ## 4. The boundary lesson
 
 > `cross_asym` direction transfers to a **temporal / disease progression** axis (timepoint
-> here, severity in §30) but **inverts** on a **cell-state differentiation** axis whose
-> upstream state coincides with the control baseline (Naive ≈ Resting). Coupling/existence and
-> the timeline are fine; the *state* direction sign is dominated by the baseline-coincidence
-> (magnitude / no-seed) regime that the apparatus monotone-noseed scenario predicts.
+> here, severity in §30) but **inverts** on a **cell-state differentiation** axis — and the
+> inversion is **control-independent** (the decomposition above: even raw cross-engagement with
+> no control is fully inverted). The cause is that differentiation has the *opposite*
+> cross-engagement asymmetry from a cytokine cascade: `cross_asym` assumes the upstream cell
+> *acquires* the downstream program, but in differentiation the **mature cell *retains* the
+> progenitor's program** (memory re-expresses the naive program), so the statistic points
+> mature→naive.
 
-This is a precise, useful negative: it maps where the method's core assumption applies. A
-differentiation cascade is **not** the cytokine-autocrine setting, so the earlier intuition
-("differentiation is the cleanest next target") is only half right — it is clean for the
-*timeline* but not for the *naive-rooted state* direction.
+This is a precise, useful negative that maps where the method's core assumption holds. A
+differentiation cascade is **not** the cytokine-autocrine setting — and no control fix repairs
+it (a different control just shuffles the Effector/Memory tie; Naive stays last). So the
+earlier intuition ("differentiation is the cleanest next target") is only half right: it is
+clean for the **timeline** (the right axis for an acquisition-based direction statistic) but
+fundamentally mis-signed for the **naive-rooted state** direction. Getting *state* direction
+would need a statistic keyed to program *retention/loss*, not acquisition.
 
 ## 5. Honest caveats
 

@@ -155,11 +155,12 @@ def _verdict(decomp, results):
     z, rest = tau.get("ZERO"), tau.get(CONTROL_ORIG)
     bal = tau.get("Balanced")
     if z is not None and z <= -0.5:
-        return ("Effect (b) RETENTION-BIOLOGY is sufficient: even with NO control "
-                "(raw cross-engagement) the direction stays inverted "
-                f"(tau_ZERO={z:+.2f}). The naive-dominated control (effect a) "
-                f"reinforces it (tau_Resting={rest:+.2f}) but is not the sole cause. "
-                f"Balanced control tau={bal:+.2f}.")
+        return ("Effect (b) RETENTION-BIOLOGY is the DOMINANT, sufficient cause: even with NO "
+                f"control (raw cross-engagement) the direction is fully inverted (tau_ZERO="
+                f"{z:+.2f}), in fact MORE inverted than with the day-0 control. The control "
+                f"(effect a) keeps the same sign (tau_Resting={rest:+.2f}) but REDUCES the "
+                "magnitude (its control term is subtracted) — it MITIGATES, it does not cause. "
+                f"No control choice un-inverts the Naive pairs (Balanced tau={bal:+.2f}).")
     if z is not None and z > -0.5 and (rest is not None and rest <= -0.5):
         return ("Effect (a) CONTROL-COMPOSITION dominates: removing the control "
                 f"un-inverts the raw engagement (tau_ZERO={z:+.2f}) while the "

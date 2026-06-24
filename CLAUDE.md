@@ -1974,15 +1974,23 @@ panel; atlas samples Day0/2/**11**/28, not Day10). Honest writeup:
   bootstrap CI is wide (underpowered), not because direction failed. The §30 progression result
   reproduces on a vaccination time axis.
 - **STATE (headline): direction REVERSED (RED).** `cross_asym` recovers Effector→Memory→Naive
-  (τ=−1.0), the exact reverse, **consistently across CD4/CD8/other T**. Mechanism: the control
-  `Resting` ≈ **Naive**, so naive cells engage activation/maturation signatures *below* baseline
-  (`s(Naive,S_X)−Resting < 0`) while differentiated cells carry residual cross-program above
-  baseline ⇒ the antisymmetric statistic calls the differentiated state "upstream." Tell-tale:
-  **symmetric control 100% vs cross_asym 0%** (inverse of the cytokine/COVID pattern), i.e. the
-  apparatus monotone-noseed regime.
+  (τ=−1.0), the exact reverse, **consistently across CD4/CD8/other T**. Tell-tale: **symmetric
+  control 100% vs cross_asym 0%** (inverse of the cytokine/COVID pattern; apparatus
+  monotone-noseed fingerprint).
+- **Mechanism — CONTROL-INDEPENDENT retention biology** (confirmed by a control-swap
+  decomposition, `scripts/analyze_vaccine_state_control_decomp.py`, holding signatures fixed):
+  the **raw** cross-engagement with NO control is the *most* inverted (Mem–Nai +0.588 vs +0.140
+  under Resting); the Resting control *reduces* the inversion, and **no control choice
+  un-inverts** the Naive pairs (τ=−1 for ZERO/Balanced/Naive-/Memory-as-control). A first-pass
+  "Naive≈Resting baseline (effect a)" attribution was **falsified** — control-composition
+  *mitigates*, it does not cause. The real cause: differentiation has the **opposite**
+  cross-engagement asymmetry from a cytokine cascade — `cross_asym` assumes the upstream cell
+  *acquires* the downstream program, but the **mature** cell *retains* the **progenitor's**
+  program (memory re-expresses naive IL7R/TCF7/SELL/CCR7), so `s(Memory,S_Naive) ≫
+  s(Naive,S_Memory)` and the statistic points mature→naive.
 - **Boundary lesson:** `cross_asym` direction transfers to a **temporal/disease-progression**
-  axis but **inverts** on a **cell-state differentiation** axis whose upstream root coincides
-  with the control baseline (Naive≈Resting). Differentiation is clean for the *timeline*, not
-  for the *naive-rooted state* direction — the "upstream carries the autocrine downstream
-  program" biology is cytokine-cascade-specific. Caveats: validation-not-discovery; early
-  (day-28) memory; ~6 donors (donor-bootstrap underpowered); direction ≠ causation.
+  axis but is **fundamentally mis-signed on a cell-state differentiation axis** (control-
+  independent). The timeline is the right axis for an *acquisition*-based statistic; getting
+  *state* direction would need a *retention/loss*-keyed statistic. Caveats:
+  validation-not-discovery; early (day-28) memory; ~6 donors (donor-bootstrap underpowered);
+  direction ≠ causation.
