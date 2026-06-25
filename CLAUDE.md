@@ -1994,3 +1994,16 @@ panel; atlas samples Day0/2/**11**/28, not Day10). Honest writeup:
   *state* direction would need a *retention/loss*-keyed statistic. Caveats:
   validation-not-discovery; early (day-28) memory; ~6 donors (donor-bootstrap underpowered);
   direction ≠ causation.
+
+### 32.2 Tree-cascade synthetic follow-up (2026-06-25)
+
+`scripts/apparatus_tree_cascade.py` (+ `slurm/vaccine_progression/apparatus_tree.slurm`) adds a
+4th synthetic scenario to the §30 apparatus ladder, with identical hyperparameters: a
+**partial-order TREE** `p0→p1, p1→p2, p0→p3` where each node carries its own block (m) **+ half
+its parent's full program** (a RETENTION structure — descendant carries ancestor). Result
+(`reports/vaccine_progression/APPARATUS_TREE_RESULTS.md`): `cross_asym` mis-signs **all 4**
+ancestor→descendant edges (0% acc, τ=−1, each names the *descendant* upstream) while the 2
+sibling pairs stay correctly ambiguous (≈0); reversal magnitude tracks carry strength (direct
+edges |cross_asym|≈0.61, transitive grandparent ≈0.26). I.e. the tree reproduces the
+`monotone_noseed` regime on a non-linear topology → the reversal is about the
+acquisition-vs-retention asymmetry, not about the chain being linear.
