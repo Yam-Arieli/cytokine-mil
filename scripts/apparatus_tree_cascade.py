@@ -108,9 +108,15 @@ def _run_tree(top_k: int, seed: int) -> dict:
                   for r in stats.itertuples()}
     rec = recover_order(cross_by_pair, conds)
     inv = {v: k for k, v in LABEL.items()}
-    edge_rows = [{"pair": f"{a}->{b}", "from": inv[a], "to": inv[b],
-                  "cross_asym": cross_by_pair.get(tuple(sorted((a, b))), float("nan"))}
-                 for (a, b) in oracle]
+    edge_rows = []
+    for (up, dn) in oracle:                                 # (upstream, downstream) labels
+        ca, cb = sorted((up, dn))                           # canonical (alphabetical) pair
+        val = cross_by_pair.get((ca, cb), float("nan"))
+        called = ca if val > 0 else cb                      # cross_asym>0 => first label upstream
+        correct = bool(val != 0 and (val > 0) == (up == ca))
+        edge_rows.append({"edge": f"p{inv[up]}->p{inv[dn]}", "labels": f"{up}->{dn}",
+                          "cross_asym": val, "called_upstream": f"p{inv[called]}",
+                          "correct": correct})
     sib_rows = [{"pair": f"{a} vs {b}", "cross_asym": cross_by_pair.get(tuple(sorted((a, b))), float("nan"))}
                 for (a, b) in siblings]
     return {
@@ -183,12 +189,15 @@ def main():
         lines.append(
             f"| {r['scenario']} | {r['cross_accuracy']:.0%} | {r['dirscore_accuracy']:.0%} | "
             f"{'→'.join(r['recovered_order'])} | {r['kendall_tau']:+.2f} |")
-    lines += ["", "## Tree — per-edge cross_asym (comparable ancestor→descendant pairs)",
-              "Correct = POSITIVE (upstream=alphabetically-first only by chance; sign vs the",
-              "directed edge is what `cross_accuracy` scores).", "",
-              "| edge (true upstream→downstream) | cross_asym |", "|---|---|"]
+    lines += ["", "## Tree — per-edge call (comparable ancestor→descendant pairs)",
+              "Labels are scrambled (alphabetical ≠ cascade), so the *sign* of cross_asym is",
+              "not what matters — `called_upstream` vs the true upstream is. `cross_accuracy`",
+              "scores how many edges name the true upstream.", "",
+              "| edge (truth) | labels | cross_asym | called upstream | correct? |",
+              "|---|---|---|---|---|"]
     for e in tree["edges"]:
-        lines.append(f"| p{e['from']}→p{e['to']}  ({e['pair']}) | {e['cross_asym']:+.3f} |")
+        lines.append(f"| {e['edge']} | {e['labels']} | {e['cross_asym']:+.3f} | "
+                     f"{e['called_upstream']} | {'✓' if e['correct'] else '✗'} |")
     lines += ["", "## Tree — sibling (incomparable) pairs, expected ~ambiguous (≈0)", "",
               "| pair | cross_asym |", "|---|---|"]
     for s in tree["siblings"]:
