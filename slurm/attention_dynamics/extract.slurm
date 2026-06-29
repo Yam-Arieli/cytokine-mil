@@ -4,12 +4,14 @@
 #SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/attention_dynamics/slurm_extract_%A_%a.err
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=4
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 #SBATCH --partition=short
 #SBATCH --array=0-2
 
 # §33 Part B — extract per-cell-type attention trajectory from each seed's
-# checkpoints (CPU). Produces seed_<seed>/attention_trajectory.pkl.
+# every-epoch checkpoints (CPU). Caches H once (frozen encoder) then reconstructs
+# attention per checkpoint — ~minutes for 250 checkpoints. Produces
+# seed_<seed>/attention_trajectory.pkl. 6h ceiling is generous.
 
 seeds=(42 123 7)
 SEED=${seeds[$SLURM_ARRAY_TASK_ID]}

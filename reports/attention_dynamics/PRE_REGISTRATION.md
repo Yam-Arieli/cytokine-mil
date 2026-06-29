@@ -12,10 +12,13 @@ caveats (§26.4) carry over.
   comparison needs all stimuli in one model). One checkpointed Stage-2 run per seed.
 - **Seeds:** 42, 123, 7 (seed-stability is the robustness axis; trajectories are point
   estimates until multi-seed agreement is shown — memory: dynamics pipeline is seed-noisy).
-- **Checkpoints:** every **10 epochs** of Stage-2 (`train_oesinghaus_full.py
-  --checkpoint_epochs 10,20,...,250`), encoder frozen. Frozen encoder is deliberate: the
-  gene→embedding map is fixed, so recruitment order reflects the readout learning to weight
-  cells, not representation drift.
+- **Checkpoints:** the locked grid is "≥ every 10 epochs of Stage-2"; the **full run saves a
+  checkpoint every epoch** (`--checkpoint_epochs 1..250`, encoder frozen) — finer than the
+  locked grid. The P1–P4 gates and `rise_frac=0.5` are **grid-agnostic** (τ is an epoch value,
+  not a checkpoint index), so a finer grid only sharpens resolution; gates are unchanged.
+  Frozen encoder is deliberate: the gene→embedding map is fixed, so recruitment order reflects
+  the readout learning to weight cells, not representation drift, and per-cell attention at any
+  epoch is reconstructable from the saved attention params.
 - **Attention extraction:** `scripts/extract_attention_trajectory.py` → per-cell-type
   attention `A_X(T,t)` (donor-mean + per-donor) + within-type Gini concentration.
 

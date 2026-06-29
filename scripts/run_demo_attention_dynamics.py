@@ -34,8 +34,9 @@ from cytokine_mil.experiment_setup import (  # noqa: E402
 from cytokine_mil.training.train_encoder import train_encoder  # noqa: E402
 from cytokine_mil.training.train_mil import train_mil  # noqa: E402
 
-CKPT_EPOCHS = [2, 4, 6]
+# Every-epoch checkpoints so the demo exercises the reconstruct-from-params extractor.
 STAGE2_EPOCHS = 6
+CKPT_EPOCHS = list(range(1, STAGE2_EPOCHS + 1))
 
 
 def main():
