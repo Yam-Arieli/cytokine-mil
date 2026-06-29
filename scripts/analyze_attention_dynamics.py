@@ -265,9 +265,11 @@ def _write_report(path, run_dir, at, has_records, ps, p1, p1_green, p1_amber,
              f"p_correct records: {'yes' if has_records else 'NO (P3 + secondary gate limited)'}\n")
     L.append(f"\n**VERDICT: {verdict}** (GREEN iff P1 and P2 both GREEN; "
              "gates locked in `reports/attention_dynamics/PRE_REGISTRATION.md`).\n")
-    L.append("\n> Interpretable only against the pre-registration on the real multiclass "
-             "Oesinghaus run. On the synthetic demo fixture this is a harness smoke test "
-             "(numbers are not biologically meaningful).\n")
+    L.append(f"\n> Interpret strictly against the pre-registration (P1–P4 gates). "
+             f"Checkpoints used: {at['epochs']} — the relay-lag/primacy readouts need the "
+             f"full grid (every 10 epochs over a 250-epoch Stage-2) for temporal resolution; "
+             f"few checkpoints make P2/P3 uninformative. Trajectories are point estimates "
+             f"until multi-seed agreement (see caveats).\n")
 
     L.append("\n## P1 — attention-primary vs known direct responders\n")
     L.append(f"- frac_match (top-3): **{p1['frac_match']:.2f}** "
