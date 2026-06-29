@@ -2007,3 +2007,87 @@ sibling pairs stay correctly ambiguous (≈0); reversal magnitude tracks carry s
 edges |cross_asym|≈0.61, transitive grandparent ≈0.26). I.e. the tree reproduces the
 `monotone_noseed` regime on a non-linear topology → the reversal is about the
 acquisition-vs-retention asymmetry, not about the chain being linear.
+
+---
+
+## 33. Attention training-dynamics — cell-type-resolved cascade readout (2026-06)
+
+**Headline.** The direction call moved from training dynamics to **Integrated Gradients on
+the *final* model** (`cross_asym` on discovered signatures, §26), which discards the *order*
+in which signal is learned. §33 brings *actual* training dynamics back via the **attention
+layer**: every attention token is a cell whose cell type is known post-hoc, so the trajectory
+of **per-cell-type attention mass over training** is a learnability-ordering readout. A 24h
+snapshot (Oesinghaus) has no real time axis; a frozen-encoder MIL learns easy/direct/
+receptor-driven signal first and weak/secondary/cascade signal later, so recruitment order is
+a **pseudo-time** the snapshot lacks, and attention pins it to cell types. This *adds to* the
+Oesinghaus paper's Fig 4 (cell-type-resolved communication) **prior-free** — it replaces the
+paper's receptor-expression primary/secondary-target prior (Fig 4h) with recruitment timing.
+
+**Scope (Core):** Oesinghaus only, **multiclass** 91-class Stage-2 (multiclass is required:
+attention over all stimuli encodes *specificity* vs other stimuli, and the relay statistic
+needs all stimuli in one model), 3 seeds (42/123/7), encoder frozen. Direction-not-existence
+(coupling is Path A's job) and not-causation caveats (§26.4) carry over. Deferred (NOT in this
+build): the attention-vs-IG **specificity** contrast / §28 over-call tie-in, and porting to
+`cascadir` (validate first per §28.2).
+
+### 33.1 Three readouts (`cytokine_mil/analysis/attention_dynamics.py`, numpy-only)
+From the per-cell-type attention trajectory `A_X(T,t)`:
+1. **primary vs secondary responder map** (`classify_primary_secondary`) — primary = recruited
+   in the first third with high final attention; secondary = recruited in the last third AND a
+   coincident `p_correct` second-rise (the model needed an additional signal). The prior-free
+   analog of Fig 4h.
+2. **relay-recruitment-lag direction statistic** (`relay_recruitment_lag`) — for a coupled pair
+   (A,B), relay `T_B` = B's data-driven attention-primary cell type; `lag = τ(A,T_B) − τ(B,T_B)`
+   per donor (τ = first checkpoint reaching `rise_frac=0.5` of own final attention); `>0 ⇒ A
+   upstream`. Donor-bootstrap CI; call only if CI excludes 0. An **IG-independent, temporal**
+   corroboration of `cross_asym` (Fig 4f/i: IL-12/IL-2/IL-15 → IFN-γ → monocytes).
+3. **intra-cell-type attention concentration** (`concentration_summary`) — within-type Gini of
+   per-cell attention over training (rising ⇒ responding subpopulation; flat ⇒ whole-population).
+
+Plus **P1** sanity (`attention_primary_vs_groundtruth`, reuses the `EXPECTED_DOMINANT` ground
+truth from `scripts/check_attention_cell_types.py`) and **P3** primacy/subtlety
+(`primacy_subtlety_correlation`: Spearman of primary-cell-type τ vs a directness proxy).
+
+### 33.2 Pipeline (reuses existing machinery)
+`scripts/extract_attention_trajectory.py` (extended: per-donor output + `--hvg_path` +
+within-type Gini) loads `checkpoints/epoch_*.pt`, forwards every train tube, groups attention
+`a_i` by cell type, donor-aggregates → `attention_trajectory.pkl`
+(`trajectory` donor-mean, `trajectory_per_donor`, `concentration`, `epochs`).
+`scripts/analyze_attention_dynamics.py` consumes it + the run's `dynamics.pkl` `records`
+(p_correct), computes the readouts, evaluates P1–P4, renders 4 figures, writes the verdict.
+The checkpointed multiclass run is just `train_oesinghaus_full.py --checkpoint_epochs
+10,20,...,250` (no trainer edit; it already saves `checkpoints/`, `label_encoder.json`,
+`manifest_train.json`, `dynamics.pkl`).
+
+### 33.3 Pre-registration + verdict
+`reports/attention_dynamics/PRE_REGISTRATION.md` (locked BEFORE the cluster analysis, §25.1)
+fixes `rise_frac=0.5`, first/last-third bands, the known-cascade benchmark
+(IL-12/IL-2/IL-15→IFN-γ), the negative control (IL-6 / TNF-α, §28 negative), donor-bootstrap
+n, and the P1–P4 gates. **Overall GREEN iff P1 (attention-primary recovers known direct
+responders) and P2 (relay-lag direction) are both GREEN.** Verdict →
+`reports/attention_dynamics/ATTENTION_DYNAMICS_RESULTS.md`.
+
+### 33.4 Honest caveats
+- Attention is **task-driven (discriminative)**, not biology → validate attention-primary on
+  held-out donors; **late recruitment ≠ secondary** unless a `p_correct` second-rise co-occurs
+  (lazy/redundant attention can leave a sufficient cell type as the only one recruited).
+- **Frozen-encoder representability:** a secondary program is visible only if it lives in the
+  cell-type-pretrained embedding subspace (the real risk; budget a check).
+- Direction ≠ existence ≠ causation; small donor N → relay-lag CIs are wide; multi-seed before
+  trusting ordering (memory: the dynamics pipeline is seed-noisy → point estimates).
+
+### 33.5 De-risk + cluster
+Local de-risk (harness only, synthetic demo — NOT biology):
+`scripts/run_demo_attention_dynamics.py` runs build→Stage1→Stage2(checkpoints)→extract→analyze
+end-to-end; unit tests in `tests/test_attention_dynamics.py`. Cluster (separate approved step):
+SLURM DAG `slurm/attention_dynamics/{train,extract,analysis}.slurm` +
+`submit_attention_dynamics_dag.sh` (mirrors `slurm/recurrent_ig/`).
+
+**File layout (new).** `cytokine_mil/analysis/attention_dynamics.py`;
+`scripts/{analyze_attention_dynamics,run_demo_attention_dynamics}.py` (+ extended
+`scripts/extract_attention_trajectory.py`); `tests/test_attention_dynamics.py`;
+`reports/attention_dynamics/{PRE_REGISTRATION,ATTENTION_DYNAMICS_RESULTS}.md`;
+`slurm/attention_dynamics/{train,extract,analysis}.slurm` + `submit_attention_dynamics_dag.sh`.
+Reuses `scripts/check_attention_cell_types.py` (`EXPECTED_DOMINANT`), `analysis/dynamics.py`
+§8.3, `analysis/confusion_dynamics.py` relay/temporal helpers, `train_mil.py`,
+`train_oesinghaus_full.py` (`--checkpoint_epochs`) unchanged.

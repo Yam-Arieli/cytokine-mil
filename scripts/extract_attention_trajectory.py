@@ -1,27 +1,32 @@
 """
-Method 2: Extract per-cell-type attention trajectory from model checkpoints.
+Extract per-cell-type attention trajectory from model checkpoints (CLAUDE.md §33).
 
 For each checkpoint epoch:
   - Load model weights
   - Forward pass on every training tube -> attention weights a_i (N-dim)
   - Load cell_type from h5ad obs["cell_type"] for the same tube
-  - Group by cell type: mean attention per cell type per cytokine
-  - Aggregate to donor level (median per donor, mean across donors)
+  - Group by cell type: per-tube mean attention and per-tube within-type Gini
+    (concentration of attention across cells of that type)
+  - Aggregate to donor level (median across tubes per donor)
 
 Output: <run_dir>/attention_trajectory.pkl
   {
-    "epochs":        [25, 50, 75, 100],
-    "trajectory":    {
-        cytokine_name: {
-            cell_type: np.array(n_epochs)   # mean attention over time
-        }
-    },
-    "cell_types":    sorted list of all cell types observed
-    "cytokines":     sorted list of all cytokines
+    "epochs":               [25, 50, 75, 100],
+    "trajectory":           {cytokine: {cell_type: np.array(n_epochs)}},          # donor-MEAN
+    "trajectory_per_donor": {cytokine: {cell_type: {donor: np.array(n_epochs)}}}, # per-donor
+    "concentration":        {cytokine: {cell_type: np.array(n_epochs)}},          # donor-MEAN Gini
+    "cell_types":           sorted list of all cell types observed,
+    "cytokines":            sorted list of all cytokines,
   }
 
+The donor-mean ``trajectory`` is the A_X(T,t) object; ``trajectory_per_donor``
+feeds the relay-recruitment-lag donor statistics; ``concentration`` feeds the
+within-cell-type concentration readout. Consumed by
+``scripts/analyze_attention_dynamics.py`` /
+``cytokine_mil.analysis.attention_dynamics``.
+
 Usage:
-    python scripts/extract_attention_trajectory.py --run_dir <dir>
+    python scripts/extract_attention_trajectory.py --run_dir <dir> [--hvg_path <genes.json>]
 """
 
 import argparse
@@ -37,9 +42,11 @@ import torch
 REPO_ROOT = Path(__file__).parent.parent
 import sys; sys.path.insert(0, str(REPO_ROOT))
 
+from cytokine_mil.analysis.attention_dynamics import gini
 from cytokine_mil.data.label_encoder import CytokineLabel
 from cytokine_mil.experiment_setup import build_encoder, build_mil_model
 
+# Cluster default; override with --hvg_path for local/demo runs.
 HVG_PATH = "/cs/labs/mornitzan/yam.arieli/datasets/Oesinghaus_pseudotubes/hvg_list.json"
 
 
@@ -48,6 +55,11 @@ def _parse_args():
     p.add_argument("--run_dir",           required=True)
     p.add_argument("--checkpoint_subdir", default="checkpoints",
                    help="Subdirectory under run_dir containing epoch_*.pt files.")
+    p.add_argument("--hvg_path",          default=HVG_PATH,
+                   help="JSON list of gene names (HVGs) the model was trained on. "
+                        "Override for local/demo data.")
+    p.add_argument("--embed_dim",         type=int, default=128)
+    p.add_argument("--attention_hidden_dim", type=int, default=64)
     p.add_argument("--device",            default="cpu")
     return p.parse_args()
 
@@ -65,11 +77,13 @@ def _load_label_encoder(run_dir: Path) -> CytokineLabel:
     return le
 
 
-def _load_model(run_dir: Path, ckpt_path: Path, label_enc, gene_names, device):
+def _load_model(ckpt_path: Path, label_enc, gene_names, device,
+                embed_dim: int, attention_hidden_dim: int):
     state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     n_cell_types = state["encoder.cell_type_head.weight"].shape[0]
-    encoder = build_encoder(len(gene_names), n_cell_types=n_cell_types, embed_dim=128)
-    model = build_mil_model(encoder, embed_dim=128, attention_hidden_dim=64,
+    encoder = build_encoder(len(gene_names), n_cell_types=n_cell_types, embed_dim=embed_dim)
+    model = build_mil_model(encoder, embed_dim=embed_dim,
+                            attention_hidden_dim=attention_hidden_dim,
                             n_classes=label_enc.n_classes(), encoder_frozen=True)
     model.load_state_dict(state)
     model.to(device).eval()
@@ -79,16 +93,13 @@ def _load_model(run_dir: Path, ckpt_path: Path, label_enc, gene_names, device):
 
 
 def _load_tube(entry, gene_names):
-    """Load X tensor and cell_type list from h5ad."""
+    """Load X tensor and cell_type list from h5ad (aligned to gene_names)."""
     adata = anndata.read_h5ad(entry["path"])
-    # align to gene_names
-    gene_set = set(gene_names)
     avail = [g for g in gene_names if g in adata.var_names]
     X = adata[:, avail].X
     if hasattr(X, "toarray"):
         X = X.toarray()
-    X_tensor = torch.tensor(X, dtype=torch.float32)
-
+    X_tensor = torch.tensor(np.asarray(X), dtype=torch.float32)
     cell_types = list(adata.obs["cell_type"].astype(str))
     return X_tensor, cell_types
 
@@ -96,119 +107,123 @@ def _load_tube(entry, gene_names):
 @torch.no_grad()
 def extract_epoch(model, entries, gene_names, device):
     """
-    Returns: {cytokine: {donor: {cell_type: [mean_attn]}}}
-    The innermost list has one element (this epoch's mean), for easy stacking later.
+    Forward every tube at one checkpoint and group attention by cell type.
+
+    Returns two nested dicts keyed {cytokine: {donor: {cell_type: [per-tube value]}}}:
+      - means: per-tube MEAN attention within the cell type
+      - ginis: per-tube within-type Gini (concentration) of attention
     """
-    cyt_donor_ct = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    means = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    ginis = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     for entry in entries:
         X, cell_types = _load_tube(entry, gene_names)
         X = X.to(device)
         cytokine = entry["cytokine"]
-        donor    = entry["donor"]
+        donor = entry["donor"]
 
-        # Forward pass – attention weights
         _, a, _ = model(X)
-        a_np = a.cpu().numpy()  # shape (N,)
+        a_np = a.cpu().numpy()  # (N,)
 
-        # Group by cell type
         ct_attn = defaultdict(list)
         for i, ct in enumerate(cell_types):
             ct_attn[ct].append(a_np[i])
 
         for ct, vals in ct_attn.items():
-            cyt_donor_ct[cytokine][donor][ct].append(float(np.mean(vals)))
+            means[cytokine][donor][ct].append(float(np.mean(vals)))
+            ginis[cytokine][donor][ct].append(float(gini(vals)))
 
-    return cyt_donor_ct
+    return means, ginis
 
 
-def aggregate_donor_level(cyt_donor_ct):
+def _append_donor_level(epoch_nested, accum):
     """
-    cyt_donor_ct: {cytokine: {donor: {cell_type: [values_this_epoch]}}}
-    Returns: {cytokine: {cell_type: mean_across_donors}}
+    Reduce one epoch's {cyt:{donor:{ct:[per-tube]}}} to a donor-level value
+    (median across tubes) and append into accum {cyt:{ct:{donor:[over epochs]}}}.
     """
-    result = defaultdict(dict)
-    for cyt, donors in cyt_donor_ct.items():
-        # collect all cell types across donors
-        all_cts = set()
-        for ct_dict in donors.values():
-            all_cts.update(ct_dict.keys())
+    for cyt, donors in epoch_nested.items():
+        for donor, ct_dict in donors.items():
+            for ct, tube_vals in ct_dict.items():
+                accum[cyt][ct][donor].append(float(np.median(tube_vals)))
 
-        for ct in all_cts:
-            donor_means = [
-                np.mean(donors[d][ct]) for d in donors if ct in donors[d]
-            ]
-            result[cyt][ct] = float(np.mean(donor_means)) if donor_means else 0.0
-    return result
+
+def _donor_mean(per_donor):
+    """{cyt:{ct:{donor:list}}} -> donor-mean {cyt:{ct: np.array}} (elementwise)."""
+    out = defaultdict(dict)
+    for cyt, by_ct in per_donor.items():
+        for ct, by_donor in by_ct.items():
+            arrs = [np.asarray(v, dtype=float) for v in by_donor.values()]
+            out[cyt][ct] = np.mean(np.stack(arrs), axis=0)
+    return out
+
+
+def _to_arrays(per_donor):
+    """{cyt:{ct:{donor:list}}} -> {cyt:{ct:{donor: np.array}}}."""
+    return {
+        cyt: {ct: {d: np.asarray(v, dtype=float) for d, v in by_donor.items()}
+              for ct, by_donor in by_ct.items()}
+        for cyt, by_ct in per_donor.items()
+    }
 
 
 def main():
-    args   = _parse_args()
+    args = _parse_args()
     run_dir = Path(args.run_dir)
-    device  = torch.device(args.device)
+    device = torch.device(args.device)
 
     ckpt_dir = run_dir / args.checkpoint_subdir
-    if not ckpt_dir.exists():
-        _log(f"ERROR: No checkpoints directory found at {ckpt_dir}")
-        sys.exit(1)
-
     ckpt_files = sorted(ckpt_dir.glob("epoch_*.pt"))
     if not ckpt_files:
         _log(f"ERROR: No checkpoint files in {ckpt_dir}")
         sys.exit(1)
-
     _log(f"Found {len(ckpt_files)} checkpoints: {[f.name for f in ckpt_files]}")
 
-    with open(HVG_PATH) as f:
+    with open(args.hvg_path) as f:
         gene_names = json.load(f)
-
     label_enc = _load_label_encoder(run_dir)
-
     with open(run_dir / "manifest_train.json") as f:
         entries = json.load(f)
     _log(f"Training tubes: {len(entries)}")
 
-    # Parse epoch numbers from filenames
     def epoch_of(p): return int(p.stem.replace("epoch_", ""))
+    epochs = [epoch_of(f) for f in ckpt_files]
 
-    epochs     = [epoch_of(f) for f in ckpt_files]
-    trajectory = defaultdict(lambda: defaultdict(list))
-    # trajectory[cytokine][cell_type] = list of mean_attn per epoch
+    # {cyt:{ct:{donor:[over epochs]}}} for mean attention and for Gini.
+    attn_per_donor = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    gini_per_donor = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     for ckpt_path, epoch in zip(ckpt_files, epochs):
         _log(f"\n--- Epoch {epoch} ({ckpt_path.name}) ---")
-        model = _load_model(run_dir, ckpt_path, label_enc, gene_names, device)
-        cyt_donor_ct = extract_epoch(model, entries, gene_names, device)
-        agg = aggregate_donor_level(cyt_donor_ct)
-
-        for cyt, ct_dict in agg.items():
-            for ct, val in ct_dict.items():
-                trajectory[cyt][ct].append(val)
-
-        _log(f"  Processed {len(agg)} cytokines.")
+        model = _load_model(ckpt_path, label_enc, gene_names, device,
+                            args.embed_dim, args.attention_hidden_dim)
+        means, ginis = extract_epoch(model, entries, gene_names, device)
+        _append_donor_level(means, attn_per_donor)
+        _append_donor_level(ginis, gini_per_donor)
+        _log(f"  Processed {len(means)} cytokines.")
         del model
 
-    # Convert to numpy arrays
-    trajectory_np = {
-        cyt: {ct: np.array(vals) for ct, vals in ct_dict.items()}
-        for cyt, ct_dict in trajectory.items()
-    }
+    trajectory_per_donor = _to_arrays(attn_per_donor)
+    trajectory = _donor_mean(attn_per_donor)
+    concentration = _donor_mean(gini_per_donor)
 
-    all_cell_types = sorted({ct for ct_dict in trajectory_np.values() for ct in ct_dict})
-    all_cytokines  = sorted(trajectory_np.keys())
+    all_cell_types = sorted({ct for by_ct in trajectory.values() for ct in by_ct})
+    all_cytokines = sorted(trajectory.keys())
 
     out = {
-        "epochs":     epochs,
-        "trajectory": trajectory_np,
+        "epochs": epochs,
+        "trajectory": {c: dict(d) for c, d in trajectory.items()},
+        "trajectory_per_donor": trajectory_per_donor,
+        "concentration": {c: dict(d) for c, d in concentration.items()},
         "cell_types": all_cell_types,
-        "cytokines":  all_cytokines,
+        "cytokines": all_cytokines,
     }
 
     out_path = run_dir / "attention_trajectory.pkl"
     with open(out_path, "wb") as f:
         pickle.dump(out, f)
     _log(f"\nSaved: {out_path}")
-    _log(f"  Cytokines: {len(all_cytokines)}, Cell types: {len(all_cell_types)}, Epochs: {epochs}")
+    _log(f"  Cytokines: {len(all_cytokines)}, Cell types: {len(all_cell_types)}, "
+         f"Epochs: {epochs}")
 
 
 if __name__ == "__main__":
