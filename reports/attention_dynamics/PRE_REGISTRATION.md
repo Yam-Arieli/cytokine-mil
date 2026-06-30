@@ -56,6 +56,24 @@ cell-type-resolved, IG-independent layer worth folding into the method). AMBER i
 partial. RED if P1 fails (attention-primary doesn't even recover known direct responders →
 the readout is not grounded).
 
+## Addendum (2026-06) — attention-collapse interventions (exploratory vs baseline)
+
+The baseline every-epoch run showed attention collapses late onto rare distinctive cell types
+(ILC/HSPC/Plasmablast/cDC), dropping P1@final below P1@early (~0.8 for 2/3 seeds). Three
+interventions are tested, each 3 seeds, every-epoch checkpoints, vs the existing baseline
+(`results/attention_dynamics`):
+- **A `entropy`** — attention-entropy penalty `λ·(1 − H(a)/logN)`, **λ=0.1**, data as-is.
+- **B `entropy_hygiene`** — A **+ drop** cell types `{pDC, ILC, Plasmablast}` (the present subset
+  of Oesinghaus's QC-dropped <10-cells/condition types) from training **and** extraction.
+- **C `unfreeze`** — 3-phase: Stage-1 encoder → frozen Stage-2 warmup (20 ep) → **unfreeze**
+  encoder, Stage-3 (230 ep, `encoder_lr_factor=0.1`, `stage3_lr=0.001`), no penalty.
+
+**Success read (exploratory, not a hard gate):** an intervention is promising if it raises
+**P1@final toward P1@early (~0.8)** and lowers the **top-1 cell-type attention share** (collapse
+proxy) **without a large drop in final train `p_correct`** (the regularization tradeoff).
+Reported in `reports/attention_dynamics/INTERVENTION_COMPARISON.md`. λ=0.1 is a first value; a
+sweep is the follow-up if it over/under-regularizes.
+
 ## Faithfulness guard (not a prediction)
 
 P1's static analog already ran (`scripts/check_attention_cell_types.py`); the trajectory P1

@@ -143,6 +143,12 @@ def _parse_args():
                    help="Stage 1: pick one random tube per (cytokine, training_donor) pair "
                         "across all training donors (~910 tubes, seed-controlled) instead of "
                         "the default 1 tube per cytokine (~91 tubes).")
+    p.add_argument("--attn_entropy_lambda", type=float, default=0.0,
+                   help="Attention-entropy penalty weight (§33 collapse fix). Adds "
+                        "lambda*(1 - H(a)/logN) per tube to flatten attention. 0 = off.")
+    p.add_argument("--exclude_cell_types", type=str, default=None,
+                   help="Comma-separated cell types to drop from training/eval tubes "
+                        "(data hygiene, e.g. 'pDC,ILC,Plasmablast'). None = keep all.")
     return p.parse_args()
 
 
@@ -220,6 +226,10 @@ def _precompute_cell_type_obs_and_pbs_means(
 
 def main():
     args = _parse_args()
+    _exclude_set = (
+        set(s.strip() for s in args.exclude_cell_types.split(",") if s.strip())
+        if args.exclude_cell_types else None
+    )
 
     # Output directory
     if args.output_dir:
@@ -480,6 +490,8 @@ def main():
             cell_type_obs=cell_type_obs,
             pbs_ct_means=pbs_ct_means,
             centroid_log_every_n_epochs=args.centroid_log_every,
+            attn_entropy_lambda=args.attn_entropy_lambda,
+            exclude_cell_types=_exclude_set,
         )
 
         torch.save(model.state_dict(), out_dir / "model_stage2.pt")
@@ -528,6 +540,8 @@ def main():
             cell_type_obs=cell_type_obs,
             pbs_ct_means=pbs_ct_means,
             centroid_log_every_n_epochs=args.centroid_log_every,
+            attn_entropy_lambda=args.attn_entropy_lambda,
+            exclude_cell_types=_exclude_set,
         )
 
         torch.save(model.state_dict(), out_dir / "model_stage3.pt")

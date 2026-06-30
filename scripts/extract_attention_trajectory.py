@@ -60,6 +60,12 @@ def _parse_args():
     p.add_argument("--tubes_per_cyt_donor", type=int, default=1,
                    help="How many tubes to keep per (cytokine, donor) for the analysis "
                         "subset (default 1 — enough for donor-level stats).")
+    p.add_argument("--exclude_cell_types", default=None,
+                   help="Comma-separated cell types to drop before the attention softmax "
+                        "(match training data hygiene, e.g. 'pDC,ILC,Plasmablast').")
+    p.add_argument("--checkpoint_stride", type=int, default=1,
+                   help="Use every Nth checkpoint (default 1). Use >1 for the unfrozen "
+                        "Stage-3 run where H is recomputed per checkpoint.")
     p.add_argument("--embed_dim",         type=int, default=128)
     p.add_argument("--attention_hidden_dim", type=int, default=64)
     p.add_argument("--device",            default="cpu")
@@ -121,29 +127,37 @@ def _subset_entries(entries, tubes_per_cyt_donor: int):
 
 
 @torch.no_grad()
-def _build_embedding_cache(model, subset, gene_names, device):
-    """Compute H = encoder(X) ONCE per tube (encoder is frozen across epochs)."""
+def _build_cache(model, subset, gene_names, device, exclude=None, store_H=True):
+    """Load each tube once (apply cell-type exclusion). store_H=True (frozen
+    encoder) caches H = encoder(X) so checkpoints only reload attention; store_H
+    =False (unfrozen / Stage-3) keeps X on CPU so H is recomputed per checkpoint."""
     cache = []
     for entry in subset:
         X, cell_types = _load_tube(entry, gene_names)
-        H = model.encoder(X.to(device))  # (N, embed_dim)
-        cache.append({
-            "cytokine": entry["cytokine"], "donor": entry["donor"],
-            "cell_types": np.asarray(cell_types), "H": H,
-        })
+        cts = np.asarray(cell_types)
+        if exclude:
+            keep = np.array([c not in exclude for c in cts])
+            if keep.any() and not keep.all():
+                X, cts = X[keep], cts[keep]
+        item = {"cytokine": entry["cytokine"], "donor": entry["donor"], "cell_types": cts}
+        if store_H:
+            item["H"] = model.encoder(X.to(device))
+        else:
+            item["X"] = X
+        cache.append(item)
     return cache
 
 
 @torch.no_grad()
-def _attention_snapshot(model, cache):
-    """Apply the model's current attention params to each cached H.
-
-    Returns (means, ginis), each {cytokine: {donor: {cell_type: [per-tube value]}}}.
-    """
+def _snapshot(model, cache, device, recompute_H=False):
+    """Apply the model's current attention to each tube (H cached, or recomputed
+    from X when the encoder changed). Returns (means, ginis), each
+    {cytokine: {donor: {cell_type: [per-tube value]}}}."""
     means = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     ginis = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for item in cache:
-        a = model.attention(item["H"]).cpu().numpy()  # (N,)
+        H = model.encoder(item["X"].to(device)) if recompute_H else item["H"]
+        a = model.attention(H).cpu().numpy()  # (N,)
         cts = item["cell_types"]
         for ct in np.unique(cts):
             vals = a[cts == ct]
@@ -188,10 +202,18 @@ def main():
     if not ckpt_files:
         _log(f"ERROR: No checkpoint files in {ckpt_dir}")
         sys.exit(1)
+    if args.checkpoint_stride > 1:                    # subsample, always keep the last
+        ckpt_files = sorted(set(ckpt_files[::args.checkpoint_stride]) | {ckpt_files[-1]})
 
     def epoch_of(p): return int(p.stem.replace("epoch_", ""))
     epochs = [epoch_of(f) for f in ckpt_files]
-    _log(f"Found {len(ckpt_files)} checkpoints: epochs {epochs[0]}..{epochs[-1]}")
+    _log(f"Using {len(ckpt_files)} checkpoints (stride {args.checkpoint_stride}): "
+         f"epochs {epochs[0]}..{epochs[-1]}")
+
+    exclude = (set(s.strip() for s in args.exclude_cell_types.split(",") if s.strip())
+               if args.exclude_cell_types else None)
+    if exclude:
+        _log(f"Excluding cell types: {sorted(exclude)}")
 
     with open(args.hvg_path) as f:
         gene_names = json.load(f)
@@ -202,21 +224,21 @@ def main():
     _log(f"Train tubes: {len(entries)} -> analysis subset: {len(subset)} "
          f"({args.tubes_per_cyt_donor}/cytokine-donor)")
 
-    # Frozen encoder: build once from the first checkpoint, cache H per tube once.
     model = _build_full_model(ckpt_files[0], label_enc, gene_names, device,
                               args.embed_dim, args.attention_hidden_dim)
-    _log("Computing embedding cache H (once; encoder is frozen)...")
-    cache = _build_embedding_cache(model, subset, gene_names, device)
-    _log(f"  cached H for {len(cache)} tubes")
 
-    # Sanity: encoder weights are identical across checkpoints (frozen).
+    # Detect whether the encoder changes across checkpoints (Stage-3 / unfrozen).
+    unfrozen = False
     if len(ckpt_files) > 1:
         s_last = torch.load(ckpt_files[-1], map_location="cpu", weights_only=False)
         w0 = model.encoder.cell_type_head.weight.detach().cpu()
         wL = s_last["encoder.cell_type_head.weight"].cpu()
-        if not torch.allclose(w0, wL):
-            _log("  WARNING: encoder differs across checkpoints — H cache assumption "
-                 "violated (was Stage-3 / unfrozen run?). Results may be wrong.")
+        unfrozen = not torch.allclose(w0, wL)
+    _log(f"Encoder mode: {'UNFROZEN (recompute H per checkpoint)' if unfrozen else 'FROZEN (cache H once)'}")
+
+    cache = _build_cache(model, subset, gene_names, device, exclude=exclude,
+                         store_H=not unfrozen)
+    _log(f"  cached {len(cache)} tubes")
 
     attn_per_donor = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     gini_per_donor = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
@@ -225,7 +247,7 @@ def main():
         state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         model.load_state_dict(state)
         model.to(device).eval()
-        means, ginis = _attention_snapshot(model, cache)
+        means, ginis = _snapshot(model, cache, device, recompute_H=unfrozen)
         _append_donor_level(means, attn_per_donor)
         _append_donor_level(ginis, gini_per_donor)
         if (i + 1) % 25 == 0 or i == len(ckpt_files) - 1:

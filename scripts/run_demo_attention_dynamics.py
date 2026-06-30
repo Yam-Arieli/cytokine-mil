@@ -77,10 +77,19 @@ def main():
                           n_classes=label_enc.n_classes(), encoder_frozen=True)
     train_ds = PseudoTubeDataset(str(run_dir / "manifest_train.json"), label_enc,
                                  gene_names=gene_names, preload=True)
+    # Build cell_type_obs (tube-idx -> per-cell types, file order) to exercise the
+    # §33 cell-exclusion mask end-to-end, and turn on the entropy penalty.
+    import anndata
+    cell_type_obs = {
+        i: list(anndata.read_h5ad(e["path"]).obs["cell_type"].astype(str))
+        for i, e in enumerate(train_ds.get_entries())
+    }
+    EXCLUDE = {"B_cell"}
     dynamics = train_mil(
         mil, train_ds, n_epochs=STAGE2_EPOCHS, lr=0.01, momentum=0.9,
         log_every_n_epochs=1, device=device, seed=42, verbose=False,
         checkpoint_dir=str(run_dir / "checkpoints"), checkpoint_epochs=CKPT_EPOCHS,
+        cell_type_obs=cell_type_obs, attn_entropy_lambda=0.1, exclude_cell_types=EXCLUDE,
     )
     import pickle
     with open(run_dir / "dynamics.pkl", "wb") as fh:
@@ -91,10 +100,11 @@ def main():
     print(f"[demo] Stage-2 trained; checkpoints: "
           f"{sorted(p.name for p in (run_dir / 'checkpoints').glob('epoch_*.pt'))}")
 
-    # 5. Extract attention trajectory (subprocess — exercises the real CLI)
+    # 5. Extract attention trajectory (subprocess — exercises the real CLI +
+    #    cell-type exclusion, matching the training-time hygiene).
     subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "extract_attention_trajectory.py"),
                     "--run_dir", str(run_dir), "--hvg_path", str(gene_list_path),
-                    "--device", "cpu"], check=True)
+                    "--exclude_cell_types", "B_cell", "--device", "cpu"], check=True)
 
     # 6. Sanity-check the pkl structure
     with open(run_dir / "attention_trajectory.pkl", "rb") as fh:
@@ -107,8 +117,9 @@ def main():
     some_ct = next(iter(at["trajectory"][some_cyt]))
     assert len(at["trajectory"][some_cyt][some_ct]) == len(CKPT_EPOCHS)
     assert at["trajectory_per_donor"][some_cyt][some_ct]  # per-donor present
+    assert "B_cell" not in at["cell_types"], "exclusion failed: B_cell still present"
     print(f"[demo] attention_trajectory.pkl OK: {len(at['cytokines'])} cytokines, "
-          f"{len(at['cell_types'])} cell types, epochs={at['epochs']}")
+          f"{len(at['cell_types'])} cell types (B_cell excluded), epochs={at['epochs']}")
 
     # 7. Analyze (subprocess — exercises readouts, figures, report)
     subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "analyze_attention_dynamics.py"),

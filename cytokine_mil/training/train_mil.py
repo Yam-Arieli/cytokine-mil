@@ -5,6 +5,7 @@ Returns a dynamics dict containing per-tube learning trajectories that are
 consumed by cytokine_mil.analysis.dynamics for cascade inference.
 """
 
+import math
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -45,6 +46,8 @@ def train_mil(
     cell_type_obs: Optional[Dict[int, List[str]]] = None,
     pbs_ct_means: Optional[Dict[str, np.ndarray]] = None,
     centroid_log_every_n_epochs: int = 10,
+    attn_entropy_lambda: float = 0.0,
+    exclude_cell_types: Optional[set] = None,
 ) -> Dict:
     """
     Train the CytokineABMIL model and record dynamics trajectories.
@@ -140,8 +143,9 @@ def train_mil(
     val_cytokine_confusion_epochs: Dict[str, List[float]] = defaultdict(list)
 
     loss_components: Dict[str, List[float]] = {
-        "total": [], "main": [], "sa_aux": [], "ca_aux": [], "kl": []
+        "total": [], "main": [], "sa_aux": [], "ca_aux": [], "kl": [], "attn_kl": []
     }
+    exclude_cell_types = set(exclude_cell_types) if exclude_cell_types else None
 
     _do_centroids = cell_type_obs is not None and pbs_ct_means is not None
     centroid_trajectory: List[Dict] = []
@@ -157,10 +161,12 @@ def train_mil(
         epoch_loss_dict = _train_epoch(
             model, dataset, queues, optimizer, criterion, device, rng,
             kl_lambda=kl_lambda, aux_loss_weight=aux_loss_weight,
+            cell_type_obs=cell_type_obs, exclude_cell_types=exclude_cell_types,
+            attn_entropy_lambda=attn_entropy_lambda,
         )
         epoch_loss = epoch_loss_dict["total"]
         loss_components["total"].append(epoch_loss)
-        for key in ("main", "sa_aux", "ca_aux", "kl"):
+        for key in ("main", "sa_aux", "ca_aux", "kl", "attn_kl"):
             if key in epoch_loss_dict:
                 loss_components[key].append(epoch_loss_dict[key])
 
@@ -176,13 +182,15 @@ def train_mil(
             centroid_snap = _log_dynamics(
                 model, dataset, entries, tube_trajectories,
                 cytokine_confusion_epochs, dataset.label_encoder, device,
-                cell_type_obs=cell_type_obs if snap_centroids_now else None,
+                cell_type_obs=cell_type_obs,
                 pbs_ct_means=pbs_ct_means if snap_centroids_now else None,
+                exclude_cell_types=exclude_cell_types,
             )
             if val_dataset is not None:
                 _log_dynamics(
                     model, val_dataset, val_entries, val_tube_trajectories,
                     val_cytokine_confusion_epochs, val_dataset.label_encoder, device,
+                    exclude_cell_types=exclude_cell_types,
                 )
             logged_epochs.append(epoch)
             if centroid_snap is not None:
@@ -274,6 +282,9 @@ def _train_epoch(
     rng: np.random.Generator,
     kl_lambda: float = 0.0,
     aux_loss_weight: float = 0.0,
+    cell_type_obs: Optional[Dict[int, List[str]]] = None,
+    exclude_cell_types: Optional[set] = None,
+    attn_entropy_lambda: float = 0.0,
 ) -> Dict[str, float]:
     """
     Run one epoch of mega-batch training.
@@ -293,6 +304,7 @@ def _train_epoch(
     total_sa = 0.0
     total_ca = 0.0
     total_kl = 0.0
+    total_attn_kl = 0.0
     is_v2 = isinstance(model, CytokineABMIL_V2)
     n_mb = max(len(megabatches), 1)
 
@@ -303,10 +315,13 @@ def _train_epoch(
         mb_sa = 0.0
         mb_ca = 0.0
         mb_kl = 0.0
+        mb_attn_kl = 0.0
         n = len(mb_indices)
 
         for _cyt_idx, ds_idx in mb_indices.items():
             X, label, _donor, _cyt_name = dataset[ds_idx]
+            if exclude_cell_types and cell_type_obs is not None:
+                X = _apply_exclude_mask(X, cell_type_obs.get(ds_idx), exclude_cell_types)
             X = X.to(device)
             label_t = torch.tensor([label], dtype=torch.long, device=device)
 
@@ -332,8 +347,12 @@ def _train_epoch(
                 mb_ca += loss_ca.item()
                 mb_kl += loss_kl.item()
             else:
-                y_hat, _a, _H = model(X)
+                y_hat, a, _H = model(X)
                 loss = criterion(y_hat.unsqueeze(0), label_t) / n
+                if attn_entropy_lambda > 0:
+                    peak = _attn_peakedness(a)
+                    loss = loss + attn_entropy_lambda * peak / n
+                    mb_attn_kl += float(peak.detach().item())
             # Guard against NaN loss (e.g. from corrupted input or early
             # gradient explosion) — skip backward for this tube rather than
             # propagating NaN into the weight tensors.
@@ -351,6 +370,7 @@ def _train_epoch(
         total_sa += mb_sa
         total_ca += mb_ca
         total_kl += mb_kl
+        total_attn_kl += mb_attn_kl
 
     result: Dict[str, float] = {"total": total_loss / n_mb}
     if is_v2:
@@ -358,6 +378,8 @@ def _train_epoch(
         result["sa_aux"] = total_sa / n_mb
         result["ca_aux"] = total_ca / n_mb
         result["kl"] = total_kl / n_mb
+    else:
+        result["attn_kl"] = total_attn_kl / n_mb
     return result
 
 
@@ -389,6 +411,7 @@ def _log_dynamics(
     device: torch.device,
     cell_type_obs: Optional[Dict[int, List[str]]] = None,
     pbs_ct_means: Optional[Dict[str, np.ndarray]] = None,
+    exclude_cell_types: Optional[set] = None,
 ) -> Optional[Dict]:
     """
     Evaluate all tubes and append one snapshot to each tube's trajectory.
@@ -423,6 +446,15 @@ def _log_dynamics(
 
     for idx, entry in enumerate(entries):
         X, label, _donor, _cyt_name = dataset[idx]
+        # Cell-type exclusion (data hygiene): mask X (and the cell-type labels used
+        # for centroids) so eval matches what the model trained on.
+        ct_labels_eff = cell_type_obs.get(idx) if cell_type_obs is not None else None
+        if (exclude_cell_types and ct_labels_eff is not None
+                and len(ct_labels_eff) == X.shape[0]):
+            keep = [str(ct) not in exclude_cell_types for ct in ct_labels_eff]
+            if any(keep) and not all(keep):
+                X = X[torch.tensor(keep, dtype=torch.bool)]
+                ct_labels_eff = [c for c, k in zip(ct_labels_eff, keep) if k]
         X = X.to(device)
 
         if is_v2:
@@ -456,7 +488,7 @@ def _log_dynamics(
             traj["instance_confidence_ca_epochs"].append(instance_conf_ca)
 
         if do_centroids:
-            ct_labels = cell_type_obs.get(idx, [])
+            ct_labels = ct_labels_eff or []
             if ct_labels:
                 H_np = H.cpu().numpy().astype(np.float64)       # (N_cells, embed_dim)
                 a_np = a_for_centroids.cpu().numpy().astype(np.float64)  # (N_cells,)
@@ -541,6 +573,35 @@ def _compute_entropy(a: torch.Tensor) -> float:
     """Shannon entropy of attention weights (nats). Clipped for stability."""
     a_safe = a.clamp(min=1e-10)
     return float(-(a_safe * a_safe.log()).sum())
+
+
+def _attn_peakedness(a: torch.Tensor) -> torch.Tensor:
+    """
+    Normalized attention peakedness: 1 - H(a)/log(N), differentiable in a.
+
+    0 = perfectly uniform attention; ->1 = fully concentrated on one cell.
+    Minimizing it (the entropy penalty) flattens attention and damps the
+    late-training collapse onto rare discriminative cell types. Normalizing by
+    log(N) makes the penalty tube-size-invariant (N varies per pseudo-tube).
+    """
+    n = a.numel()
+    if n <= 1:
+        return a.sum() * 0.0
+    a_safe = a.clamp(min=1e-10)
+    ent = -(a_safe * a_safe.log()).sum()
+    return 1.0 - ent / math.log(n)
+
+
+def _apply_exclude_mask(X: torch.Tensor, ct_labels, exclude_cell_types) -> torch.Tensor:
+    """Drop rows of X whose cell type is in exclude_cell_types (data hygiene).
+    No-op if labels are missing/misaligned or the mask would drop all/no cells."""
+    if not ct_labels or len(ct_labels) != X.shape[0]:
+        return X
+    keep = [str(ct) not in exclude_cell_types for ct in ct_labels]
+    if all(keep) or not any(keep):
+        return X
+    keep_t = torch.tensor(keep, dtype=torch.bool)
+    return X[keep_t]
 
 
 def _build_records(
