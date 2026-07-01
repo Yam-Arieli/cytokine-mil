@@ -74,6 +74,17 @@ proxy) **without a large drop in final train `p_correct`** (the regularization t
 Reported in `reports/attention_dynamics/INTERVENTION_COMPARISON.md`. λ=0.1 is a first value; a
 sweep is the follow-up if it over/under-regularizes.
 
+**Follow-up (2026-07-01) — λ sweep.** The 3 interventions ran; **all failed to fix the collapse**:
+A (λ=0.1) fired but netted zero (peak P1 0.73→0.73, final 0.47→0.47), B (hygiene) was marginal
+and cost discriminability (p_correct 0.43→0.37), C (unfreeze) was catastrophic (p_correct→0.04).
+Diagnosis: **λ=0.1 was ~1–2 orders too weak**. Escalation pre-registered here: rerun the Exp-A
+recipe (frozen, 250 ep, penalty, data as-is) at **λ ∈ {1, 10, 100}**, 3 seeds each
+(`slurm/attn_lambda/`, `submit_attn_lambda_dag.sh`), same success read (P1@final → ~0.73 peak and
+top1_share ↓ WITHOUT tanking p_correct). Bottom line →
+`reports/attention_dynamics/LAMBDA_SWEEP_COMPARISON.md`. If even λ=100 can't hold P1 up without
+collapsing p_correct, the collapse is intrinsic to margin-maximizing softmax attention and §33's
+usable contribution is the P3 primacy/subtlety result (rho=−0.40), not the direction layer.
+
 ## Faithfulness guard (not a prediction)
 
 P1's static analog already ran (`scripts/check_attention_cell_types.py`); the trajectory P1
