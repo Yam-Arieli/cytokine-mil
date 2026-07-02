@@ -2091,3 +2091,110 @@ SLURM DAG `slurm/attention_dynamics/{train,extract,analysis}.slurm` +
 Reuses `scripts/check_attention_cell_types.py` (`EXPECTED_DOMINANT`), `analysis/dynamics.py`
 §8.3, `analysis/confusion_dynamics.py` relay/temporal helpers, `train_mil.py`,
 `train_oesinghaus_full.py` (`--checkpoint_epochs`) unchanged.
+
+### 33.6 Results (2026-07-01) — collapse NOT fixable by regularization; keeper is P3
+
+Ran the three collapse interventions (jobs 30962392–30962403) then a λ-sweep (jobs
+30966038–30966049), all 3 seeds, vs the baseline `results/attention_dynamics`. **All failed to
+recover the biological readout.** The entropy penalty mechanically works — top1_share (collapse)
+drops monotonically 0.42(λ=0)→0.31(λ=1)→0.09(λ=10)→0.06(λ=100) — but (1) **flattening attention
+does NOT recover P1** (final 0.47→0.27→0.33→0.47, never near the 0.73 training peak): the collapse
+was not *hiding* the responders; attention's argmax simply isn't the biological responder in a
+frozen-multiclass discriminative task except at a transient mid-training moment; (2) **fatal
+tradeoff, no sweet spot** — p_correct 0.43→0.41→0.15→0.07 (≈chance @91 classes); (3) the penalty
+also degrades P3 (rho −0.40→−0.15→+0.19→nan). Unfreeze (Stage-3) was catastrophic (p_correct→0.04);
+hygiene (drop pDC/ILC/Plasmablast) marginal and cost discriminability. **Resolution:** the collapse
+is a symptom of margin-maximizing softmax, not a fixable bottleneck; do NOT pursue more attention
+regularization. §33's direction layer (P2 relay-lag) is a negative (0/3 cascades at every λ). The
+keeper is the **baseline unregularized P3** (rho≈−0.40: direct cytokines recruit their primary cell
+type earlier) — a learnability-timing result, seed-noisy, NOT a cascade-direction tool. Reports:
+`reports/attention_dynamics/{INTERVENTION_COMPARISON,LAMBDA_SWEEP_COMPARISON}.md`. New (additive,
+backward-compatible): `train_mil` `attn_entropy_lambda`/`exclude_cell_types`;
+`train_oesinghaus_full.py` `--attn_entropy_lambda`/`--exclude_cell_types`; `extract_attention_trajectory.py`
+unfrozen-mode/stride/exclude; `scripts/{compare_attn_experiments,probe_attention_p1_over_epochs,
+plot_attention_by_celltype}.py`; `tests/test_train_mil_reg.py`; `slurm/{attn_reg,attn_lambda}/`.
+
+---
+
+## 34. Self-attention over cells — cell↔cell interaction as a relay readout (2026-07)
+
+**Headline.** §33 showed the AB-MIL attention layer is a *pooling* op with **no cell-cell
+interaction** (`a_i = softmax(wᵀtanh(V h_i))` depends only on cell i; cells couple only through the
+softmax denominator), so it structurally cannot express "cell A informs cell B". §34 replaces that
+layer with **actual self-attention over cells**: each cell attends to every other cell, yielding an
+N×N (→ cell-type × cell-type) "who-influences-whom" matrix — a **relay** signal that AB-MIL and the
+IG `cross_asym` (§26) both miss. Same model/hyperparameters/dataset as §33; only the attention layer
+changes, so it is an apples-to-apples add-on. **Additive, NOT a replacement:** IG `cross_asym`
+(§26) stays the primary coupling+direction method; §34 also reports a direction accuracy on the same
+audited benchmark so it is comparable to the standing Oesinghaus 88%.
+
+**Scope.** Oesinghaus 24h PBMC only, 91-class **multiclass**, frozen encoder, 3 seeds (42/123/7),
+every-epoch checkpoints (1..250) — identical to the §33 baseline (`results/attention_dynamics`).
+Direction-not-existence and not-causation caveats (§26.4) carry over. Decisions (locked): SAB→keep
+AB-MIL pooling; SGD (match §33); 1 SAB layer, 4 heads.
+
+### 34.1 Architecture (`cytokine_mil/models/set_transformer_mil.py`)
+`H = encoder(X)` (frozen) → `H' = SAB(H)` (Set-Transformer Set-Attention Block: pre-LN
+`nn.MultiheadAttention(128, 4 heads)` + residual + FFN + residual; exposes per-head `A[i,j]`) →
+`a = AttentionModule(H')` (the **existing** AB-MIL pooling) → `z = Σ aᵢ H'ᵢ` → `BagClassifier`.
+`forward(X) -> (y_hat, a, H)` matches `CytokineABMIL` **exactly** (returns the original frozen `H`,
+not `H'`, so `train_mil` centroid/PBS-RC logging keeps §33 semantics), and `.encoder`,
+`.encoder_frozen`, `unfreeze_encoder()` mirror it — so `train_mil` runs with **no edits**
+(`isinstance(model, CytokineABMIL_V2)` is False → standard branch). Extra methods for the
+frozen-reconstruction extractor: `pool_from_H(H)->(a,H')`, `interaction_from_H(H)->A` (head-avg
+N×N), `forward_with_interaction(X)`. Built via `experiment_setup.build_selfattn_model` (mirror of
+`build_mil_model`); selected by `train_oesinghaus_full.py --model_type set_transformer`
+(default `abmil` — baseline unchanged) with `--sab_heads`/`--sab_layers`.
+
+### 34.2 Extraction (`scripts/extract_selfattn_trajectory.py`) — reuses the frozen-encoder trick
+Encoder frozen ⇒ `H` fixed across all 250 checkpoints; cache `H` once, reconstruct attention from
+each checkpoint's saved params. Emits TWO outputs: (1) `attention_trajectory.pkl` — **identical
+structure** to §33 using `pool_from_H`'s pooling weights as `aᵢ`, so `analyze_attention_dynamics.py`
+runs UNCHANGED (P1–P4 comparable to the §33 AB-MIL baseline); (2) `interaction_trajectory.pkl` —
+`M[τ,σ] = mean_{i∈τ, j∈σ} A[i,j]` (head-averaged, row-normalised, reduced to 18×18 per tube on the
+fly), donor-aggregated `{cytokine -> {(τ,σ) -> array(n_epochs)}}` (+ per-donor).
+
+### 34.3 Readouts (`cytokine_mil/analysis/attention_interaction.py`, numpy-only)
+On `interaction_trajectory.pkl`: **G0 go/no-go** off-diagonal (cross-cell-type) mass over training
+(if ~0 the SAB collapsed to self/diagonal → cells don't interact → premise fails; hard gate first);
+**interaction asymmetry** `Asym[τ,σ] = M[τ,σ] − M[σ,τ]` → directed cell-type graph per cytokine;
+**known-cascade relay corroboration** (IL-12/IL-2/IL-15→IFN-γ relay=NK/mono; negative control
+IL-6/TNF-α); **interaction-recruitment timing** (reuse `attention_dynamics.celltype_recruitment`).
+Driver `scripts/analyze_selfattn_interaction.py` (verdict + ~4 figures).
+
+### 34.4 Direction accuracy vs the 88% benchmark (`scripts/score_selfattn_direction.py`)
+Score the self-attention direction calls — **relay-lag** (§33 `relay_recruitment_lag`) and the new
+**interaction-asymmetry** — per audited labeled pair against `expected_sign` on the
+`counts_in_benchmark=True` rows of `reports/cascade_pairs/cytokine_axes_audited.csv` (the exact 15/17
+denominator behind `cross_asym`), reusing `scripts/retally_pipeline_against_audit.py`'s label-load +
+sign-accuracy logic. Output: a comparison table with the IG `cross_asym` **88%** reference row
+(reproduced via `retally --metric cross_asym` from existing signatures if present, else cited;
+`cross_asym` direction is unchanged by the §28.2 panel/degree updates, which only touch the
+*symmetric* coupling gate). Averaged over 3 seeds → `reports/selfattn_dynamics/SELFATTN_RESULTS.md`.
+
+### 34.5 Pre-registration + verdict + de-risk
+`reports/selfattn_dynamics/PRE_REGISTRATION.md` (locked BEFORE the cluster analysis, §25.1): fixes
+the architecture, the G0 off-diagonal-mass gate, the pooling-head P1–P4 gates (inherit §33 verbatim),
+and the interaction-direction predictions for the known cascades + negative control (GREEN/AMBER/RED).
+Local de-risk `scripts/run_demo_selfattn.py` (harness-only synthetic demo) + `tests/
+{test_set_transformer_mil,test_attention_interaction}.py`. Cluster: SLURM DAG `slurm/selfattn/
+{train,extract,analysis}.slurm` + `submit_selfattn_dag.sh` (mirror `slurm/attention_dynamics/`;
+analysis runs `analyze_attention_dynamics` + `analyze_selfattn_interaction` + `score_selfattn_direction`
++ the §33 probe/plot). Output `results/selfattn/seed_*/`.
+
+**Honest caveats.** Attention is task-driven (discriminative), NOT biology — validate on held-out
+donors; a relay is visible only if it lives in the frozen cell-type-pretrained embedding subspace
+(representability risk); direction ≠ existence (coupling is Path A's job) ≠ causation; small donor N
+→ wide CIs; multi-seed before trusting ordering. Deferred: porting to `cascadir` (validate first).
+
+**File layout (new).** `cytokine_mil/models/set_transformer_mil.py`;
+`cytokine_mil/analysis/attention_interaction.py`; `scripts/{extract_selfattn_trajectory,
+analyze_selfattn_interaction,score_selfattn_direction,run_demo_selfattn}.py`;
+`tests/{test_set_transformer_mil,test_attention_interaction}.py`;
+`reports/selfattn_dynamics/{PRE_REGISTRATION,SELFATTN_RESULTS}.md`;
+`slurm/selfattn/{train,extract,analysis}.slurm` + `submit_selfattn_dag.sh`. Edits (additive,
+backward-compatible): `cytokine_mil/experiment_setup.py` (`build_selfattn_model`),
+`scripts/train_oesinghaus_full.py` (`--model_type`/`--sab_heads`/`--sab_layers`). Reuses
+`models/{attention,bag_classifier,instance_encoder}.py`, `train_mil.py`,
+`analysis/attention_dynamics.py`, `scripts/{analyze_attention_dynamics,probe_attention_p1_over_epochs,
+plot_attention_by_celltype,retally_pipeline_against_audit}.py` unchanged.

@@ -47,6 +47,7 @@ from cytokine_mil.models.instance_encoder import InstanceEncoder
 from cytokine_mil.experiment_setup import (
     build_encoder,
     build_mil_model,
+    build_selfattn_model,
     build_stage1_manifest,
     build_stage1_manifest_full_donors,
     split_manifest_by_donor,
@@ -149,7 +150,31 @@ def _parse_args():
     p.add_argument("--exclude_cell_types", type=str, default=None,
                    help="Comma-separated cell types to drop from training/eval tubes "
                         "(data hygiene, e.g. 'pDC,ILC,Plasmablast'). None = keep all.")
+    p.add_argument("--model_type", type=str, default="abmil",
+                   choices=["abmil", "set_transformer"],
+                   help="MIL head: 'abmil' (default, CytokineABMIL pooling) or "
+                        "'set_transformer' (§34: self-attention over cells then AB-MIL pooling).")
+    p.add_argument("--sab_heads", type=int, default=4,
+                   help="Self-attention heads (model_type=set_transformer only).")
+    p.add_argument("--sab_layers", type=int, default=1,
+                   help="Self-attention blocks (model_type=set_transformer only).")
     return p.parse_args()
+
+
+def _build_model(args, encoder, n_classes, encoder_frozen):
+    """Build the MIL head selected by --model_type (§34 adds set_transformer)."""
+    if args.model_type == "set_transformer":
+        return build_selfattn_model(
+            encoder, embed_dim=args.embed_dim,
+            attention_hidden_dim=args.attention_hidden_dim,
+            n_classes=n_classes, encoder_frozen=encoder_frozen,
+            sab_heads=args.sab_heads, sab_layers=args.sab_layers,
+        )
+    return build_mil_model(
+        encoder, embed_dim=args.embed_dim,
+        attention_hidden_dim=args.attention_hidden_dim,
+        n_classes=n_classes, encoder_frozen=encoder_frozen,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,12 +355,9 @@ def main():
         encoder = build_encoder(
             n_input_genes=len(gene_names), n_cell_types=n_cell_types, embed_dim=args.embed_dim,
         )
-        model = build_mil_model(
-            encoder, embed_dim=args.embed_dim, attention_hidden_dim=args.attention_hidden_dim,
-            n_classes=label_enc.n_classes(), encoder_frozen=True,
-        )
+        model = _build_model(args, encoder, label_enc.n_classes(), encoder_frozen=True)
         model.load_state_dict(torch.load(out_dir / "model_stage2.pt", map_location="cpu"))
-        log(f"  Loaded: {out_dir / 'model_stage2.pt'}")
+        log(f"  Loaded: {out_dir / 'model_stage2.pt'} (model_type={args.model_type})")
 
         # dynamics is not re-computed for Stage 2 in this mode — use existing dynamics.pkl
         dynamics = None
@@ -455,15 +477,11 @@ def main():
             str(val_m_path), label_enc, gene_names=gene_names, preload=True,
         )
 
-        model = build_mil_model(
-            encoder,
-            embed_dim=args.embed_dim,
-            attention_hidden_dim=args.attention_hidden_dim,
-            n_classes=label_enc.n_classes(),
-            encoder_frozen=True,
-        )
-        log(f"  Model: embed_dim={args.embed_dim}, attn_hidden={args.attention_hidden_dim}, "
-            f"n_classes={label_enc.n_classes()}")
+        model = _build_model(args, encoder, label_enc.n_classes(), encoder_frozen=True)
+        log(f"  Model: type={args.model_type}, embed_dim={args.embed_dim}, "
+            f"attn_hidden={args.attention_hidden_dim}, n_classes={label_enc.n_classes()}"
+            + (f", sab_heads={args.sab_heads}, sab_layers={args.sab_layers}"
+               if args.model_type == "set_transformer" else ""))
         log(f"  Stage 2 (frozen warmup / Stage 2a): {args.stage2_epochs} epochs, "
             f"lr={args.lr} (small LR — smooth centroid trajectories), log_every={args.log_every}")
         log(f"  Centroid snapshots every {args.centroid_log_every} epochs")

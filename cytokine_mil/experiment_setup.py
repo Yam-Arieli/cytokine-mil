@@ -241,3 +241,48 @@ def build_mil_model(
     )
     classifier = BagClassifier(embed_dim=embed_dim, n_classes=n_classes)
     return CytokineABMIL(encoder, attention, classifier, encoder_frozen=encoder_frozen)
+
+
+def build_selfattn_model(
+    encoder: InstanceEncoder,
+    embed_dim: int = 128,
+    attention_hidden_dim: int = 64,
+    n_classes: int = 91,
+    encoder_frozen: bool = True,
+    sab_heads: int = 4,
+    sab_layers: int = 1,
+):
+    """
+    Wrap an encoder in a CytokineSelfAttnMIL pipeline (CLAUDE.md §34).
+
+    Same as build_mil_model but inserts a self-attention (Set-Attention) block
+    over cells before the AB-MIL pooling, so cells interact and an N x N
+    cell x cell "who-influences-whom" matrix is exposed. The pooling head and
+    classifier are identical to build_mil_model, so §33 pooling-head readouts
+    apply unchanged.
+
+    Args:
+        encoder: InstanceEncoder (typically pre-trained via train_encoder).
+        embed_dim: Must match encoder.embed_dim.
+        attention_hidden_dim: AB-MIL pooling hidden dimension (default 64).
+        n_classes: Number of output classes (91 for the full experiment).
+        encoder_frozen: If True, encoder weights are frozen during Stage 2.
+        sab_heads: Number of self-attention heads (default 4).
+        sab_layers: Number of stacked self-attention blocks (default 1).
+    Returns:
+        CytokineSelfAttnMIL ready for train_mil (same forward contract as
+        CytokineABMIL: forward(X) -> (y_hat, a, H)).
+    """
+    # Imported lazily so build_mil_model callers don't pay the import.
+    from cytokine_mil.models.set_transformer_mil import CytokineSelfAttnMIL
+
+    attention = AttentionModule(
+        embed_dim=embed_dim,
+        attention_hidden_dim=attention_hidden_dim,
+    )
+    classifier = BagClassifier(embed_dim=embed_dim, n_classes=n_classes)
+    return CytokineSelfAttnMIL(
+        encoder, attention, classifier,
+        embed_dim=embed_dim, n_heads=sab_heads, n_layers=sab_layers,
+        encoder_frozen=encoder_frozen,
+    )
