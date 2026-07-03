@@ -36,6 +36,9 @@ import numpy as np
 from cytokine_mil.analysis.attention_dynamics import spearman  # numpy-only, no scipy
 from cytokine_mil.analysis.dynamics import aggregate_to_donor_level
 
+# numpy>=2.0 renamed np.trapz -> np.trapezoid; support both.
+_trapz = getattr(np, "trapezoid", None) or np.trapz
+
 # Pre-registered pools (provenance: scripts/run_bootstrap.py SIMPLE_POOL/COMPLEX_POOL,
 # the same red=deep / blue=shallow sets as the early learnability figure).
 SHALLOW_POOL = ["IL-4", "IL-10", "IL-2", "M-CSF", "TNF-alpha",
@@ -67,7 +70,7 @@ def normalized_trajectory_auc(traj: Sequence[float]) -> float:
     pm = a.max()
     if pm <= 0:
         return 0.0
-    return float(np.trapz(a / pm) / (a.size - 1))
+    return float(_trapz(a / pm) / (a.size - 1))
 
 
 def plateau_epoch(
