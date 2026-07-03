@@ -158,6 +158,9 @@ def _parse_args():
                    help="Self-attention heads (model_type=set_transformer only).")
     p.add_argument("--sab_layers", type=int, default=1,
                    help="Self-attention blocks (model_type=set_transformer only).")
+    p.add_argument("--hvg_path", type=str, default=HVG_PATH,
+                   help="JSON gene list to restrict features to (default = the 4000 HVGs). "
+                        "Pass a signature-union list for the confusion-direction experiment.")
     return p.parse_args()
 
 
@@ -285,9 +288,9 @@ def main():
     log("\nLoading manifest...")
     with open(MANIFEST_PATH) as fh:
         manifest = json.load(fh)
-    with open(HVG_PATH) as fh:
+    with open(args.hvg_path) as fh:
         gene_names = json.load(fh)
-    log(f"  {len(manifest)} tubes, {len(gene_names)} HVGs")
+    log(f"  {len(manifest)} tubes, {len(gene_names)} genes (hvg_path={args.hvg_path})")
 
     # ------------------------------------------------------------------
     # Label encoder (full 91 classes)
