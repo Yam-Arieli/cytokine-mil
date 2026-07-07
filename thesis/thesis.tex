@@ -1,0 +1,563 @@
+% ============================================================================
+%  M.Sc. Thesis  --  paper-style scaffold
+%  Systemic mapping of cytokine signalling cascades from single-cell snapshots
+%
+%  Build:  pdflatex thesis  &&  bibtex thesis  &&  pdflatex thesis  &&  pdflatex thesis
+%  (or just run latexmk -pdf thesis.tex ; see README.md)
+%
+%  This file is a SKELETON: preamble + section titles only.
+%  Write the content yourself under each "% >>> write here" marker.
+% ============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% ---- page geometry ---------------------------------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage[english]{babel}
+
+% ---- encoding & fonts ------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+% lmodern is in every TeX install. For a Times-like "paper" look instead,
+% install the newtx package and swap to the two commented lines below.
+\usepackage{lmodern}
+% \usepackage{newtxtext}
+% \usepackage{newtxmath}
+\usepackage{microtype}            % subtle spacing/kerning improvements
+
+% ---- math ------------------------------------------------------------------
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{bm}
+
+% ---- tables, figures, graphics --------------------------------------------
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs}
+\usepackage[table]{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tikz}   % schematic figures (default arrow tips; arrows.meta not installed)
+% For pgfplots data figures (as in reports/method_summary), also:
+% tlmgr install pgfplots ; then \usepackage{pgfplots}\pgfplotsset{compat=1.18}
+
+% ---- lists & layout --------------------------------------------------------
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{parskip}   % gap between paragraphs, no first-line indent (block style)
+
+% ---- bibliography ----------------------------------------------------------
+\usepackage[numbers,sort&compress]{natbib}
+\bibliographystyle{unsrtnat}
+
+% ---- cross-refs & links (load hyperref late) ------------------------------
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
+% Smart cross-references (\cref). Install with: tlmgr install cleveref
+% \usepackage{cleveref}
+
+% ---- handy macros (extend as you write) -----------------------------------
+\newcommand{\crossasym}{\texttt{cross\_asym}}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\rev}[1]{\textcolor{blue}{#1}}  % TEMP: marks corrected/new text; redefine to #1 to clear
+
+% ============================================================================
+\begin{document}
+
+% ----------------------------------------------------------------------------
+%  TITLE PAGE
+% ----------------------------------------------------------------------------
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+
+{\LARGE\bfseries Systemic Mapping of Cytokine Signalling Cascades\\[0.3em]
+from Single-Cell Snapshots via Multiple-Instance-Learning Dynamics\par}
+
+\vspace{2cm}
+{\large Yam Arieli\par}
+
+\vspace{2cm}
+{\large A thesis submitted in partial fulfilment\\
+of the requirements for the degree of\\
+Master of Science\par}
+
+\vspace{1.5cm}
+{\large Advisor: \todo{advisor name}\par}
+\vspace{0.5cm}
+{\large \todo{department / school}\\
+The Hebrew University of Jerusalem\par}
+
+\vfill
+{\large \today\par}
+\end{titlepage}
+
+% ----------------------------------------------------------------------------
+%  FRONT MATTER
+% ----------------------------------------------------------------------------
+\pagenumbering{roman}
+
+\begin{abstract}
+While Immune cells communicate via cytokine signalling cascades that span over time, most of the time we have only single-cell snapshots of the system. In this work, we present a novel approach to infer the dynamics of cytokine signalling cascades from single-cell data using the dynamics of model training to capture the temporal evolution of the system. We demonstrate that our approach can reconstruct the dynamics of cytokine signalling cascades from single-cell snapshots, providing new insights into the temporal evolution of immune cell communication.
+\end{abstract}
+
+\newpage
+\section*{Acknowledgements}
+% >>> write here
+
+\newpage
+\tableofcontents
+\newpage
+
+% ----------------------------------------------------------------------------
+%  MAIN MATTER
+% ----------------------------------------------------------------------------
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\section{Introduction}
+\label{sec:introduction}
+% >>> write here
+
+\section{Background}
+\label{sec:background}
+% >>> write here
+
+\subsection{Biological background}
+Immune cells communicate largely through cytokines: secreted proteins that carry a signal from a producing cell to any cell bearing the matching receptor.
+The signal reshapes the cell's behavior: it can drive the cell to proliferate, to differentiate into a new state, to survive or undergo death, or to migrate.
+Each of these behaviors is driven by a change in gene expression, so it leaves a transcriptional trace in the cell's RNA. How fully that trace captures the behavior varies: cell identity and proliferation are written clearly, whereas migration registers only faintly.
+
+Crucially, part of the response can be the up-regulation of cytokine genes: a cell that receives one cytokine may, as part of its program, secrete another.
+Chaining these steps produces a signalling cascade, cytokine A leading to B leading to C, a process that by its nature unfolds in a fixed temporal order.
+Because the responding population is a mixture of distinct cell types, and each cytokine acts only where its receptor is present, every step of a cascade is confined to particular cell types.
+This makes certain cell types relays: an intermediary responds to the upstream cytokine and produces the downstream one, carrying the cascade from one signal to the next.
+
+Mapping this wiring matters because cytokine cascades sit at the centre of both healthy immune coordination and its failures, and many therapies act by targeting a single cytokine within them. Yet knowing where a therapy should act depends on more than a list of couplings: it requires knowing which cytokine is upstream, and through which relay, turning a static catalogue of immune responses into a map of how signals actually flow. That direction is exactly what today usually demands perturbation or time-course experiments; recovering it instead from a single static snapshot, the aim of this work, would make the knowledge far cheaper and open it to the many single-cell datasets that already exist.
+% >>> write here
+
+\subsection{Computational background}
+\label{sec:comp-background}
+Single-cell RNA sequencing measures each cell individually, representing it as a high-dimensional vector of gene-expression values.
+What we know, however, is not the state of each cell but only which stimulus was applied to the sample as a whole; the individual cells carry no labels of their own.
+
+Learning from such data, where a label describes a bag of instances rather than any one of them, is the problem studied under the name Multiple Instance Learning (MIL).
+The approach adopted here is embedding-based MIL: each instance is mapped to a learned representation, the representations are aggregated into a single bag vector, and the label is predicted from that vector.
+A bag of cells is a set, not a sequence: its cells have no meaningful order, so the aggregation must return the same prediction however they are arranged. It must also handle that only some cells respond informatively to the stimulus while many are uninformative bystanders. Attention-based MIL meets both needs: it aggregates the cells by a learned weighted sum, which is invariant to their order, while the learned weights let the model concentrate on the informative cells instead of diluting them in a plain average. A further benefit is interpretability: because each cell carries an explicit weight, the attention distribution shows which cells the model relied on to identify the stimulus.
+% >>> write here
+
+\section{Related Work}
+\label{sec:related-work}
+% >>> write here
+
+\section{Methods}
+\label{sec:methods}
+% >>> write here
+
+\subsection{The idea}
+\label{sec:methods-idea}
+Our approach is built on two premises. The first is that every cytokine leaves a distinctive transcriptional signature, a set of genes it characteristically induces in the cells that respond to it. The second is that these signatures reveal cascades: the presence of cytokine Y's signature within the response to cytokine X indicates that X drives Y.
+
+\subsubsection{Claim 1: each cytokine induces a distinctive signature}
+\label{sec:claim-signature}
+We define a cytokine's signature as the set of genes most significant for detecting that cytokine, the genes carrying the most information about its response, whether they rise or, less often, fall \citep{golub1999molecular}.
+Recent work makes this concrete: a single-cell dictionary of immune responses recorded a distinct signature for dozens of cytokines, confirming that their responses are separable at the transcriptional level \citep{cui2024dictionary}.
+The distinctiveness is not accidental: because a cytokine acts through its own receptor and a specific downstream pathway, it engages a particular set of transcription factors, and so induces its own target genes.
+Throughout, a cytokine's signature is measured in the responding cells' gene expression, not in the cytokine itself; the molecule is invisible to us, and only its transcriptional footprint is seen.
+
+\subsubsection{Claim 2: asymmetric cross-presence of signatures reveals direction}
+\label{sec:claim-direction}
+If X lies upstream of Y, a sample given only X still generates Y internally: relay cells produce Y and others respond, imprinting Y's signature onto the X condition.
+That a stimulated sample generates such secondary responses is well documented: type I interferon induced downstream of Toll-like receptor activation acts back on the same and neighbouring cells to induce its own signature \citep{gautier2005type}, and single-cell measurements have resolved these paracrine cascades directly \citep{xue2015single}.
+The direction comes from an asymmetry: cells given X carry both X's own signature and the induced Y signature, whereas cells given Y carry mainly their own, since X is not produced downstream of Y; comparing how much of each signature appears in the other condition therefore points from upstream to downstream.
+
+\begin{figure}[H]
+\centering
+% ---------- panel (a): the geometry ----------
+\begin{minipage}[c]{0.46\textwidth}
+\centering
+\begin{tikzpicture}[scale=0.9, line cap=round]
+  % axes (abstract gene space)
+  \draw[->, gray!60] (0,0) -- (5.4,0);
+  \draw[->, gray!60] (0,0) -- (0,5.4);
+  \node[below] at (3.1,-0.2) {\footnotesize $X$ signature subspace};
+  \node[rotate=90] at (-0.85,2.9) {\footnotesize $Y$ signature subspace};
+  % equal-length response vectors
+  \coordinate (O) at (0,0);
+  \coordinate (X) at (20:4);
+  \coordinate (Y) at (85:4);
+  \draw[->, line width=1.3pt, blue!70!black]   (O) -- (X) node[right] {$X$};
+  \draw[->, line width=1.3pt, orange!90!black] (O) -- (Y) node[above] {$Y$};
+  % orthogonal projections onto the OTHER cytokine's subspace (dashed guides)
+  \draw[dashed, gray!70] (X) -- (-0.3, {4*sin(20)});
+  \draw[dashed, gray!70] (Y) -- ({4*cos(85)}, -0.3);
+  % projection-magnitude arrows
+  \draw[->, green!55!black, line width=1.2pt] (-0.3,0) -- (-0.3, {4*sin(20)});
+  \draw[->, red!80!black,   line width=1.2pt] (0,-0.3) -- ({4*cos(85)}, -0.3);
+  % reference symbol at the origin
+  \filldraw[black] (O) circle (2.4pt);
+  \draw[black, line width=0.8pt] (O) circle (4.8pt);
+\end{tikzpicture}\\[2pt]
+{\footnotesize (a)}
+\end{minipage}\hfill
+% ---------- panel (b): the reading ----------
+\begin{minipage}[c]{0.5\textwidth}
+\centering
+\begin{tikzpicture}[line cap=round]
+  % reference-symbol legend
+  \filldraw[black] (0,4.7) circle (2.4pt);
+  \draw[black, line width=0.8pt] (0,4.7) circle (4.8pt);
+  \node[right, align=left] at (0.32,4.7) {\footnotesize $=$ unstimulated reference\\(control, or mean if none)};
+  % the two magnitudes as bars, same start
+  \node[left] at (2.6,3.4) {\footnotesize Y-signature in X};
+  \node[left] at (2.6,2.7) {\footnotesize X-signature in Y};
+  \draw[->, green!55!black, line width=1.3pt] (2.7,3.4) -- (5.7,3.4);
+  \draw[->, red!80!black,   line width=1.3pt] (2.7,2.7) -- (3.45,2.7);
+  % delta: from the red tip to the green tip's x-position
+  \draw[dashed, gray!55] (5.7,3.4) -- (5.7,2.7);
+  \draw[->, gray!45!black, line width=1.1pt] (3.45,2.7) -- (5.7,2.7);
+  \node[above] at (4.575,2.66) {\footnotesize $\Delta$};
+  % relation and conclusion
+  \node at (2.9,1.85) {\footnotesize $\lvert \Delta \rvert \gg \epsilon$};
+  \node at (2.9,1.35) {$\Downarrow$};
+  \node[align=center, text width=6.2cm] at (2.9,0.6)
+    {\footnotesize $Y$'s signature is present in $X$'s transcripts while $X$'s is absent from $Y$'s: $X \to Y$.};
+\end{tikzpicture}\\[2pt]
+{\footnotesize (b)}
+\end{minipage}
+\caption{\textbf{The direction cue as an asymmetry in signature space.} \textbf{(a)} The
+two axes are the $X$ and $Y$ signature subspaces, two sets of directions within the full
+gene space; the ringed dot at the origin is the unstimulated reference. The two
+equal-length vectors are the \emph{full transcriptional responses} to stimulus $X$ and to
+stimulus $Y$, and each is projected onto both signature subspaces. The dashed guides give
+each response's orthogonal projection onto the \emph{other} cytokine's subspace: the $X$
+response onto the $Y$ subspace (green) and the $Y$ response onto the $X$ subspace (red).
+\textbf{(b)} These two cross-projection lengths compared directly: the $X$ response's
+component in the $Y$ subspace (green, ``$Y$-signature in $X$'') far exceeds the $Y$
+response's component in the $X$ subspace (red, ``$X$-signature in $Y$''); their difference
+$\Delta$ is large ($\lvert\Delta\rvert \gg \epsilon$), read as the direction $X \to Y$.}
+\label{fig:asymmetry}
+\end{figure}
+% >>> write here
+
+\subsection{Sub-goals}
+\label{sec:methods-subgoals}
+The method decomposes into three sub-goals, all of which must be achieved without injecting prior knowledge and from a single snapshot in time, the two constraints set out in the Introduction (Section~\ref{sec:introduction}).
+\begin{enumerate}
+\item \textbf{Discover signatures.} Obtain, for each cytokine, a data-driven signature $S_X$: the genes most informative for identifying its response.
+\item \textbf{Find coupling.} Identify cytokine pairs whose signatures are related, marking a shared-biology link, without yet assigning a direction.
+\item \textbf{Assign direction.} Within each coupled pair, determine which cytokine is upstream, from the asymmetric cross-presence of the two signatures.
+\end{enumerate}
+
+\subsection{Data}
+\label{sec:methods-data}
+% >>> write here
+% >>> NOTE: define the "pseudo-tube" here (a bag of cells for one stimulus,
+%          stratified by cell type); 4.4 references it via \ref{sec:methods-data}.
+
+\subsection{Discovering cytokine signatures}
+\label{sec:methods-signatures}
+% >>> write here (opening: goal + strategy + "what the model is NOT" disclaimer)
+
+\subsubsection{Strategy}
+\label{sec:sig-strategy}
+Rather than list signature genes by hand, we recover them from a trained classifier: if a model can identify a cytokine from its cells, the genes it relies on are, by construction, that cytokine's most informative genes.
+The model is therefore only a means: it is trained to predict the stimulus label and nothing else, and once the signatures are read out of it, it is discarded; it does not predict cascades, nor does it output signatures directly.
+What remains is to specify the classifier: its architecture (Section~\ref{sec:sig-architecture}), its training (Section~\ref{sec:sig-training}), and how the signatures are extracted from it (Section~\ref{sec:sig-extraction}).
+
+\subsubsection{Architecture}
+\label{sec:sig-architecture}
+The classifier maps a pseudo-tube (Section~\ref{sec:methods-data}) to a stimulus prediction with an embedding-based multiple-instance-learning (MIL) model, built from three components in sequence: a per-cell encoder, an attention layer that aggregates the cells, and a linear classifier. In MIL the label is attached to a whole bag of instances rather than to any one of them (Section~\ref{sec:comp-background}); here the bag is the pseudo-tube and the instances are its cells, so the model must identify the stimulus from the cells taken together.
+
+The encoder processes one cell at a time, mapping its gene-expression vector to a compact embedding of that cell's type. We train it to classify cell type for two reasons. First, cell identity is the strongest signal in single-cell expression, so capturing it first frees the rest of the model to attend to the subtler, stimulus-specific differences rather than rediscovering what each cell is. Second, cell type is the natural coordinate of the response: each cell type reacts to a stimulus in its own way, so an embedding organised by cell type gives a biologically meaningful space in which those effects can be read.
+
+The stimulus acts on the tube as a whole and only some of its cells respond, so the evidence for which stimulus was applied lies in the cells collectively; we therefore need to aggregate all cells of a pseudo-tube into a single representation.
+The attention layer aggregates by a weighted sum whose weights are learned: the model decides how much each cell contributes to the tube representation.
+Simple alternatives fall short: mean-pooling drowns the few responding cells in a majority of bystanders, and max-pooling collapses the tube to a single cell and loses the distributed pattern; only a learned weighting can adapt to a responsive subset whose size and identity change with the stimulus.
+This weighted-sum pooling is permutation-invariant, as the set structure of the tube requires (Section~\ref{sec:comp-background}), and follows the attention-based MIL formulation of \citet{ilse2018attention}.
+The attention receives the encoder's output, so it selects and weights cells within the cell-type latent space: relevance is judged by what each cell is, and stimulus effects are read in cell-type features rather than raw genes. The resulting tube vector is handed to the classifier.
+
+The final component is a linear classifier: it maps the tube vector to a probability over the stimulus classes. We keep the classifier linear on purpose: this places the model's expressive power in the encoder and attention, and leaves the stimulus decision a transparent function of the tube vector.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\footnotesize, line cap=round]
+  % ---------- 1. pseudo-tube ----------
+  \draw[rounded corners, thick] (-0.9,-1.0) rectangle (0.9,1.0);
+  \fill[gray!30] (-0.42,0.50) circle (0.13);
+  \fill[gray!55] (0.35,0.55)  circle (0.13);
+  \fill[gray!72] (-0.30,-0.15) circle (0.13);
+  \fill[gray!42] (0.44,-0.42) circle (0.13);
+  \fill[gray!62] (0.03,0.12)  circle (0.13);
+  \fill[gray!48] (-0.46,-0.55) circle (0.13);
+  \node at (0,-1.33) {pseudo-tube};
+  \node[gray!65] at (0,-1.63) {\scriptsize bag of cells};
+  % ---------- arrows: tube -> encoder (per cell) ----------
+  \foreach \y in {0.4,0,-0.4} {\draw[->] (0.95,\y) -- (1.8,\y);}
+  \node[align=center] at (1.37,0.86) {\scriptsize per\\cell};
+  % ---------- 2. encoder ----------
+  \draw[thick, fill=gray!8] (1.85,-0.7) rectangle (3.15,0.7);
+  \node at (2.5,0) {Encoder};
+  \node at (2.5,-1.0) {\scriptsize shared};
+  % ---------- arrows: encoder -> encoded ----------
+  \foreach \y in {0.4,0,-0.4} {\draw[->] (3.2,\y) -- (4.25,\y);}
+  \node at (3.72,0.72) {\scriptsize embed};
+  % ---------- 3. encoded cells ----------
+  \draw[rounded corners] (4.3,-1.0) rectangle (5.5,1.0);
+  \foreach \y/\g in {0.72/30, 0.36/55, 0.0/72, -0.36/42, -0.72/62}
+    {\fill[gray!\g] (4.65,{\y-0.12}) rectangle (5.15,{\y+0.12});}
+  \node at (4.9,-1.33) {encoded cells};
+  \node[gray!65] at (4.9,-1.63) {\scriptsize cell-type latent space};
+  % ---------- converging arrows: encoded -> attention (weights a_i) ----------
+  \draw[->, line width=1.6pt] (5.55,0.72)  -- (6.5,0.06);
+  \draw[->, line width=0.5pt] (5.55,0.36)  -- (6.5,0.03);
+  \draw[->, line width=1.0pt] (5.55,0.0)   -- (6.5,0.0);
+  \draw[->, line width=0.4pt] (5.55,-0.36) -- (6.5,-0.03);
+  \draw[->, line width=1.3pt] (5.55,-0.72) -- (6.5,-0.06);
+  \node at (6.0,1.12) {\scriptsize weights $a_i$};
+  % ---------- 4. attention ----------
+  \draw[thick, fill=gray!8] (6.55,-0.7) rectangle (7.85,0.7);
+  \node at (7.2,0) {Attention};
+  % ---------- arrow: attention -> tube vector ----------
+  \draw[->] (7.9,0) -- (8.9,0);
+  \node at (8.4,1.0) {\scriptsize $\sum_i a_i h_i$};
+  % ---------- 5. tube vector ----------
+  \fill[gray!35] (8.95,-0.5) rectangle (9.4,0.5);
+  \draw (8.95,-0.5) rectangle (9.4,0.5);
+  \node[align=center] at (9.175,-0.9) {\scriptsize tube\\vector};
+  % ---------- arrow: tube vector -> classifier ----------
+  \draw[->] (9.45,0) -- (10.35,0);
+  % ---------- 6. classifier ----------
+  \draw[thick, fill=gray!8] (10.4,-0.7) rectangle (11.7,0.7);
+  \node[align=center] at (11.05,0) {Linear\\classifier};
+  % ---------- arrow: classifier -> probabilities ----------
+  \draw[->] (11.75,0) -- (12.5,0);
+  \node at (12.12,0.32) {\scriptsize $\hat{y}$};
+  % ---------- 7. class-probability bar ----------
+  \draw (12.55,-0.6) -- (13.8,-0.6);
+  \foreach \i/\h/\g in {0/0.45/45, 1/0.80/45, 2/0.30/45, 3/1.25/72, 4/0.55/45}
+    {\fill[gray!\g] ({12.62+\i*0.23},-0.6) rectangle ({12.62+\i*0.23+0.15},{-0.6+\h});}
+  \node[align=center] at (13.15,-0.95) {\scriptsize stimulus\\probabilities};
+\end{tikzpicture}
+\caption{\textbf{The signature-discovery model.} A pseudo-tube (a bag of cells, each a
+gene-expression vector) is processed left to right. The encoder embeds \emph{each cell}
+independently (parallel arrows) into the cell-type latent space; the attention layer then
+takes \emph{all} cell embeddings \emph{together} (converging arrows), weights them by
+$a_i$ and sums them into a single tube vector; the linear classifier maps that vector to a
+probability over the stimulus classes. The model outputs only a stimulus label; the
+per-cytokine signature is extracted from the trained model afterwards
+(Section~\ref{sec:sig-extraction}), and the model is then discarded.}
+\label{fig:model}
+\end{figure}
+
+\subsubsection{Training}
+\label{sec:sig-training}
+We train in two stages. In the first, the encoder learns to classify cell type; in the second, the encoder is held fixed while the attention and classifier learn to identify the stimulus. Holding the encoder frozen in the second stage anchors the stimulus signal in the biologically-grounded cell-type space, and prevents the encoder from collapsing that structure to chase the stimulus label.
+
+For each cytokine we train a binary classifier of its tubes versus control tubes, so the discriminative genes capture how that cytokine's response departs from baseline. A single multiclass model would instead have to separate each cytokine from all the others, including cytokines with similar effects, so its discriminative genes drift toward whatever tells those similar responses apart, subtle features that overfit the inter-cytokine boundaries rather than capture the cytokine's core response. The binary classifiers all share the one frozen Stage-one encoder, so the signatures are produced consistently; because the cross-engagement in Section~\ref{sec:methods-direction} compares one signature against another, that consistency is what makes the comparison fair.
+
+\subsubsection{Signature extraction}
+\label{sec:sig-extraction}
+To read the signature out of a trained binary model, we apply Integrated Gradients \citep{sundararajan2017axiomatic}, which attributes the model's prediction to the input genes; the top-ranked genes form that cytokine's \rev{signature $S_X$}. Because the model is nonlinear, the genes it relies on cannot be read off directly; Integrated Gradients is a principled attribution method that recovers them by integrating the model's sensitivity from the baseline to the cell. Crucially, these attributions are not interchangeable with differential expression: an ablation (Section~\ref{sec:results}) finds that a model-free fold-change list picks almost disjoint genes and loses the direction signal, confirming the model's attributions carry information a simple ranking does not.
+
+\begin{figure}[H]
+\centering
+% ---------- panel (a): gradient field + interpolation path ----------
+\begin{minipage}[c]{0.57\textwidth}
+\centering
+\begin{tikzpicture}[line cap=round, scale=0.82]
+  \draw[->, gray!55] (0,0) -- (8.7,0);
+  \draw[->, gray!55] (0,0) -- (0,5.4);
+  \node at (4.2,-0.5) {\footnotesize gene 1};
+  \node[rotate=90] at (-0.42,2.7) {\footnotesize gene 2};
+  % gradient field grad F (grey arrows)
+  \foreach \gx in {0.8,1.7,2.6,3.5,4.4,5.3,6.2,7.1}{
+    \foreach \gy in {0.6,1.4,2.2,3.0,3.8,4.6}{
+      \pgfmathsetmacro{\dx}{0.26}
+      \pgfmathsetmacro{\dy}{0.09*(\gy-1.7)}
+      \draw[->, gray!45, line width=0.5pt] (\gx,\gy) -- ++(\dx,\dy);
+    }
+  }
+  % IG straight path: baseline -> input
+  \coordinate (base) at (0.8,0.7);
+  \coordinate (inp)  at (7.1,4.4);
+  \draw[thick, orange!85!black] (base) -- (inp);
+  \fill (base) circle (2.6pt);
+  \node[below right, align=left]  at (base) {\scriptsize baseline\\(control)};
+  \fill (inp) circle (2.6pt);
+  \node[above left, align=right]  at (inp)  {\scriptsize input\\(cell)};
+  % gradients sampled along the path (blue)
+  \foreach \t in {0.18,0.40,0.62,0.84}{
+    \pgfmathsetmacro{\px}{0.8 + \t*(7.1-0.8)}
+    \pgfmathsetmacro{\py}{0.7 + \t*(4.4-0.7)}
+    \pgfmathsetmacro{\uy}{0.19*(\py-1.7)}
+    \draw[->, blue!65!black, line width=1.1pt] (\px,\py) -- ++(0.55,\uy);
+  }
+  \node[blue!65!black, anchor=west, align=left] at (4.4,1.3) {\footnotesize gradients\\sampled along\\the path};
+\end{tikzpicture}\\[2pt]
+{\footnotesize (a)}
+\end{minipage}\hfill
+% ---------- panel (b): decompose (upper) + compare & keep (lower) ----------
+\begin{minipage}[c]{0.40\textwidth}
+\centering
+\begin{tikzpicture}[line cap=round]
+  % ===== upper: decomposition (y-axis halved, sits in the upper half) =====
+  \draw[->, gray!55] (0,0) -- (4.1,0);
+  \draw[->, gray!55] (0,0) -- (0,2.2);
+  \node[above] at (3.7,0.05) {\footnotesize gene 1};
+  \node[rotate=90] at (-0.5,1.5) {\footnotesize gene 2};
+  % summed gradient
+  \draw[->, thick, blue!65!black] (0,0) -- (3.2,1.4);
+  \node[blue!65!black, anchor=south east] at (2.5,1.25) {\footnotesize $\sum$ grad.};
+  % decomposition guides
+  \draw[dashed, gray!60] (3.2,1.4) -- (3.2,0);
+  \draw[dashed, gray!60] (3.2,1.4) -- (0,1.4);
+  % gene-1 component (green, below x-axis)
+  \draw[->, thick, green!55!black] (0,-0.3) -- (3.2,-0.3);
+  % gene-2 component (grey, left of y-axis)
+  \draw[->, thick, gray!55!black] (-0.3,0) -- (-0.3,1.4);
+  % ===== divider =====
+  \draw[gray!35] (-0.6,-0.85) -- (4.1,-0.85);
+  % ===== lower: lay the two components side by side, keep the longer =====
+  \draw[->, thick, green!55!black] (0.95,-1.35) -- (4.15,-1.35);
+  \node[left] at (0.9,-1.35) {\scriptsize gene 1};
+  \draw[->, thick, gray!55!black] (0.95,-1.95) -- (2.35,-1.95);
+  \node[left] at (0.9,-1.95) {\scriptsize gene 2};
+  \node[align=center] at (1.9,-2.6)
+    {\scriptsize {\color{green!55!black}green} is longer\\ $\Rightarrow$ keep gene 1 in $r_X$};
+\end{tikzpicture}\\[2pt]
+{\footnotesize (b)}
+\end{minipage}
+\caption{\textbf{Integrated Gradients: line integral of the gradient field, then select.}
+\textbf{(a)} The grey arrows are the gradient field $\nabla F$ of the target score over a
+two-gene input space; Integrated Gradients follows the straight path from the baseline
+(control) to the input (cell) and samples the gradient along it (blue). \textbf{(b)} The
+sampled gradients are summed and decomposed along the two gene axes (top); by the gradient
+theorem the total equals $F(\text{cell})-F(\text{control})$, and each axis component is
+that gene's attribution. Laying the two components side by side (bottom), the gene with the
+larger component (here gene~1) is kept for the raw signature $r_X$ and the smaller (gene~2) is
+dropped.}
+\label{fig:ig3}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+% ---------- panel (a): raw space -- 3 signatures share the average program p ----------
+\begin{minipage}[b]{0.48\textwidth}
+\centering
+\begin{tikzpicture}[line cap=round, scale=0.82]
+  % light grid (0.5-unit cells)
+  \draw[step=0.5, gray!18, very thin] (0,0) grid (5.4,3.7);
+  % axes
+  \draw[->, gray!50] (0,0) -- (5.7,0);
+  \draw[->, gray!50] (0,0) -- (0,3.95);
+  % shared program p = average of the three raw signatures
+  \draw[->, very thick, gray!60!black] (0,0) -- (4.0,2.4);
+  \node[gray!55!black] at (3.0,0.5) {\scriptsize $p=\overline{r}$};
+  % three raw signatures (tips average exactly to p)
+  \draw[->, thick, blue!65!black]   (0,0) -- (4.84,3.11);
+  \draw[->, thick, orange!90!black] (0,0) -- (2.97,2.78);
+  \draw[->, thick, teal!80!black]   (0,0) -- (4.19,1.31);
+  \node[blue!70!black]   at (5.04,3.24) {\scriptsize $r_1$};
+  \node[orange!85!black] at (2.72,2.94) {\scriptsize $r_2$};
+  \node[teal!70!black]   at (4.38,1.12) {\scriptsize $r_3$};
+  % zoom box around the tip cluster (centered on the tip of p)
+  \draw[dashed, gray!60] (2.85,1.20) rectangle (5.15,3.60);
+\end{tikzpicture}\\[3pt]
+{\footnotesize (a) raw signatures cluster around the average $p$}
+\end{minipage}\hfill
+% ---------- panel (b): zoomed residual space -- subtract p, residuals fan out ----------
+\begin{minipage}[b]{0.48\textwidth}
+\centering
+\begin{tikzpicture}[line cap=round, scale=0.82]
+  % dashed frame = the zoom box from (a)
+  \draw[dashed, gray!60] (-2.6,-2.6) rectangle (2.2,2.0);
+  % zoomed grid: same 0.5-unit cells, magnified 2x -> cells are twice as big
+  \draw[step=1.0, gray!18, very thin] (-2.6,-2.6) grid (2.2,2.0);
+  % axes through the new origin (= tip of p)
+  \draw[->, gray!50] (-2.6,0) -- (2.15,0);
+  \draw[->, gray!50] (0,-2.6) -- (0,1.95);
+  % residuals S_i = r_i - p, drawn from the tip of p (zoom factor 2.0)
+  \draw[->, thick, blue!65!black]   (0,0) -- (1.68,1.42);
+  \draw[->, thick, orange!90!black] (0,0) -- (-2.06,0.76);
+  \draw[->, thick, teal!80!black]   (0,0) -- (0.38,-2.18);
+  \node[blue!70!black]   at (1.88,1.55) {\scriptsize $S_1$};
+  \node[orange!85!black] at (-2.24,0.90) {\scriptsize $S_2$};
+  \node[teal!70!black]   at (0.60,-2.30) {\scriptsize $S_3$};
+  % mark the center = tip of p (the vector we subtracted)
+  \fill[gray!60!black] (0,0) circle (1.7pt);
+  \node[gray!55!black, above right] at (0.06,0.04) {\scriptsize $p$};
+\end{tikzpicture}\\[3pt]
+{\footnotesize (b) subtract $p$, zoom in: residuals point apart}
+\end{minipage}
+\caption{\textbf{Panel-residualisation subtracts the shared program.} \textbf{(a)}~The raw
+signatures $r_1,r_2,r_3$ of three cytokines share a large common component and cluster around
+their average $p=\overline{r}$ (grey), the shared-activation program; at this scale they are
+hard to tell apart. \textbf{(b)}~We subtract the \emph{same} vector $p$ from each and zoom into
+the dashed box: the residual $S_i=r_i-p$ is each cytokine's deviation from the average. The
+residuals point in clearly different directions, so the cytokine-specific signatures become
+distinguishable; because they are deviations from a mean, they sum to zero. This residual is
+the signature carried downstream. The effect of the shared-activation confound on coupling is
+treated in Section~\ref{sec:methods-direction}.}
+\label{fig:panelresid}
+\end{figure}
+Running this for every cytokine yields a set of signatures $\{S_X\}$, one per cytokine, the output of this stage and the input to the coupling and direction analysis of Section~\ref{sec:methods-direction}.
+
+\subsection{Inferring cascade direction}
+\label{sec:methods-direction}
+With a signature $S_X$ now in hand for every cytokine (Section~\ref{sec:methods-signatures}), we can decide, for each pair, whether the two cytokines are coupled and, if so, whether one is upstream of the other.
+Write $c_g$ for the expression of gene $g$ in cell $c$, let $\mathcal{C}_a$ be the cells of the sample given stimulus $a$, and let $\mathcal{C}_0$ be the control cells.
+The score of a cell on a gene set $S$ is its mean expression over that set,
+\[
+  \sigma_S(c)=\frac{1}{|S|}\sum_{g\in S} c_g,
+\]
+and its average over a population of cells $\mathcal{C}$ is that population's mean signature score,
+\[
+  \bar\sigma_S(\mathcal{C})=\frac{1}{|\mathcal{C}|}\sum_{c\in\mathcal{C}}\sigma_S(c).
+\]
+The \emph{engagement} of $a$ with $b$'s signature is then $a$'s level minus the control baseline,
+\[
+  s(a,S_b)=\bar\sigma_{S_b}(\mathcal{C}_a)-\bar\sigma_{S_b}(\mathcal{C}_0),
+\]
+which quantifies ``how much of $b$'s signature appears in $a$'s response.''
+Over all ordered pairs these values form the cross-engagement matrix $M$ with $M_{ab}=s(a,S_b)$; everything that follows reads off this one matrix.
+
+Subtracting the control term is what turns a raw expression level into a measure of \emph{induction}. Signature genes are not silent at rest, so $\bar\sigma_{S_b}(\mathcal{C}_a)$ on its own conflates how much stimulus $a$ actually drives $b$'s program with the level those genes sit at anyway; subtracting their level in control cells, $\bar\sigma_{S_b}(\mathcal{C}_0)$, removes that resting baseline and leaves only the increase above rest. This matters most because $S_a$ and $S_b$ are different gene sets with different baselines: normalising each engagement to its own signature's control level puts $s(a,S_b)$ and $s(b,S_a)$ on a common footing, so that when the two are compared the difference reflects induction rather than a mismatch in resting expression between the gene sets.
+
+A coupled pair is one whose signatures show up in each other's response, so we score coupling by the symmetric sum $M_{ab}+M_{ba}$; a high score flags shared biology, which could be a cascade or another form of correlation.
+\rev{But because almost every cytokine co-induces a shared-activation program, a broadly-engaged cytokine's signature turns up in many responses and would look coupled to everything; we correct for this by subtracting each cytokine's overall engagement level from the matrix, a symmetric adjustment that leaves only pair-specific coupling and, being symmetric, does not affect the direction call below. We then judge a pair coupled with a donor-level test, treating the donor rather than the individual cell as the unit of evidence.}
+
+Direction comes from the asymmetric part of the same matrix: $\mathrm{cross\_asym}(a,b)=M_{ab}-M_{ba}$, which is large and positive exactly when $a$'s cells carry $b$'s program but not the reverse, the upstream-to-downstream signature Claim~2 predicts.
+The quantity is antisymmetric, $\mathrm{cross\_asym}(b,a)=-\mathrm{cross\_asym}(a,b)$, so unlike the symmetric coupling sum its sign points to the upstream cytokine ($a$ upstream when positive, under a fixed naming convention).
+
+Each quantity so far is computed within a cell type; we combine cell types into one call per pair by taking the median cross-engagement and the fraction of cell types that agree on its sign, so a direction rests on agreement across cell types rather than on any single one.
+Because it is read from one snapshot, a call points to the most likely direction of a cascade, evidence the Results confirm against known cascades, short of the intervention that would prove causation.
+
+\section{Results}
+\label{sec:results}
+% >>> write here
+
+\section{Discussion}
+\label{sec:discussion}
+% >>> write here
+
+\section{Limitations}
+\label{sec:limitations}
+% >>> write here
+
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+% >>> write here
+
+% ----------------------------------------------------------------------------
+%  BACK MATTER
+% ----------------------------------------------------------------------------
+\newpage
+\bibliography{references}
+
+\appendix
+\section{Supplementary Material}
+\label{app:supplementary}
+% >>> write here
+
+\end{document}

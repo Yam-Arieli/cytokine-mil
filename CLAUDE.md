@@ -1716,9 +1716,18 @@ degree). Code in `cytokine_mil/analysis/signature_coupling.py`
 `_degree_center`, `cell_coupling_degree`). Findings:
 - **Signature definition (ablation):** IG_vsPBS reproduces ~88% direction; **DE ≠ IG**
   (Jaccard 0.11, DE direction 59%≈chance) → the encoder/IG is *not* replaceable by DE (keep
-  it). **IG_vsPanel** (panel-residualised, removes shared activation) == IG_vsPBS on direction,
-  slightly less hub-dominated → adopt as default signature. Specificity alone does NOT fix the
-  gate (the cell-level null is over-powered regardless).
+  it). **IG_vsPanel** (panel-residualised, removes shared activation) equals IG_vsPBS **on
+  direction** and is only marginally less hub-dominated, so it neither changes the direction
+  result nor reduced the coupling over-call (the cell-level null is over-powered regardless)
+  → it was **NOT adopted**. The **default signature is IG_vsPBS (raw top-50 by IG, no
+  residualisation)**, matching `cascadir.derive_signature` and the consolidated
+  `reports/progress_report/progress_report.pdf` (2026-06-25, Table 2 "IG, vs-PBS (current)");
+  the shared-activation / coupling over-call is fixed by **degree correction** (next bullet),
+  not by the signature. *(Correction 2026-07-07: this bullet previously read "→ adopt
+  [IG_vsPanel] as default signature," which the progress report and cascadir's raw-IG path
+  both contradict. A marginal vsPanel coupling-ranking edge exists on Oesinghaus only and
+  over-strips on ID/Cano-Gamez — a documented nuance, not the default:
+  `reports/cascade_pairs/COUPLING_DONOR_COUNT_OES.md`.)*
 - **Degree (hub) correction is THE fix** (double-center the coupling matrix → pair-specific
   residual; symmetric, so `cross_asym`/direction unaffected). *Oesinghaus donor+degree:*
   over-call 77%→**31%**, recall 8→**11/17** (≈2.1× enrichment). *Sheu cell+degree:* keeps
