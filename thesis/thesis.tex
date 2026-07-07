@@ -424,7 +424,7 @@ To read the signature out of a trained binary model, we apply Integrated Gradien
   \draw[->, thick, gray!55!black] (0.95,-1.95) -- (2.35,-1.95);
   \node[left] at (0.9,-1.95) {\scriptsize gene 2};
   \node[align=center] at (1.9,-2.6)
-    {\scriptsize {\color{green!55!black}green} is longer\\ $\Rightarrow$ keep gene 1 in $r_X$};
+    {\scriptsize {\color{green!55!black}green} is longer\\ $\Rightarrow$ keep gene 1 in $S_X$};
 \end{tikzpicture}\\[2pt]
 {\footnotesize (b)}
 \end{minipage}
@@ -435,72 +435,43 @@ two-gene input space; Integrated Gradients follows the straight path from the ba
 sampled gradients are summed and decomposed along the two gene axes (top); by the gradient
 theorem the total equals $F(\text{cell})-F(\text{control})$, and each axis component is
 that gene's attribution. Laying the two components side by side (bottom), the gene with the
-larger component (here gene~1) is kept for the raw signature $r_X$ and the smaller (gene~2) is
-dropped.}
+larger component (here gene~1) is kept for the signature $S_X$ and the smaller (gene~2) is
+dropped; with a full panel of thousands of genes, the top-50 by attribution form $S_X$.}
 \label{fig:ig3}
 \end{figure}
 
+\rev{Figure~\ref{fig:sigselect} shows the selection step: with one attribution per gene, the genes are ranked and the top-50 (boxed) are kept as the signature $S_X$ --- a set of genes --- while the rest are dropped.}
+
 \begin{figure}[H]
 \centering
-% ---------- panel (a): raw space -- 3 signatures share the average program p ----------
-\begin{minipage}[b]{0.48\textwidth}
-\centering
-\begin{tikzpicture}[line cap=round, scale=0.82]
-  % light grid (0.5-unit cells)
-  \draw[step=0.5, gray!18, very thin] (0,0) grid (5.4,3.7);
+\begin{tikzpicture}[line cap=round, scale=0.92]
   % axes
-  \draw[->, gray!50] (0,0) -- (5.7,0);
-  \draw[->, gray!50] (0,0) -- (0,3.95);
-  % shared program p = average of the three raw signatures
-  \draw[->, very thick, gray!60!black] (0,0) -- (4.0,2.4);
-  \node[gray!55!black] at (3.0,0.5) {\scriptsize $p=\overline{r}$};
-  % three raw signatures (tips average exactly to p)
-  \draw[->, thick, blue!65!black]   (0,0) -- (4.84,3.11);
-  \draw[->, thick, orange!90!black] (0,0) -- (2.97,2.78);
-  \draw[->, thick, teal!80!black]   (0,0) -- (4.19,1.31);
-  \node[blue!70!black]   at (5.04,3.24) {\scriptsize $r_1$};
-  \node[orange!85!black] at (2.72,2.94) {\scriptsize $r_2$};
-  \node[teal!70!black]   at (4.38,1.12) {\scriptsize $r_3$};
-  % zoom box around the tip cluster (centered on the tip of p)
-  \draw[dashed, gray!60] (2.85,1.20) rectangle (5.15,3.60);
-\end{tikzpicture}\\[3pt]
-{\footnotesize (a) raw signatures cluster around the average $p$}
-\end{minipage}\hfill
-% ---------- panel (b): zoomed residual space -- subtract p, residuals fan out ----------
-\begin{minipage}[b]{0.48\textwidth}
-\centering
-\begin{tikzpicture}[line cap=round, scale=0.82]
-  % dashed frame = the zoom box from (a)
-  \draw[dashed, gray!60] (-2.6,-2.6) rectangle (2.2,2.0);
-  % zoomed grid: same 0.5-unit cells, magnified 2x -> cells are twice as big
-  \draw[step=1.0, gray!18, very thin] (-2.6,-2.6) grid (2.2,2.0);
-  % axes through the new origin (= tip of p)
-  \draw[->, gray!50] (-2.6,0) -- (2.15,0);
-  \draw[->, gray!50] (0,-2.6) -- (0,1.95);
-  % residuals S_i = r_i - p, drawn from the tip of p (zoom factor 2.0)
-  \draw[->, thick, blue!65!black]   (0,0) -- (1.68,1.42);
-  \draw[->, thick, orange!90!black] (0,0) -- (-2.06,0.76);
-  \draw[->, thick, teal!80!black]   (0,0) -- (0.38,-2.18);
-  \node[blue!70!black]   at (1.88,1.55) {\scriptsize $S_1$};
-  \node[orange!85!black] at (-2.24,0.90) {\scriptsize $S_2$};
-  \node[teal!70!black]   at (0.60,-2.30) {\scriptsize $S_3$};
-  % mark the center = tip of p (the vector we subtracted)
-  \fill[gray!60!black] (0,0) circle (1.7pt);
-  \node[gray!55!black, above right] at (0.06,0.04) {\scriptsize $p$};
-\end{tikzpicture}\\[3pt]
-{\footnotesize (b) subtract $p$, zoom in: residuals point apart}
-\end{minipage}
-\caption{\textbf{Panel-residualisation subtracts the shared program.} \textbf{(a)}~The raw
-signatures $r_1,r_2,r_3$ of three cytokines share a large common component and cluster around
-their average $p=\overline{r}$ (grey), the shared-activation program; at this scale they are
-hard to tell apart. \textbf{(b)}~We subtract the \emph{same} vector $p$ from each and zoom into
-the dashed box: the residual $S_i=r_i-p$ is each cytokine's deviation from the average. The
-residuals point in clearly different directions, so the cytokine-specific signatures become
-distinguishable; because they are deviations from a mean, they sum to zero. This residual is
-the signature carried downstream. The effect of the shared-activation confound on coupling is
-treated in Section~\ref{sec:methods-direction}.}
-\label{fig:panelresid}
+  \draw[->, gray!55] (0,0) -- (9.3,0);
+  \draw[->, gray!55] (0,0) -- (0,3.4);
+  \node[rotate=90] at (-0.45,1.65) {\footnotesize IG attribution};
+  \node at (4.6,-0.55) {\footnotesize genes, ranked by attribution};
+  % kept: top genes (green)
+  \foreach \i/\h in {0/3.0, 1/2.7, 2/2.45, 3/2.2, 4/2.0, 5/1.8} {
+    \fill[green!55!black] ({0.35+\i*0.46},0) rectangle ({0.35+\i*0.46+0.32},{\h});
+  }
+  % dropped: the rest (grey), tapering off
+  \foreach \i/\h in {6/1.25, 7/1.05, 8/0.9, 9/0.78, 10/0.66, 11/0.55,
+                     12/0.46, 13/0.38, 14/0.31, 15/0.25, 16/0.2, 17/0.16, 18/0.12} {
+    \fill[gray!45] ({0.35+\i*0.46},0) rectangle ({0.35+\i*0.46+0.32},{\h});
+  }
+  % box around the kept top genes
+  \draw[dashed, green!45!black, thick] (0.22,-0.15) rectangle (3.04,3.25);
+  \node[green!45!black, anchor=west] at (3.25,2.98) {\footnotesize $S_X$: top-50 genes};
+  \node[green!45!black, anchor=west] at (3.25,2.55) {\footnotesize (a gene set $\to$ the $S_X$ subspace)};
+  \node[anchor=west] at (6.0,1.35) {\footnotesize rest: dropped};
+\end{tikzpicture}
+\caption{\textbf{Selecting the signature.} Integrated Gradients gives one attribution per gene
+(Figure~\ref{fig:ig3}); ranking all genes and keeping the top-50 (green, boxed) yields the
+signature $S_X$ --- a \emph{set} of genes, and the subspace onto which cross-engagement is
+measured in Section~\ref{sec:methods-direction}. The remaining genes (grey) are dropped.}
+\label{fig:sigselect}
 \end{figure}
+
 Running this for every cytokine yields a set of signatures $\{S_X\}$, one per cytokine, the output of this stage and the input to the coupling and direction analysis of Section~\ref{sec:methods-direction}.
 
 \subsection{Inferring cascade direction}
@@ -525,7 +496,8 @@ Over all ordered pairs these values form the cross-engagement matrix $M$ with $M
 Subtracting the control term is what turns a raw expression level into a measure of \emph{induction}. Signature genes are not silent at rest, so $\bar\sigma_{S_b}(\mathcal{C}_a)$ on its own conflates how much stimulus $a$ actually drives $b$'s program with the level those genes sit at anyway; subtracting their level in control cells, $\bar\sigma_{S_b}(\mathcal{C}_0)$, removes that resting baseline and leaves only the increase above rest. This matters most because $S_a$ and $S_b$ are different gene sets with different baselines: normalising each engagement to its own signature's control level puts $s(a,S_b)$ and $s(b,S_a)$ on a common footing, so that when the two are compared the difference reflects induction rather than a mismatch in resting expression between the gene sets.
 
 A coupled pair is one whose signatures show up in each other's response, so we score coupling by the symmetric sum $M_{ab}+M_{ba}$; a high score flags shared biology, which could be a cascade or another form of correlation.
-\rev{But because almost every cytokine co-induces a shared-activation program, a broadly-engaged cytokine's signature turns up in many responses and would look coupled to everything; we correct for this by subtracting each cytokine's overall engagement level from the matrix, a symmetric adjustment that leaves only pair-specific coupling and, being symmetric, does not affect the direction call below. We then judge a pair coupled with a donor-level test, treating the donor rather than the individual cell as the unit of evidence.}
+\rev{But because almost every cytokine co-induces a shared-activation program, a broadly-engaged cytokine's signature turns up in many responses and would look coupled to everything.}
+
 
 Direction comes from the asymmetric part of the same matrix: $\mathrm{cross\_asym}(a,b)=M_{ab}-M_{ba}$, which is large and positive exactly when $a$'s cells carry $b$'s program but not the reverse, the upstream-to-downstream signature Claim~2 predicts.
 The quantity is antisymmetric, $\mathrm{cross\_asym}(b,a)=-\mathrm{cross\_asym}(a,b)$, so unlike the symmetric coupling sum its sign points to the upstream cytokine ($a$ upstream when positive, under a fixed naming convention).
