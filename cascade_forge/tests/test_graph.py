@@ -58,3 +58,14 @@ def test_cascade_graph_from_dict(simple_cascades):
     assert ("G", "H") in g.bidirectional
     gt = g.to_ground_truth()
     assert gt["direct_edges"] and isinstance(gt["direct_edges"][0], list)
+
+
+def test_isolated_labels_added_without_edges():
+    g = CascadeGraph.from_dict({"A": {"B": 0.5}}, isolated_labels=["Q", "R"])
+    assert set(g.labels) == {"A", "B", "Q", "R"}
+    assert all("Q" not in e and "R" not in e for e in g.direct + g.reachable)
+
+
+def test_isolated_label_collision_raises():
+    with pytest.raises(ValueError):
+        CascadeGraph.from_dict({"A": {"B": 0.5}}, isolated_labels=["B"])

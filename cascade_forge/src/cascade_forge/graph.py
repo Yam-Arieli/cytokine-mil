@@ -144,8 +144,24 @@ class CascadeGraph:
     bidirectional: List[Tuple[str, str]]
 
     @classmethod
-    def from_dict(cls, cascades: Mapping[str, Mapping[str, object]]) -> "CascadeGraph":
+    def from_dict(
+        cls,
+        cascades: Mapping[str, Mapping[str, object]],
+        isolated_labels: Sequence[str] = (),
+    ) -> "CascadeGraph":
+        """Build the graph, optionally adding ``isolated_labels`` (labels with no edges).
+
+        Isolated labels exist as labels (they get their own program and appear as
+        conditions) but have no outgoing or incoming cascade — the negative controls.
+        """
         labels, edges = normalize_cascades(cascades)
+        iso = [str(x) for x in isolated_labels]
+        collide = sorted(set(iso) & set(labels))
+        if collide:
+            raise ValueError(
+                f"isolated_labels also appear in the cascade graph (not isolated): {collide}"
+            )
+        labels = sorted(set(labels) | set(iso))
         reach = reachable_edges(labels, edges)
         return cls(
             labels=labels,

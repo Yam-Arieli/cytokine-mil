@@ -244,7 +244,8 @@ def generate_tube(
     n_cells: int,
     output: str,
     rng: np.random.Generator,
-) -> tuple[np.ndarray, List[str]]:
+    sparse: bool = False,
+):
     """Generate one tube (bag) of cells for a (donor, condition).
 
     Args:
@@ -255,9 +256,12 @@ def generate_tube(
         n_cells: number of cells in the tube.
         output: ``"raw"`` (Poisson integer counts) or ``"lognorm"`` (log1p-space floats).
         rng: random generator.
+        sparse: if True, return ``X`` as a ``scipy.sparse.csr_matrix`` (bit-identical to
+            the dense draw; useful for large raw-count runs). Default dense ndarray.
 
     Returns:
-        ``(X, cell_type_names)`` with ``X`` shape ``(n_cells, n_genes)``.
+        ``(X, cell_type_names)`` with ``X`` shape ``(n_cells, n_genes)`` (dense ndarray
+        or CSR matrix depending on ``sparse``).
     """
     cfg = model.cfg
     k = len(model.cell_types)
@@ -285,9 +289,13 @@ def generate_tube(
 
     X = np.clip(X, 0.0, None)
     if output == "lognorm":
-        return X.astype(np.float32), cell_type_names
-    if output == "raw":
+        out = X.astype(np.float32)
+    elif output == "raw":
         rate = np.expm1(X)                       # so log1p(counts) ~ X in expectation
-        counts = rng.poisson(rate).astype(np.float32)
-        return counts, cell_type_names
-    raise ValueError(f"output must be 'raw' or 'lognorm', got {output!r}")
+        out = rng.poisson(rate).astype(np.float32)
+    else:
+        raise ValueError(f"output must be 'raw' or 'lognorm', got {output!r}")
+    if sparse:
+        from scipy import sparse as sp
+        out = sp.csr_matrix(out)
+    return out, cell_type_names

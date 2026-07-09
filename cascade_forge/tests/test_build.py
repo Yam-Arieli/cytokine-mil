@@ -80,6 +80,43 @@ def test_data_level_direction_recovers_planted_chain():
         assert _mean_cross_asym(adata, a, b, pg) > 0, f"wrong sign for {a}->{b}"
 
 
+def test_isolated_labels_appear_as_conditions_without_edges():
+    sim = CascadeSimulator({"A": {"B": 0.6}}, isolated_labels=("Q", "R"),
+                           n_cell_types=2, n_cells_per_tube=40, n_donors=3,
+                           output="lognorm", seed=0)
+    res = sim.simulate(snapshot_times=[2.0])
+    conds = set(res.adata.obs["condition"])
+    assert {"Q", "R"}.issubset(conds)
+    assert res.model.program_genes["Q"]                       # has a program
+    assert all("Q" not in e for e in res.direct_edges + res.reachable_edges)  # no edges
+    # Applying an isolated label activates only itself.
+    act_Q = res.activation[2.0]["Q"]
+    assert act_Q["Q"] == 1.0 and all(v == 0.0 for k, v in act_Q.items() if k != "Q")
+
+
+def test_isolated_label_collides_with_control_raises():
+    with pytest.raises(ValueError):
+        CascadeSimulator({"A": {"B": 0.6}}, isolated_labels=("PBS",))
+
+
+def test_sparse_output_matches_dense_bit_for_bit():
+    import scipy.sparse as spx
+    kw = dict(n_cell_types=2, n_cells_per_tube=50, n_donors=3, output="raw", seed=3)
+    dense = CascadeSimulator({"A": {"B": 0.6}}, sparse=False, **kw).simulate([2.0]).adata
+    sparse = CascadeSimulator({"A": {"B": 0.6}}, sparse=True, **kw).simulate([2.0]).adata
+    assert spx.issparse(sparse.X)
+    assert np.array_equal(sparse.X.toarray(), np.asarray(dense.X))
+
+
+def test_sparse_h5ad_roundtrip(tmp_path):
+    import anndata as ad
+    res = simulate({"A": {"B": 0.6}}, snapshot_times=[2.0], n_cell_types=2,
+                   n_cells_per_tube=40, n_donors=3, output="raw", sparse=True, seed=0)
+    paths = res.save(str(tmp_path))
+    reloaded = ad.read_h5ad(paths[0])
+    assert reloaded.n_obs == res.adata.n_obs and reloaded.n_vars == res.adata.n_vars
+
+
 def test_save_writes_files(simple_cascades, tmp_path):
     res = simulate(simple_cascades, snapshot_times=[1.0, 2.0], n_cell_types=2,
                    n_cells_per_tube=40, n_donors=3, output="lognorm", seed=0)

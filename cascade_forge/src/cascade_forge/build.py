@@ -17,6 +17,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 import anndata as ad
 import numpy as np
 import pandas as pd
+from scipy import sparse as sp
 
 from .dynamics import ActivationVector, propagate_all
 from .expression import ExpressionConfig, GeneModel, build_gene_model, generate_tube
@@ -100,6 +101,8 @@ class CascadeSimulator:
         n_cell_types: number of (pseudo) cell types.
         n_cells_per_tube: total cells per (donor, label) tube.
         n_donors: number of donors (biological replicates); cascadir needs >= 3.
+        isolated_labels: labels with NO cascade edges that still appear as conditions
+            (negative controls — must not collide with cascade labels or the control).
         n_program_genes: signature genes per label (default 50, matching cascadir top_n).
         n_background_genes: number of uninformative background genes.
         effect_size: program bump at full activation (log1p space, << marker gap ~1.2).
@@ -107,6 +110,8 @@ class CascadeSimulator:
             with ``resp(src) subset resp(dst)`` enforced).
         responders: optional ``{label: [cell_type, ...]}`` override (receptor mode).
         output: ``"raw"`` (Poisson counts) or ``"lognorm"`` (log1p floats).
+        sparse: store ``X`` as a CSR matrix (bit-identical to dense; ~4x smaller for raw
+            counts). Recommended for large runs (e.g. ~1M cells).
         shared_activation: fraction of ``effect_size`` every active label adds to a shared
             pool (the shared-activation confound); 0 = clean.
         condition_col / donor_col / celltype_col / control_label: obs column names + control
@@ -124,12 +129,14 @@ class CascadeSimulator:
         n_cell_types: int = 4,
         n_cells_per_tube: int = 300,
         n_donors: int = 6,
+        isolated_labels: Sequence[str] = (),
         n_program_genes: Optional[int] = None,
         n_background_genes: Optional[int] = None,
         effect_size: Optional[float] = None,
         responder_mode: str = "all",
         responders: Optional[Mapping[str, Sequence[str]]] = None,
         output: str = "raw",
+        sparse: bool = False,
         shared_activation: Optional[float] = None,
         condition_col: str = "condition",
         donor_col: str = "donor",
@@ -154,16 +161,18 @@ class CascadeSimulator:
             )
         if control_label in cascades or any(
             control_label in dn for dn in cascades.values()
-        ):
+        ) or control_label in {str(x) for x in isolated_labels}:
             raise ValueError(
-                f"control_label {control_label!r} must not be one of the cascade labels."
+                f"control_label {control_label!r} must not be one of the cascade or "
+                "isolated labels."
             )
 
-        self.graph = CascadeGraph.from_dict(cascades)
+        self.graph = CascadeGraph.from_dict(cascades, isolated_labels=isolated_labels)
         self.n_cell_types = int(n_cell_types)
         self.n_cells_per_tube = int(n_cells_per_tube)
         self.n_donors = int(n_donors)
         self.output = output
+        self.sparse = bool(sparse)
         self.responder_mode = responder_mode
         self.condition_col = condition_col
         self.donor_col = donor_col
@@ -200,7 +209,9 @@ class CascadeSimulator:
             "n_cell_types": self.n_cell_types,
             "n_cells_per_tube": self.n_cells_per_tube,
             "n_donors": self.n_donors,
+            "n_labels": len(self.model.labels),
             "output": self.output,
+            "sparse": self.sparse,
             "responder_mode": self.responder_mode,
             "control_label": self.control_label,
             "condition_col": self.condition_col,
@@ -229,6 +240,7 @@ class CascadeSimulator:
             Xc, cts = generate_tube(
                 self.model, d, None,
                 n_cells=self.n_cells_per_tube, output=self.output, rng=self._rng,
+                sparse=self.sparse,
             )
             rows_X.append(Xc)
             obs_cond += [self.control_label] * len(cts)
@@ -239,13 +251,14 @@ class CascadeSimulator:
                 Xl, cts = generate_tube(
                     self.model, d, activation_all[label],
                     n_cells=self.n_cells_per_tube, output=self.output, rng=self._rng,
+                    sparse=self.sparse,
                 )
                 rows_X.append(Xl)
                 obs_cond += [label] * len(cts)
                 obs_donor += [donor] * len(cts)
                 obs_ct += cts
 
-        X = np.concatenate(rows_X, axis=0)
+        X = sp.vstack(rows_X, format="csr") if self.sparse else np.concatenate(rows_X, axis=0)
         obs = pd.DataFrame(
             {
                 self.condition_col: obs_cond,
