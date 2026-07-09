@@ -55,9 +55,46 @@ The 2-hop chain, the fan-in, and the independent edge were all called in the cor
 direction. The key contrast holds: the **antisymmetric** `cross_asym` is right while the
 **symmetric** control is not the signal (the gap widens with more pairs).
 
-## Status / next
+## Large experiment (2026-07-09)
 
-Package complete, installed editable, all tests green. Next: a **larger experiment** —
-10 donors × 20 labels × 5000 cells/tube (~1.05M cells) with a richer authored graph
-(deep chains, fan-out/in, feedback, and isolated negative-control labels). See
-[`LARGE_EXPERIMENT_PLAN.md`](LARGE_EXPERIMENT_PLAN.md).
+Ran on the HUJI cluster (SLURM DAG: forge CPU → 7-way GPU benchmark array → aggregate),
+**10 donors × 20 labels (+PBS) × 5000 cells/tube = 1.05M cells**, 1,410-gene panel, 8 cell
+types. Authored graph: deep chain A→B→C→D, chain E→F→G, fan-out H→{I,J,K}, fan-in
+{L,M}→N, feedback O↔P, and 4 isolated negative-control labels Q,R,S,T. Seven configs
+(responder_mode all/receptor × snapshots {t3,t6} + an effect_size sweep). Plan +
+per-config `RESULTS.md`: [`LARGE_EXPERIMENT_PLAN.md`](LARGE_EXPERIMENT_PLAN.md).
+
+**Direction — headline (confound-corrected).** cross_asym recovers direction at **100%**
+(90% at the weakest effect_size 0.15), while the symmetric `directional_score` control
+sits at **~50% (chance)** — the same contrast the thesis reports on real data (88/86/83%
+vs chance), now at 1M-cell scale.
+
+| config | cross_asym acc | symmetric control |
+|---|---:|---:|
+| effect 0.15 (t6) | 90% | 50% ± 16% |
+| effect 0.20 / 0.30 / 0.40 (t6) | 100% | 50% ± 16% |
+| all vs receptor (eff 0.30, t3 & t6) | 100% | 50% ± 16% |
+
+*Caveat + fix (important):* the first run scored the control at a **fake 100%** because
+the authored graph put every upstream label alphabetically before its downstream, so a
+trivial "first = upstream" rule wins. Fixed by **scrambling label names** so sort-order is
+decoupled from direction (`forge --scramble_seed`, committed). cross_asym is
+naming-invariant; the symmetric control, recomputed over random relabelings
+(`scripts/analytical_scramble_correction.py`), collapses to 50% — the values above.
+
+**Effect-size floor.** cross_asym 90% at effect 0.15, 100% at ≥0.20 → the
+weaker-than-cell-type-but-detectable floor is ~0.15–0.20 in log space (the marker gap is
+~0.9). Quantifies "weak but noticeable."
+
+**Coupling (existence).** `signature_coupling(donor_level=True)` (10 donors) recovers the
+truly-coupled pairs at ~100% recall at t6 (93% at t3 — deeper edges emerge later); overall
+false-positive rate 8–11%. The isolated negatives Q,R,S,T are still spuriously flagged in
+~19–24% of their pairs (13–17 of 70) — the known coupling over-call, even degree-corrected.
+
+**Depth.** Direction accuracy is 98–100% across cascade depths 0–2 (the deep chain's weak
+tail is recovered too).
+
+**What it establishes.** cascade_forge generates ground-truth data at 1M-cell scale on
+which cascadir's direction call is right and its symmetric control is at chance — a clean
+synthetic validation of the method, plus a quantified detectability floor and an honest
+readout of the coupling over-call on negatives.
