@@ -1,0 +1,54 @@
+\begin{tikzpicture}[>={Stealth[length=2mm]},
+  cnode/.style={circle,draw,thick,minimum size=8mm,fill=methodblue!14,font=\small},
+  inode/.style={circle,draw,thick,dashed,minimum size=8mm,fill=black!6,font=\small}]
+  \node[cnode] (A) at (0,5) {A};
+  \node[cnode] (B) at (2,5) {B};
+  \node[cnode] (C) at (4,5) {C};
+  \node[cnode] (D) at (6,5) {D};
+  \node[cnode] (E) at (0,3.6) {E};
+  \node[cnode] (F) at (2,3.6) {F};
+  \node[cnode] (G) at (4,3.6) {G};
+  \node[cnode] (H) at (0,1.6) {H};
+  \node[cnode] (I) at (2.2,2.4) {I};
+  \node[cnode] (J) at (2.2,1.6) {J};
+  \node[cnode] (K) at (2.2,0.8) {K};
+  \node[cnode] (L) at (4.4,2.2) {L};
+  \node[cnode] (M) at (4.4,1.0) {M};
+  \node[cnode] (N) at (6.4,1.6) {N};
+  \node[cnode] (O) at (9,4.9) {O};
+  \node[cnode] (P) at (9,3.5) {P};
+  \node[inode] (Q) at (8.4,1.9) {Q};
+  \node[inode] (R) at (9.4,1.9) {R};
+  \node[inode] (S) at (8.4,0.9) {S};
+  \node[inode] (T) at (9.4,0.9) {T};
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (M) to (L);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (S) to (Q);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (S) to (T);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (T) to (Q);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (R) to (T);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (S) to (R);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (R) to (Q);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (K) to (T);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (Q) to (K);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (R) to (K);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (S) to (K);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (S) to (J);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (T) to (J);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (R) to (J);
+  \draw[->,draw=fbad, thin, opacity=0.75,bend left=12] (R) to (I);
+  \draw[->,draw=fgood, thick, densely dashed,bend left=12] (E) to (G);
+  \draw[->,draw=fgood, thick, densely dashed,bend left=12] (A) to (C);
+  \draw[->,draw=fgood, thick, densely dashed,bend left=12] (B) to (D);
+  \draw[->,draw=fgood, thick, densely dashed,bend left=12] (A) to (D);
+  \draw[->,draw=fgood, very thick] (E) to (F);
+  \draw[->,draw=fgood, very thick] (O) to (P);
+  \draw[->,draw=fgood, very thick] (L) to (N);
+  \draw[->,draw=fgood, very thick] (F) to (G);
+  \draw[->,draw=fgood, very thick] (H) to (I);
+  \draw[->,draw=fgood, very thick] (A) to (B);
+  \draw[->,draw=fgood, very thick] (M) to (N);
+  \draw[->,draw=fgood, very thick] (C) to (D);
+  \draw[->,draw=fgood, very thick] (B) to (C);
+  \draw[->,draw=fgood, very thick] (H) to (J);
+  \draw[->,draw=fgood, very thick] (H) to (K);
+\end{tikzpicture}

@@ -22,6 +22,8 @@
 
 \definecolor{methodblue}{HTML}{0072B2}
 \definecolor{ctrlorange}{HTML}{E69F00}
+\definecolor{fgood}{HTML}{009E73}   % recovered true cascade (green, CVD-safe)
+\definecolor{fbad}{HTML}{D55E00}    % false positive (vermillion, CVD-safe)
 
 \title{\textbf{Forging ground truth: a one-million-cell synthetic validation
 of single-snapshot cascade-direction inference}}
@@ -272,6 +274,30 @@ emerging later), with an overall false-positive rate of 8--11\%. However, the is
 negatives are still spuriously flagged as coupled in $\sim$19--24\% of their pairs
 (13--17 of 70) even with degree correction --- the known coupling over-call, now quantified
 on ground truth.
+
+\subsection{What the method recovered}
+Figure~\ref{fig:found} shows the graph the method actually returned on one run
+(\texttt{all}, effect $0.30$, $t\!=\!6$): every pair flagged coupled, drawn as a directed
+edge oriented by \texttt{cross\_asym}, on the same layout as the authored graph
+(Figure~\ref{fig:system}). It recovered \textbf{all 11 authored direct cascades with the
+correct direction} (none missed) and \textbf{4} of the genuine \emph{indirect} (transitive)
+couplings, alongside \textbf{15 false-positive} couplings --- the over-call made concrete.
+The false edges are the honest cost of the coupling gate; direction, read only on coupled
+pairs, is correct wherever a real cascade exists.
+
+\begin{figure}[h]
+\centering
+\input{found_graph.tex}
+\caption{\textbf{What \texttt{cascadir} recovered} (one run: \texttt{all}, eff $0.30$,
+$t\!=\!6$; 30 coupled pairs). Directed edges are the method's calls, oriented by
+\texttt{cross\_asym}, on the Figure~\ref{fig:system} layout.
+\textcolor{fgood}{\textbf{Green solid}}: an authored \emph{direct} cascade recovered with
+correct direction (11/11). \textcolor{fgood}{\textbf{Green dashed}}: a true but
+\emph{indirect} (transitive) coupling, e.g.\ $A\!\to\!C$ via $B$ (4).
+\textcolor{fbad}{\textbf{Orange}}: a \emph{false-positive} coupling with no cascade
+relationship (15). Zero authored direct edges were missed.}
+\label{fig:found}
+\end{figure}
 
 \section{Conclusion}
 \texttt{cascade\_forge} produces controllable single-cell ground truth at million-cell
