@@ -74,7 +74,21 @@ DE, vs-Panel & 9/17 (53\%) & 46.7\% & IFN-$\beta$ \\
 \textbf{Verdict (2a): signatures need the trained model.} DE drops direction to $\approx$chance (59\% vs 82\%) and overlaps IG by only Jaccard $=0.11$ (near-disjoint genes), so the model's attributions carry real signal a DE list lacks. (Corollary: more \emph{specific} signatures (vs-Panel) alone do \emph{not} fix over-call, $76.5\to77.9\%$---that is the null's job, \S1.) \textbf{This compares signature \emph{source} only; it does \emph{not} test whether the cell-type pre-training \emph{stage} is needed---that is (2b).}
 
 \subsection*{(2b) Training procedure: cell-type pre-training vs.\ single end-to-end}
-The pipeline trains in two stages: Stage~1 pre-trains the encoder on cell-type labels, then freezes it and Stage~2 trains the MIL on stimuli. \emph{Is Stage~1 necessary?} We test it head-to-head on Oesinghaus---24 binary models trained two ways with identical data/seed/architecture: \textbf{(A)} two-stage (cell-type pre-train $\to$ frozen MIL) vs.\ \textbf{(B)} single end-to-end (random-init encoder, no cell-type pre-training, encoder unfrozen)---comparing binary validation accuracy and downstream coupling/direction. \emph{[Verdict from the running experiment is appended on completion.]}
+The pipeline trains in two stages: Stage~1 pre-trains the encoder on cell-type labels, then freezes it and Stage~2 trains the MIL on stimuli. \emph{Is Stage~1 necessary?} We test it head-to-head on Oesinghaus---24 binary models trained two ways with identical data/seed/architecture: \textbf{(A)} two-stage (cell-type pre-train $\to$ frozen MIL) vs.\ \textbf{(B)} single end-to-end (random-init encoder, no cell-type pre-training, encoder unfrozen)---comparing binary validation accuracy and downstream coupling/direction.
+
+\begin{table}[h]\centering\small
+\caption*{\textbf{Table 2b.} Two-stage vs.\ single-stage (1 seed each; Oesinghaus, 24 cytokines, identical data/seed).}
+\begin{tabular}{lcccc}
+\toprule
+arm & binary val $P(\text{correct})$ & direction (/24) & coupling recall (/17) & over-call \\
+\midrule
+two-stage (current) & 0.91 & 15 (62\%) & 5 & 0.31 \\
+single-stage (no pre-train) & 0.88 & 13 (54\%) & 11 & 0.38 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Verdict (2b): the pre-training stage is \emph{not} demonstrably load-bearing, but one seed is too noisy to call.} Single-stage learns stimulus-vs-PBS essentially as well (val 0.88 vs 0.91) and is competitive downstream---better coupling recall this run, modestly worse direction. Crucially, the freshly-retrained \emph{two-stage} coupling recall (5/17) fell well below its previously-reported 11/17 \emph{at the same over-call}, exposing run-to-run variance (binary training $\to$ signatures) comparable to the two-stage-vs-single-stage gap itself. So a single end-to-end train is a viable candidate to replace the two-stage pipeline---but a confident ``remove Stage-1'' decision (and indeed any single-seed coupling number here) needs a multi-seed sweep.
 
 \section{The main point: abilities and limits across datasets}
 All numbers below use the \textbf{updated method} (signature coupling $+$ donor/degree fix $+$ cross\_asym direction).

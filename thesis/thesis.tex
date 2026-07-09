@@ -59,7 +59,7 @@
 % ---- handy macros (extend as you write) -----------------------------------
 \newcommand{\crossasym}{\texttt{cross\_asym}}
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
-\newcommand{\rev}[1]{\textcolor{blue}{#1}}  % TEMP: marks corrected/new text; redefine to #1 to clear
+\newcommand{\rev}[1]{#1}  % cleared: new text no longer marked; kept as a no-op wrapper
 
 % ============================================================================
 \begin{document}
@@ -160,7 +160,11 @@ Our approach is built on two premises. The first is that every cytokine leaves a
 
 \subsubsection{Claim 1: each cytokine induces a distinctive signature}
 \label{sec:claim-signature}
-We define a cytokine's signature as the set of genes most significant for detecting that cytokine, the genes carrying the most information about its response, whether they rise or, less often, fall \citep{golub1999molecular}.
+We define a cytokine's signature $S_X$ as the $k$ genes that, together, make its response most separable from the control baseline \citep{golub1999molecular}. Formally,
+\[
+  S_X \;=\; \operatorname*{arg\,max}_{\substack{G\subseteq\mathcal{G}\\ |G|=k}}\ \operatorname{acc}\!\big(M^{X}_{G}\big),
+\]
+where $\mathcal{G}$ is the set of all genes, $\operatorname{acc}(M^{X}_{G})$ is the accuracy of a classifier that tells $X$ from the control using only the genes $G$, and $k$ fixes the signature's size.
 Recent work makes this concrete: a single-cell dictionary of immune responses recorded a distinct signature for dozens of cytokines, confirming that their responses are separable at the transcriptional level \citep{cui2024dictionary}.
 The distinctiveness is not accidental: because a cytokine acts through its own receptor and a specific downstream pathway, it engages a particular set of transcription factors, and so induces its own target genes.
 Throughout, a cytokine's signature is measured in the responding cells' gene expression, not in the cytokine itself; the molecule is invisible to us, and only its transcriptional footprint is seen.
@@ -251,9 +255,58 @@ The method decomposes into three sub-goals, all of which must be achieved withou
 
 \subsection{Data}
 \label{sec:methods-data}
-% >>> write here
-% >>> NOTE: define the "pseudo-tube" here (a bag of cells for one stimulus,
-%          stratified by cell type); 4.4 references it via \ref{sec:methods-data}.
+\rev{The method works from a single snapshot, the gene expression of many individual cells captured at one moment rather than followed over time.}
+\rev{Each cell is tagged with the condition it was under: most often the cytokine applied to it, but equally a cell state, a timepoint, or a disease grade.}
+\rev{One of these conditions is a control, an untreated or baseline state that the others are compared to.}
+\rev{Two further labels travel with each cell: the donor it came from, which fixes the biological replicate, and its cell type, which lets like be compared with like.}
+
+\rev{Rather than one cell at a time, the method takes a whole set of cells sampled together, a matrix of cells by genes, and predicts a single condition for the set.}
+\rev{This mirrors the biology: the cells of one sample sat together under the same condition, so the set as a whole, not any single cell, is what the condition acted on.}
+\rev{In practice, though, a donor and condition yield only one tube of cells, a single example where the model needs many.}
+\rev{So we draw many smaller bags from the one tube at random, each stratified by cell type; these stochastic sub-samples are the pseudo-tubes (Figure~\ref{fig:pseudotube}).}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[line cap=round]
+  % ---------------- one tube (left) ----------------
+  \fill[gray!5, rounded corners=6pt] (0.1,0.2) rectangle (3.05,2.15);
+  \foreach \x/\y in {0.45/0.55,1.8/0.55,1.35/1.15,2.7/1.15,0.9/1.75,2.25/1.75}
+    \fill[blue!70] (\x,\y) circle (0.13);
+  \foreach \x/\y in {0.9/0.55,2.25/0.55,0.45/1.15,1.8/1.15,1.35/1.75,2.7/1.75}
+    \fill[orange!90!black] (\x,\y) circle (0.13);
+  \foreach \x/\y in {1.35/0.55,2.7/0.55,0.9/1.15,2.25/1.15,0.45/1.75,1.8/1.75}
+    \fill[green!55!black] (\x,\y) circle (0.13);
+  \draw[rounded corners=6pt, thick, gray!55] (0.1,0.2) rectangle (3.05,2.15);
+  \node[font=\footnotesize] at (1.57,-0.12) {one tube};
+  \node[font=\scriptsize, gray!55] at (1.57,-0.52) {donor $d$, condition $X$};
+
+  % ---------------- split arrow ----------------
+  \draw[->, thick, gray!70] (3.25,1.18) -- (5.95,1.18);
+  \node[font=\scriptsize, align=center, gray!45!black] at (4.5,1.78)
+    {random split,\\stratified by cell type};
+
+  % ---------------- pseudo-tubes (right) ----------------
+  \foreach \X in {6.2,8.0,9.8}{
+    \fill[gray!5, rounded corners=4pt] (\X,0.62) rectangle (\X+1.5,1.92);
+    \fill[blue!70]         (\X+0.35,1.02) circle (0.11);
+    \fill[orange!90!black] (\X+0.75,1.02) circle (0.11);
+    \fill[green!55!black]  (\X+1.15,1.02) circle (0.11);
+    \fill[green!55!black]  (\X+0.35,1.5)  circle (0.11);
+    \fill[blue!70]         (\X+0.75,1.5)  circle (0.11);
+    \fill[orange!90!black] (\X+1.15,1.5)  circle (0.11);
+    \draw[rounded corners=4pt, gray!55] (\X,0.62) rectangle (\X+1.5,1.92);
+    \node[font=\scriptsize] at (\X+0.75,2.12) {$X$};
+  }
+  \node[font=\footnotesize] at (8.75,-0.12) {pseudo-tubes};
+  \node[font=\scriptsize, gray!55] at (8.75,-0.52) {each stratified, labelled $X$};
+\end{tikzpicture}
+\caption{\rev{\textbf{Building pseudo-tubes.} The single tube of cells obtained from one
+donor under one condition (left; dot colour $=$ cell type) is split at random, stratified
+by cell type, into several smaller pseudo-tubes (right). Each pseudo-tube keeps the tube's
+cell-type mix and carries the same condition label $X$; these stochastic sub-samples are
+the examples the model is trained on.}}
+\label{fig:pseudotube}
+\end{figure}
 
 \subsection{Discovering cytokine signatures}
 \label{sec:methods-signatures}
@@ -358,7 +411,7 @@ For each cytokine we train a binary classifier of its tubes versus control tubes
 
 \subsubsection{Signature extraction}
 \label{sec:sig-extraction}
-To read the signature out of a trained binary model, we apply Integrated Gradients \citep{sundararajan2017axiomatic}, which attributes the model's prediction to the input genes; the top-ranked genes form that cytokine's \rev{signature $S_X$}. Because the model is nonlinear, the genes it relies on cannot be read off directly; Integrated Gradients is a principled attribution method that recovers them by integrating the model's sensitivity from the baseline to the cell. Crucially, these attributions are not interchangeable with differential expression: an ablation (Section~\ref{sec:results}) finds that a model-free fold-change list picks almost disjoint genes and loses the direction signal, confirming the model's attributions carry information a simple ranking does not.
+The signature $S_X$ is defined by an objective, not given to us as data; lacking any ground truth for it, we recover it with an estimator. Because the model is nonlinear, the genes it relies on cannot be read off directly; Integrated Gradients \citep{sundararajan2017axiomatic} is a principled attribution method that recovers them by integrating the model's sensitivity from the baseline to the pseudo-tube. We keep the 50 genes it attributes most to, and these are our estimate of $S_X$. Crucially, these attributions are not interchangeable with differential expression: an ablation (Section~\ref{sec:results}) finds that a model-free fold-change list picks almost disjoint genes and loses the direction signal, confirming the model's attributions carry information a simple ranking does not.
 
 \begin{figure}[H]
 \centering
@@ -385,7 +438,7 @@ To read the signature out of a trained binary model, we apply Integrated Gradien
   \fill (base) circle (2.6pt);
   \node[below right, align=left]  at (base) {\scriptsize baseline\\(control)};
   \fill (inp) circle (2.6pt);
-  \node[above left, align=right]  at (inp)  {\scriptsize input\\(cell)};
+  \node[above left, align=right]  at (inp)  {\scriptsize input\\(pseudo-tube)};
   % gradients sampled along the path (blue)
   \foreach \t in {0.18,0.40,0.62,0.84}{
     \pgfmathsetmacro{\px}{0.8 + \t*(7.1-0.8)}
@@ -440,7 +493,7 @@ dropped; with a full panel of thousands of genes, the top-50 by attribution form
 \label{fig:ig3}
 \end{figure}
 
-\rev{Figure~\ref{fig:sigselect} shows the selection step: with one attribution per gene, the genes are ranked and the top-50 (boxed) are kept as the signature $S_X$ --- a set of genes --- while the rest are dropped.}
+\rev{Figure~\ref{fig:sigselect} shows the selection step: with one attribution per gene, the genes are ranked and the top-50 (boxed) are kept as the signature $S_X$, a set of genes, while the rest are dropped.}
 
 \begin{figure}[H]
 \centering
@@ -467,7 +520,7 @@ dropped; with a full panel of thousands of genes, the top-50 by attribution form
 \end{tikzpicture}
 \caption{\textbf{Selecting the signature.} Integrated Gradients gives one attribution per gene
 (Figure~\ref{fig:ig3}); ranking all genes and keeping the top-50 (green, boxed) yields the
-signature $S_X$ --- a \emph{set} of genes, and the subspace onto which cross-engagement is
+signature $S_X$, a \emph{set} of genes, and the subspace onto which cross-engagement is
 measured in Section~\ref{sec:methods-direction}. The remaining genes (grey) are dropped.}
 \label{fig:sigselect}
 \end{figure}
@@ -477,6 +530,8 @@ Running this for every cytokine yields a set of signatures $\{S_X\}$, one per cy
 \subsection{Inferring cascade direction}
 \label{sec:methods-direction}
 With a signature $S_X$ now in hand for every cytokine (Section~\ref{sec:methods-signatures}), we can decide, for each pair, whether the two cytokines are coupled and, if so, whether one is upstream of the other.
+
+\subsubsection{Engagement}
 Write $c_g$ for the expression of gene $g$ in cell $c$, let $\mathcal{C}_a$ be the cells of the sample given stimulus $a$, and let $\mathcal{C}_0$ be the control cells.
 The score of a cell on a gene set $S$ is its mean expression over that set,
 \[
@@ -495,15 +550,108 @@ Over all ordered pairs these values form the cross-engagement matrix $M$ with $M
 
 Subtracting the control term is what turns a raw expression level into a measure of \emph{induction}. Signature genes are not silent at rest, so $\bar\sigma_{S_b}(\mathcal{C}_a)$ on its own conflates how much stimulus $a$ actually drives $b$'s program with the level those genes sit at anyway; subtracting their level in control cells, $\bar\sigma_{S_b}(\mathcal{C}_0)$, removes that resting baseline and leaves only the increase above rest. This matters most because $S_a$ and $S_b$ are different gene sets with different baselines: normalising each engagement to its own signature's control level puts $s(a,S_b)$ and $s(b,S_a)$ on a common footing, so that when the two are compared the difference reflects induction rather than a mismatch in resting expression between the gene sets.
 
+\subsubsection{Coupling}
 A coupled pair is one whose signatures show up in each other's response, so we score coupling by the symmetric sum $M_{ab}+M_{ba}$; a high score flags shared biology, which could be a cascade or another form of correlation.
 \rev{But because almost every cytokine co-induces a shared-activation program, a broadly-engaged cytokine's signature turns up in many responses and would look coupled to everything.}
 
+\rev{We therefore keep, in place of the raw coupling, only its \emph{excess} over each cytokine's average engagement, so that a signature appearing everywhere no longer inflates every pair it takes part in.}
+\rev{Collect the couplings into a matrix $C_{ab}=M_{ab}+M_{ba}$ and write $\bar C_a=\frac{1}{n-1}\sum_{b\ne a}C_{ab}$ for the mean of its $a$-th row, cytokine $a$'s average coupling to every other cytokine.}
+\rev{The corrected coupling is the residual $R_{ab}=C_{ab}-\bar C_a-\bar C_b+\bar C$, with $\bar C=\frac{1}{n}\sum_a \bar C_a$ the grand mean of the couplings.}
+\rev{Equivalently, $\bar C_a+\bar C_b-\bar C$ is the coupling expected for the pair from the two averages alone, and $R_{ab}$ keeps only the excess above it, the standard \emph{double-centring} of a matrix by its row, column, and grand means.}
+\rev{After this correction a broadly-engaged cytokine carries a high average coupling $\bar C_a$, which is subtracted from every pair it belongs to, so it no longer registers as coupled to everything; a large $R_{ab}$ now marks coupling specific to $a$ and $b$ (Figure~\ref{fig:doublecenter}).}
+\rev{Coupling and direction are the symmetric and antisymmetric halves of $M$; double-centring reshapes only the symmetric half, leaving the direction call unchanged.}
 
-Direction comes from the asymmetric part of the same matrix: $\mathrm{cross\_asym}(a,b)=M_{ab}-M_{ba}$, which is large and positive exactly when $a$'s cells carry $b$'s program but not the reverse, the upstream-to-downstream signature Claim~2 predicts.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=0.8cm,y=0.8cm,line cap=round]
+  % ---------------- C: coupling matrix (before) ----------------
+  % 0.8 cells: hub c1 row/column + the genuine pair c3--c4
+  \foreach \i/\j in {1/2,1/3,1/4,1/5,2/1,3/1,4/1,5/1,3/4,4/3}
+    {\fill[blue!64] (\j-0.5,-\i+0.5) rectangle (\j+0.5,-\i-0.5);
+     \node[font=\tiny,white] at (\j,-\i) {0.8};}
+  % 0.4 cells: baseline
+  \foreach \i/\j in {2/3,2/4,2/5,3/2,3/5,4/2,4/5,5/2,5/3,5/4}
+    {\fill[blue!30] (\j-0.5,-\i+0.5) rectangle (\j+0.5,-\i-0.5);
+     \node[font=\tiny] at (\j,-\i) {0.4};}
+  % diagonal: self-coupling, excluded
+  \foreach \i in {1,...,5}
+    \fill[gray!20] (\i-0.5,-\i+0.5) rectangle (\i+0.5,-\i-0.5);
+  \draw[step=1,gray!45,thin] (0.5,-5.5) grid (5.5,-0.5);
+  \foreach \j/\lab in {1/c1,2/c2,3/c3,4/c4,5/c5} \node[font=\scriptsize] at (\j,-0.32) {\lab};
+  \foreach \i/\lab in {1/c1,2/c2,3/c3,4/c4,5/c5} \node[font=\scriptsize] at (0.30,-\i) {\lab};
+  \node[font=\footnotesize] at (3,-5.95) {$C$: coupling};
+  \node[font=\scriptsize,gray!55] at (3,-6.55) {c1 bright across its row};
+
+  % ---------------- row means and grand mean ----------------
+  \foreach \i/\p in {1/64,2/40,3/48,4/48,5/40}
+    \fill[blue!\p] (6,-\i+0.5) rectangle (7,-\i-0.5);
+  \draw[step=1,gray!45,thin] (6,-5.5) grid (7,-0.5);
+  \node[font=\scriptsize] at (6.5,-0.32) {$\bar C_a$};
+  \fill[blue!48] (6,-6.9) rectangle (7,-5.9);
+  \draw[gray!45,thin] (6,-6.9) rectangle (7,-5.9);
+  \node[font=\scriptsize,anchor=west] at (7.15,-6.4) {$\bar C$};
+
+  % ---------------- operation arrow ----------------
+  \draw[->,thick,gray!70] (7.9,-3) -- (11.3,-3);
+  \node[font=\scriptsize,align=center] at (9.05,-2.0)
+    {$R_{ab}=C_{ab}$\\[-1pt]$-\,\bar C_a-\bar C_b+\bar C$};
+
+  % ---------------- R: residual coupling (after) ----------------
+  \foreach \i/\j in {3/4,4/3}
+    {\fill[orange!72] (\j+10.5,-\i+0.5) rectangle (\j+11.5,-\i-0.5);
+     \node[font=\tiny,white] at (\j+11,-\i) {0.2};}
+  \foreach \i/\j in {1/2,2/1,1/5,5/1}
+    {\fill[orange!35] (\j+10.5,-\i+0.5) rectangle (\j+11.5,-\i-0.5);
+     \node[font=\tiny] at (\j+11,-\i) {0.1};}
+  \foreach \i/\j in {1/3,3/1,1/4,4/1,2/5,5/2}
+    {\fill[gray!8] (\j+10.5,-\i+0.5) rectangle (\j+11.5,-\i-0.5);
+     \node[font=\tiny,gray!55] at (\j+11,-\i) {0};}
+  \foreach \i/\j in {2/3,3/2,2/4,4/2,3/5,5/3,4/5,5/4}
+    {\fill[blue!35] (\j+10.5,-\i+0.5) rectangle (\j+11.5,-\i-0.5);
+     \node[font=\tiny] at (\j+11,-\i) {$-0.1$};}
+  \foreach \i in {1,...,5}
+    \fill[gray!20] (\i+10.5,-\i+0.5) rectangle (\i+11.5,-\i-0.5);
+  \draw[step=1,gray!45,thin] (11.5,-5.5) grid (16.5,-0.5);
+  \foreach \j/\lab in {1/c1,2/c2,3/c3,4/c4,5/c5} \node[font=\scriptsize] at (\j+11,-0.32) {\lab};
+  \foreach \i/\lab in {1/c1,2/c2,3/c3,4/c4,5/c5} \node[font=\scriptsize] at (11.20,-\i) {\lab};
+  \node[font=\footnotesize] at (14,-5.95) {$R$: residual};
+  \node[font=\scriptsize,gray!55] at (14,-6.55) {only c3--c4 survives};
+\end{tikzpicture}
+\caption{\rev{\textbf{Double-centring removes the hub artefact.} A five-cytokine toy example.
+\emph{Left}, the coupling matrix $C_{ab}=M_{ab}+M_{ba}$: cytokine c1 is a hub, coupling
+strongly (0.8) to every other cytokine, so its whole row and column are bright; c3 and c4
+form a genuine specific pair (also 0.8) against a low baseline (0.4); the grey diagonal is
+self-coupling, which is excluded. \emph{Middle}, each cytokine's average coupling
+$\bar C_a$ (row mean) and the grand mean $\bar C$. \emph{Right}, the residual
+$R_{ab}=C_{ab}-\bar C_a-\bar C_b+\bar C$: c1's high average is subtracted from its every
+pair, so its row flattens to near zero and it no longer looks coupled to everything, while
+c3--c4, coupled more than either partner's average predicts, remains the one strongly
+positive entry (orange, above average); pairs below their average go slightly negative
+(blue). The operation is symmetric, so it changes the coupling call only and leaves the
+direction statistic $\mathrm{cross\_asym}=M_{ab}-M_{ba}$ untouched.}}
+\label{fig:doublecenter}
+\end{figure}
+
+\rev{It remains to decide whether a given $R_{ab}$ is large enough to be real, and here the choice of statistical unit is decisive: pooling all cells treats thousands of correlated measurements as independent and flags almost every pair as coupled.}
+\rev{The right unit is the donor: we recompute the residual once per donor, $R_{ab}^{(d)}$ for $d=1,\dots,D$ (with $D\approx10$), and with $n_+=\#\{d:R_{ab}^{(d)}>0\}$ the number of donors in which the pair couples positively, a one-sided sign test calls it coupled when
+\[
+  p \;=\; 2^{-D}\sum_{k=n_+}^{D}\binom{D}{k}\;\le\;\alpha,
+\]
+that is, when the excess coupling is positive in more donors than a coin flip would give.}
+\rev{The donor is the right unit because the pseudo-tubes drawn from one donor and cytokine are resampled from the same cells, correlated by construction, not independent replicates, so only the $D\approx10$ donors are genuinely independent; the test then draws its power from agreement across donors rather than from the abundance of correlated pseudo-tubes, a conservative gate that reflects real reproducibility.}
+
+
+\subsubsection{Direction}
+Direction comes from the asymmetric part of the same matrix: $\mathrm{cross\_asym}(a,b)=M_{ab}-M_{ba}$, which is large and positive exactly when $a$'s cells carry $b$'s program but not the reverse, the upstream-to-downstream signature Claim~2 predicts \rev{(Figure~\ref{fig:asymmetry})}.
 The quantity is antisymmetric, $\mathrm{cross\_asym}(b,a)=-\mathrm{cross\_asym}(a,b)$, so unlike the symmetric coupling sum its sign points to the upstream cytokine ($a$ upstream when positive, under a fixed naming convention).
 
 Each quantity so far is computed within a cell type; we combine cell types into one call per pair by taking the median cross-engagement and the fraction of cell types that agree on its sign, so a direction rests on agreement across cell types rather than on any single one.
 Because it is read from one snapshot, a call points to the most likely direction of a cascade, evidence the Results confirm against known cascades, short of the intervention that would prove causation.
+
+\subsection{Assessing the method}
+\label{sec:methods-evaluation}
+We cannot score the method against a ground truth of cascades, none exists, so we test it against cascades the literature has already established.
+A recovered cascade has two parts to get right, that the pair is coupled at all and that its direction is correct, and we score each separately.
 
 \section{Results}
 \label{sec:results}

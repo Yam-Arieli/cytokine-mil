@@ -188,6 +188,52 @@ def simulate_chain_tubes(lc, n_tubes, n_cells, n_types, beta, noise_sigma, rng):
     return tubes, M_true
 
 
+def simulate_depth_chain_tubes(n_chains, L, n_tubes, n_cells, n_types, beta, noise_sigma, rng):
+    """`n_chains` independent chains g0->g1->...->gL (depth 0..L). g0 cell-autonomous;
+    g_d responds to leave-one-out aggregate of g_{d-1}. Returns tubes, depth_of(gene),
+    chain_of(gene), n_genes. Markers/background appended for the copy trap + negatives."""
+    width = L + 1
+    chain_genes = [[ch * width + d for d in range(width)] for ch in range(n_chains)]
+    cc = n_chains * width
+    markers = {}
+    for t in range(n_types):
+        markers[t] = list(range(cc, cc + 3)); cc += 3
+    n_bg = 8
+    background = list(range(cc, cc + n_bg)); cc += n_bg
+    G = cc
+    depth_of = {chain_genes[ch][d]: d for ch in range(n_chains) for d in range(width)}
+    chain_of = {chain_genes[ch][d]: ch for ch in range(n_chains) for d in range(width)}
+
+    mu = np.full((n_types, G), 0.10, dtype=np.float64)
+    for t, gs in markers.items():
+        for g in gs:
+            mu[t, g] = 1.20
+    for g in background:
+        mu[:, g] = 0.30
+    loo = lambda Z, N: (Z.sum(0, keepdims=True) - Z) / (N - 1)
+    tubes = []
+    for _ in range(n_tubes):
+        cell_types = np.repeat(np.arange(n_types), n_cells // n_types)
+        if len(cell_types) < n_cells:
+            cell_types = np.concatenate([cell_types, rng.integers(0, n_types, n_cells - len(cell_types))])
+        rng.shuffle(cell_types)
+        N = len(cell_types)
+        X = mu[cell_types].copy()
+        mult = np.sqrt(N - 1)        # counters leave-one-out variance shrinkage -> stable
+        for ch in range(n_chains):   # variance & ~zero mean at every depth (no scale explosion,
+            g0 = chain_genes[ch][0]  # no SNR gradient -> emergence order reflects CURRICULUM)
+            prev = rng.normal(0.0, 1.0, size=(N,))           # depth 0: cell-autonomous, mean-zero
+            X[:, g0] += prev
+            for d in range(1, width):
+                cur = mult * loo(prev[:, None], N)[:, 0] + rng.normal(0, noise_sigma, size=(N,))
+                X[:, chain_genes[ch][d]] += cur
+                prev = cur
+        X += rng.normal(0, noise_sigma, size=X.shape)
+        # no clip: chain signals are mean-zero fluctuations on top of baseline (toy)
+        tubes.append((X.astype(np.float32), cell_types.astype(np.int64)))
+    return tubes, depth_of, chain_of, G
+
+
 def tubes_to_raw(tubes, n_types):
     """Leave-one-out samples. Returns A(raw loo mean), Y(raw cell), CT(type)."""
     A_list, Y_list, CT_list = [], [], []
@@ -300,16 +346,48 @@ class _Zero(_Base):
         return torch.zeros(a.shape[0], self.G, device=a.device)
 
 
-def train_model(model, A, Y, epochs, lr, weight_decay, name):
+class CMLPHollow(_Base):
+    """Component-wise MLP (neural-Granger style), nonlinear, self-excluded, NO order
+    prior. One small MLP per target gene g; gene g's own input column is masked to 0,
+    so output g can't use input g but uses all others. Influence[g,h] = ||W1[g,:,h]||
+    (how much target g's MLP uses input h). This is the nonlinear analog with a real
+    learning curriculum (unlike the linear operator)."""
+
+    def __init__(self, G, hidden=32):
+        super().__init__(G)
+        s1, s2 = 1.0 / np.sqrt(G), 1.0 / np.sqrt(hidden)
+        self.W1 = nn.Parameter(torch.randn(G, hidden, G) * s1)  # (target, hidden, input)
+        self.b1 = nn.Parameter(torch.zeros(G, hidden))
+        self.W2 = nn.Parameter(torch.randn(G, hidden) * s2)     # (target, hidden)
+        self.b2 = nn.Parameter(torch.zeros(G))
+        self.register_buffer("in_mask", (1.0 - torch.eye(G)).unsqueeze(1))  # (tgt,1,in)
+
+    def _W1m(self):
+        return self.W1 * self.in_mask
+
+    def forward(self, a):                                       # a: (B, G)
+        h = torch.einsum("thi,bi->bth", self._W1m(), a) + self.b1
+        h = torch.nn.functional.gelu(h)
+        return torch.einsum("bth,th->bt", h, self.W2) + self.b2
+
+    def M(self):                                                # influence matrix (>=0), hollow
+        return self._W1m().pow(2).sum(dim=1).sqrt()
+
+
+def train_model(model, A, Y, epochs, lr, weight_decay, name, snap_every=0):
+    """Train by MSE. If snap_every>0, also return [(epoch, M_snapshot), ...]."""
     params = list(model.parameters())
+    snaps = []
     if not params:  # parameter-free floor (M=0); nothing to optimise
         _log(f"    [{name}] no parameters — skipping optimisation (floor model)")
-        return model
+        return (model, snaps) if snap_every else model
     opt = torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
     lossf = nn.MSELoss()
     n = A.shape[0]
     bs = min(4096, n)
     for ep in range(epochs):
+        if snap_every and (ep % snap_every == 0 or ep == epochs - 1):
+            snaps.append((ep, model.M().detach().cpu().numpy().astype(np.float64)))
         perm = torch.randperm(n, device=A.device)
         tot = 0.0
         for i in range(0, n, bs):
@@ -320,7 +398,7 @@ def train_model(model, A, Y, epochs, lr, weight_decay, name):
             tot += loss.item() * len(idx)
         if ep % max(1, epochs // 5) == 0 or ep == epochs - 1:
             _log(f"    [{name}] epoch {ep:4d}  train_mse {tot / n:.4f}")
-    return model
+    return (model, snaps) if snap_every else model
 
 
 # ===========================================================================
@@ -483,6 +561,74 @@ def run_stage2(args, device, out_dir, rng):
     return out
 
 
+def _spearman(a, b):
+    ra, rb = np.argsort(np.argsort(a)), np.argsort(np.argsort(b))
+    return 0.0 if ra.std() < 1e-9 or rb.std() < 1e-9 else float(np.corrcoef(ra, rb)[0, 1])
+
+
+def _emergence_by_depth(snaps, depth_of, chain_of):
+    """From M(t) snapshots, emergence epoch of each gene's PARENT edge vs its depth."""
+    epochs = [e for e, _ in snaps]
+    Ms = np.stack([M for _, M in snaps])                       # (T, G, G)
+    node = {(chain_of[g], depth_of[g]): g for g in depth_of}
+    parent = {g: node[(chain_of[g], depth_of[g] - 1)] for g in depth_of if depth_of[g] >= 1}
+    edge_traj = {g: np.abs(Ms[:, g, parent[g]]) for g in parent}
+    final_e = {g: float(edge_traj[g][-1]) for g in parent}
+    floor = 0.2 * float(np.median(list(final_e.values()))) if final_e else 0.0
+    emergence = {}
+    for g in parent:
+        if final_e[g] < floor:
+            continue
+        idx = np.where(edge_traj[g] >= 0.5 * final_e[g])[0]
+        emergence[g] = epochs[idx[0]] if len(idx) else epochs[-1]
+    depths = np.array([depth_of[g] for g in emergence])
+    em = np.array([emergence[g] for g in emergence])
+    rho = _spearman(depths, em) if len(em) > 1 else 0.0
+    by_depth = {}
+    for g in emergence:
+        by_depth.setdefault(int(depth_of[g]), []).append(emergence[g])
+    mean_em = {d: float(np.mean(v)) for d, v in sorted(by_depth.items())}
+    return rho, mean_em, edge_traj, final_e, floor, epochs
+
+
+def run_dynamics(args, device, out_dir, rng):
+    """The user's synthesis: setting = leave-one-out; READOUT = training dynamics.
+    Does the ORDER in which the parent edge emerges over epochs track cascade DEPTH
+    (direct early, deep/relay late)? Compares the LINEAR operator (no curriculum) with
+    a NONLINEAR component-wise MLP (cMLP, has a curriculum) on a planted chain."""
+    _log("\n=== DYNAMICS: does training-emergence order recover cascade depth? ===")
+    _log("    setting = leave-one-out soup->cell ; readout = per-epoch parent-edge emergence")
+    nch, L, nt = args.n_depth_chains, args.chain_len, args.n_celltypes
+    tubes, depth_of, chain_of, G = simulate_depth_chain_tubes(
+        nch, L, args.n_tubes, args.n_cells, nt, args.beta, args.noise_sigma, rng)
+    A_tr, Y_tr, CT_tr = tubes_to_raw(tubes, nt)
+    a_mean, typemean = fit_preprocess(A_tr, Y_tr, CT_tr, nt)
+    A, Y = apply_preprocess(A_tr, Y_tr, CT_tr, a_mean, typemean, device)
+    _log(f"  chains={nch} length={L} genes={G} train_samples={A.shape[0]}")
+    snap_every = max(1, args.epochs // 60)   # finer resolution to resolve emergence order
+
+    out, traj_for_plot = {}, {}
+    for name, build in {"linear_hollow": lambda: RealFullHollow(G),
+                        "cmlp_hollow": lambda: CMLPHollow(G, hidden=args.cmlp_hidden)}.items():
+        _log(f"  -- {name}")
+        model = build().to(device)
+        _, snaps = train_model(model, A, Y, args.epochs, args.lr, args.weight_decay, name, snap_every=snap_every)
+        rho, mean_em, edge_traj, final_e, floor, epochs = _emergence_by_depth(snaps, depth_of, chain_of)
+        verdict = ("SUPPORTS (deeper=later)" if rho > 0.5 else "WEAK" if rho > 0.2 else "NO depth ordering")
+        out[name] = {"spearman_depth_emergence": rho, "mean_emergence_by_depth": mean_em, "verdict": verdict}
+        traj_for_plot[name] = (epochs, edge_traj, final_e, floor)
+        _log(f"     emergence epoch by depth = {mean_em}")
+        _log(f"     Spearman(depth, emergence) = {rho:.3f} -> {verdict}")
+
+    lin, nl = out["linear_hollow"]["spearman_depth_emergence"], out["cmlp_hollow"]["spearman_depth_emergence"]
+    out["_conclusion"] = ("nonlinear_curriculum_recovers_depth" if nl > 0.5 and nl > lin + 0.2
+                          else "no_clear_curriculum_gain")
+    _log(f"  DYNAMICS CONCLUSION: {out['_conclusion']} (cmlp rho {nl:.3f} vs linear rho {lin:.3f})")
+    if HAVE_MPL:
+        _plot_dynamics(out_dir, traj_for_plot, depth_of)
+    return out
+
+
 def _plot_stage1(out_dir, M_true, M_recs, results):
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
     vmax = float(np.percentile(np.abs(M_true), 99)) or 1.0
@@ -502,11 +648,25 @@ def _plot_stage2(out_dir, direct, add):
     fig.tight_layout(); fig.savefig(out_dir / "stage2_phase_additivity.png", dpi=120); plt.close(fig)
 
 
+def _plot_dynamics(out_dir, traj_for_plot, depth_of):
+    n = len(traj_for_plot)
+    fig, axes = plt.subplots(1, n, figsize=(6 * n, 4.5), squeeze=False)
+    for ax, (name, (epochs, edge_traj, final_e, floor)) in zip(axes[0], traj_for_plot.items()):
+        for d in sorted({depth_of[g] for g in edge_traj}):
+            gs = [g for g in edge_traj if depth_of[g] == d and final_e[g] >= floor]
+            if gs:
+                ax.plot(epochs, np.mean([edge_traj[g] for g in gs], axis=0), lw=2, label=f"depth {d}")
+        ax.set_xlabel("epoch"); ax.set_ylabel("|parent-edge strength|")
+        ax.set_title(name); ax.legend()
+    fig.suptitle("training-emergence of parent edge by cascade depth (deeper should rise later)")
+    fig.tight_layout(); fig.savefig(out_dir / "dynamics_emergence.png", dpi=120); plt.close(fig)
+
+
 # ===========================================================================
 def _parse_args():
     p = argparse.ArgumentParser(description="toy complex directional gene influence")
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--stage", choices=["1", "2", "both"], default="both")
+    p.add_argument("--stage", choices=["1", "2", "dyn", "both", "all"], default="both")
     p.add_argument("--n_genes", type=int, default=120)
     p.add_argument("--n_edges", type=int, default=16)
     p.add_argument("--n_forks", type=int, default=4)
@@ -520,6 +680,9 @@ def _parse_args():
     p.add_argument("--lr", type=float, default=1e-2)
     p.add_argument("--weight_decay", type=float, default=1e-5)
     p.add_argument("--n_chains", type=int, default=12)
+    p.add_argument("--chain_len", type=int, default=4)        # dynamics: chain depth L (g0..gL)
+    p.add_argument("--n_depth_chains", type=int, default=10)  # dynamics: parallel chains
+    p.add_argument("--cmlp_hidden", type=int, default=32)     # dynamics: cMLP hidden units per target
     p.add_argument("--output_dir", default=None)
     return p.parse_args()
 
@@ -540,10 +703,12 @@ def main():
     _log(f"args: {vars(args)}")
 
     res = {"args": vars(args), "device": str(device)}
-    if args.stage in ("1", "both"):
+    if args.stage in ("1", "both", "all"):
         res["stage1"] = run_stage1(args, device, out_dir, rng)
-    if args.stage in ("2", "both"):
+    if args.stage in ("2", "both", "all"):
         res["stage2"] = run_stage2(args, device, out_dir, rng)
+    if args.stage in ("dyn", "all"):
+        res["dynamics"] = run_dynamics(args, device, out_dir, rng)
     res["elapsed_sec"] = round(time.time() - t0, 1)
     with open(out_dir / "metrics.json", "w") as f:
         json.dump(res, f, indent=2)
