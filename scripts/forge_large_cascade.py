@@ -14,6 +14,7 @@ Usage (one (responder_mode, effect_size, snapshot_times) config -> one output di
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 import warnings
 from pathlib import Path
@@ -31,6 +32,26 @@ LARGE_CASCADES = {
 ISOLATED_LABELS = ("Q", "R", "S", "T")   # negative controls (no cascade)
 
 
+def scramble_labels(cascades, isolated, seed):
+    """Relabel every node to a name whose SORT ORDER is decoupled from cascade order.
+
+    Critical for a fair benchmark: in the authored graph the upstream label is always
+    alphabetically before the downstream one (A->B, ...), so a trivial "first = upstream"
+    rule — and the symmetric directional_score control — would score 100% for free.
+    Scrambling names breaks that so cross_asym (antisymmetric) must do the real work and
+    the symmetric control drops to ~chance. Returns (cascades', isolated', mapping).
+    """
+    labels = sorted(
+        set(cascades) | {d for dn in cascades.values() for d in dn} | set(isolated)
+    )
+    names = [f"L{i:02d}" for i in range(len(labels))]
+    random.Random(seed).shuffle(names)
+    m = dict(zip(labels, names))
+    new_cascades = {m[s]: {m[d]: v for d, v in dn.items()} for s, dn in cascades.items()}
+    new_isolated = tuple(m[x] for x in isolated)
+    return new_cascades, new_isolated, m
+
+
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--responder_mode", choices=["all", "receptor"], default="all")
@@ -43,6 +64,8 @@ def parse_args(argv=None):
     p.add_argument("--output", choices=["raw", "lognorm"], default="raw")
     p.add_argument("--no_sparse", action="store_true", help="store dense X (default sparse)")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--scramble_seed", type=int, default=None,
+                   help="if set, relabel nodes so sort-order != cascade-order (fair benchmark)")
     p.add_argument("--out", required=True, help="output directory for this config")
     return p.parse_args(argv)
 
@@ -52,9 +75,14 @@ def main(argv=None):
     times = [float(t) for t in str(args.snapshot_times).split(",") if t != ""]
     out = Path(args.out)
 
+    cascades, isolated = LARGE_CASCADES, ISOLATED_LABELS
+    if args.scramble_seed is not None:
+        cascades, isolated, mapping = scramble_labels(cascades, isolated, args.scramble_seed)
+        print(f"[forge] scrambled labels (seed={args.scramble_seed}): {mapping}", flush=True)
+
     sim = cf.CascadeSimulator(
-        LARGE_CASCADES,
-        isolated_labels=ISOLATED_LABELS,
+        cascades,
+        isolated_labels=isolated,
         n_cell_types=args.n_cell_types,
         n_cells_per_tube=args.n_cells_per_tube,
         n_donors=args.n_donors,

@@ -16,21 +16,32 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from forge_large_cascade import ISOLATED_LABELS, LARGE_CASCADES  # noqa: E402
+
+def _load_ground_truth(results_dir):
+    """Load one config's ground_truth.json (all configs share graph structure)."""
+    gts = sorted(Path(results_dir).rglob("ground_truth.json"))
+    if not gts:
+        return None
+    return json.load(open(gts[0]))
 
 
-def _node_depths():
-    """Longest-path depth of each node over the DAG (feedback edges dropped)."""
-    import cascade_forge as cf
-    g = cf.CascadeGraph.from_dict(LARGE_CASCADES, isolated_labels=ISOLATED_LABELS)
-    bidir = {frozenset(p) for p in g.bidirectional}
-    dag = [(u, v) for (u, v) in g.direct if frozenset((u, v)) not in bidir]
-    depth = {n: 0 for n in g.labels}
-    for _ in range(len(g.labels)):
+def _graph_facts(gt):
+    """From a ground_truth.json: (node_depths, labels, direct, bidir, isolated).
+
+    Scramble-agnostic — uses whatever names are actually in the data, so it works
+    whether or not the labels were scrambled at forge time.
+    """
+    labels = [str(x) for x in gt["labels"]]
+    direct = [tuple(str(x) for x in e) for e in gt["direct_edges"]]
+    bidir = {frozenset(str(x) for x in p) for p in gt.get("bidirectional_pairs", [])}
+    in_edge = {x for e in direct for x in e}
+    isolated = sorted(l for l in labels if l not in in_edge)
+    dag = [(u, v) for (u, v) in direct if frozenset((u, v)) not in bidir]
+    depth = {n: 0 for n in labels}
+    for _ in range(len(labels)):
         for u, v in dag:
             depth[v] = max(depth[v], depth[u] + 1)
-    return depth, g
+    return depth, labels, direct, sorted(bidir, key=lambda s: sorted(s)), isolated
 
 
 def _fmt_pct(x):
@@ -54,13 +65,15 @@ def main(argv=None):
     df["snapshot_time"] = df["snapshot_time"].astype(float)
     df = df.sort_values(["responder_mode", "effect_size", "snapshot_time"]).reset_index(drop=True)
 
-    depth, g = _node_depths()
+    gt = _load_ground_truth(root)
+    depth, labels, direct, bidir, isolated = _graph_facts(gt)
 
     lines: list[str] = []
     L = lines.append
     L("# Large cascade_forge experiment — results\n")
-    L(f"Authored graph: {len(g.labels)} labels ({len(ISOLATED_LABELS)} isolated negatives "
-      f"Q,R,S,T), {len(g.direct)} direct edges, feedback pair {g.bidirectional}.")
+    L(f"Authored graph: {len(labels)} labels ({len(isolated)} isolated negatives "
+      f"{isolated}), {len(direct)} direct edges, feedback pair "
+      f"{[tuple(sorted(s)) for s in bidir]}.")
     L(f"Configs benchmarked: {len(df)} snapshots.\n")
 
     # 1. Per-config summary

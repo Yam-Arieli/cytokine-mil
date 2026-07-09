@@ -17,7 +17,10 @@ PY=/cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python
 OUT=results/cascade_forge_large
 mkdir -p "$OUT"
 
-run() { $PY scripts/forge_large_cascade.py "$@"; }
+# --scramble_seed decouples label sort-order from cascade direction so the symmetric
+# directional_score control is a real ~chance baseline (not inflated to 100% by the
+# authored "upstream is alphabetically first" ordering). Same seed across all configs.
+run() { $PY scripts/forge_large_cascade.py --scramble_seed 1 "$@"; }
 
 run --responder_mode all      --effect_size 0.30 --snapshot_times 3,6 --out "$OUT/all_eff0.30"
 run --responder_mode receptor --effect_size 0.30 --snapshot_times 3,6 --out "$OUT/receptor_eff0.30"
