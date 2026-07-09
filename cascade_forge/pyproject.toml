@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cascade-forge"
+version = "0.1.0"
+description = "Author a cascade graph, forge a single-cell snapshot with known ground-truth direction — to benchmark cascadir."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Yam Arieli" }]
+keywords = [
+    "single-cell",
+    "simulation",
+    "signaling-cascade",
+    "ground-truth",
+    "benchmark",
+    "cascadir",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "anndata>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+# The end-to-end benchmark test / quickstart drive cascadir. It is NOT a hard
+# dependency (cascade_forge only *produces* data); install it to run those.
+cascadir = ["cascadir"]
+
+[project.urls]
+Homepage = "https://github.com/Yam-Arieli/cytokine-mil"
+Source = "https://github.com/Yam-Arieli/cytokine-mil/tree/main/cascade_forge"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cascade_forge = ["py.typed"]
+
+[tool.pytest.ini_options]
+markers = ["slow: end-to-end tests that train cascadir models (need cascadir + torch)"]

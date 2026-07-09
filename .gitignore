@@ -24,6 +24,9 @@ env/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
+# Pytest
+.pytest_cache/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -44,6 +47,7 @@ data/
 
 # Experiment outputs (regeneratable artifacts — pkl, pt, figures)
 results/
+local_results/
 report/
 # LaTeX build artifacts
 *.aux
