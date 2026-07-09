@@ -25,7 +25,7 @@ Composable steps (run any stage yourself, on your own device):
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Config (validated defaults)
 from cascadir.config import (
@@ -108,6 +108,7 @@ from cascadir.dynamics import (
 
 # Training
 from cascadir.train import (
+    build_frozen_embedding_cache,
     resolve_device,
     train_all_binary,
     train_binary_mil,
@@ -162,6 +163,7 @@ __all__ = [
     "train_binary_mil",
     "train_all_binary",
     "train_multiclass_mil",
+    "build_frozen_embedding_cache",
     "resolve_device",
     # signatures
     "integrated_gradients",

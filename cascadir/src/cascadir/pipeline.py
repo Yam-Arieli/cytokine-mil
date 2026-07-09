@@ -224,6 +224,7 @@ class CascadeDirection:
             lr=trc.binary_lr,
             momentum=trc.momentum,
             encoder_frozen=trc.encoder_frozen,
+            use_embedding_cache=trc.cache_frozen_embeddings,
             device=self.device,
             seed=self.seed,
             checkpoint_every=ig_every if ig_every else None,

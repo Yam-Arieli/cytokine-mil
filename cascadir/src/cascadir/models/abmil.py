@@ -51,12 +51,26 @@ class AbMil(nn.Module):
             p.requires_grad = True
         self.encoder_frozen = False
 
+    def forward_from_H(
+        self, H: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Bag head only: attention -> weighted pool -> classifier, given cell embeddings.
+
+        Args: H ``(N, embed_dim)`` (encoder output). Returns: (y_hat ``(K,)``, a ``(N,)``, H).
+
+        Used to train the attention/classifier on **pre-encoded** cells when the encoder
+        is frozen (its output ``H`` is then constant across epochs). Produces the exact
+        same computation as ``forward`` from the point ``H`` is available, so training on
+        cached ``H`` is bit-identical to re-running the encoder every step.
+        """
+        a = self.attention(H)                     # (N,)
+        z_tube = (a.unsqueeze(1) * H).sum(dim=0)  # (embed_dim,)
+        y_hat = self.classifier(z_tube)           # (K,)
+        return y_hat, a, H
+
     def forward(
         self, X: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Args: X ``(N, G)``. Returns: (y_hat ``(K,)``, a ``(N,)``, H ``(N, embed_dim)``)."""
         H = self.encoder(X)                       # (N, embed_dim)
-        a = self.attention(H)                     # (N,)
-        z_tube = (a.unsqueeze(1) * H).sum(dim=0)  # (embed_dim,)
-        y_hat = self.classifier(z_tube)           # (K,)
-        return y_hat, a, H
+        return self.forward_from_H(H)

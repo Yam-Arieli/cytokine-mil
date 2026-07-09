@@ -1760,6 +1760,17 @@ and the validated calibration numbers (88/86/83%).
   targeted panels / few donors).
 - Direction: `est.direction_table()` (cross_asym; the validated 88/86/83% output).
 
+**Perf (results-preserving, on by default): `TrainConfig.cache_frozen_embeddings=True`.**
+With a frozen encoder (the default/validated regime) Stage-2 re-runs the identical
+`encoder(X)` on every tube every epoch. The flag pre-encodes each tube **once** (shared
+across all per-condition binary models via `train.build_frozen_embedding_cache`) and trains
+the attention/classifier head on the cached embeddings (`AbMil.forward_from_H`). The encoder
+has no stochastic/mode-dependent layers, so the trained models and IG signatures are
+**bit-identical** to the un-cached path — a pure speedup (encoder MLP dominates the FLOPs;
+IG is untouched, still running the full model from gene inputs). Auto-bypassed when
+`encoder_frozen=False`; set `False` only to A/B verify. Covered by
+`cascadir/tests/test_embedding_cache.py`.
+
 `cascadir` mirrors the research code in `cytokine_mil/analysis/…` but is decoupled from the
 cluster. When the method changes, update both (and `cascadir/MANUAL.md`).
 

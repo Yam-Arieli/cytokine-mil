@@ -82,6 +82,13 @@ class TrainConfig:
         checkpoint_ig_top_n: Genes to keep per captured checkpoint. ``None`` (default)
             stores the **full** per-gene ranking (so recruitment / rank trajectories can
             be reconstructed); set an int to store only the top-k per checkpoint.
+        cache_frozen_embeddings: Pre-encode every tube once with the frozen encoder and
+            train the attention/classifier head on the cached embeddings instead of
+            re-running the encoder every step. **A pure performance optimization — the
+            trained models and discovered signatures are bit-identical.** Only takes
+            effect when ``encoder_frozen`` is True (the default and only validated
+            regime); with an unfrozen encoder the cache would be stale and is bypassed.
+            Set False to force the full per-step encoder forward (e.g. to A/B verify).
     """
 
     embed_dim: int = 128
@@ -95,6 +102,7 @@ class TrainConfig:
     encoder_frozen: bool = True
     checkpoint_ig_every_n_epochs: int | None = None
     checkpoint_ig_top_n: int | None = None
+    cache_frozen_embeddings: bool = True
 
 
 @dataclass(frozen=True)

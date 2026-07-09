@@ -211,13 +211,23 @@ symmetric, it changes only coupling (existence), never `cross_asym` (direction).
 - `TubeConfig(n_per_cell_type=30, min_cells=10, n_tubes=10, seed=0)`
 - `TrainConfig(embed_dim=128, hidden_dims=(512,256), attention_hidden_dim=64,
   encoder_epochs=50, binary_epochs=250, encoder_lr=0.01, binary_lr=3e-5, momentum=0.9,
-  encoder_frozen=True)`
+  encoder_frozen=True, cache_frozen_embeddings=True)`
 - `CrossAsymConfig(top_n=50, n_ig_steps=20, min_cells=10, magnitude_threshold=0.01,
   strong_consensus=0.75, weak_consensus=0.50, n_null_perms=100, null_seed=42)`
 
 Pass e.g. `CascadeDirection(..., train_config=cd.TrainConfig(binary_epochs=150))`. The
 defaults match the validated runs; change `top_n` (signature size) and `binary_epochs`
 first if you need to trade speed for fidelity.
+
+**Performance (free, on by default): `cache_frozen_embeddings=True`.** When the encoder is
+frozen (the default), Stage-2 training re-runs the same `encoder(X)` on every tube every
+epoch even though the output never changes. With this flag each tube is encoded **once**
+(shared across all per-condition binary models) and the attention/classifier head trains on
+the cached embeddings. The encoder has no stochastic/mode-dependent layers, so the trained
+models and discovered signatures are **bit-identical** to the un-cached path — it is purely
+less compute (the encoder MLP dominates the FLOPs). Integrated Gradients is unaffected: it
+still runs the full reconnected model from gene inputs. Set `False` only to A/B verify.
+Automatically bypassed when `encoder_frozen=False`.
 
 ---
 
