@@ -95,33 +95,62 @@ def main():
         return round(WMIN + max(0.0, min(1.0, t)) * (WMAX - WMIN), 2)
 
     color = {"direct": "fgood", "transitive": "fgood", "false": "fbad"}
-    lines = []
-    lines.append("\\begin{tikzpicture}[>={Stealth[length=2mm]},")
-    lines.append("  cnode/.style={circle,draw,thick,minimum size=8mm,fill=methodblue!14,font=\\small},")
-    lines.append("  inode/.style={circle,draw,thick,dashed,minimum size=8mm,fill=black!6,font=\\small}]")
-    for n, (x, y) in POS.items():
-        st = "inode" if n in ISOLATED else "cnode"
-        lines.append(f"  \\node[{st}] ({n}) at ({x},{y}) {{{n}}};")
-    # draw false first (under), then transitive, then direct (on top)
-    order = {"false": 0, "transitive": 1, "direct": 2}
-    for src, dst, cat, c in sorted(edges, key=lambda e: order[e[2]]):
+
+    def estyle(cat, c):
         dash = ",densely dashed" if cat == "transitive" else ""
         op = ",opacity=0.85" if cat == "false" else ""
+        return f"draw={color[cat]},line width={width(c)}pt{dash}{op}"
+
+    # ---- LEFT panel: the recovered graph (unchanged; width encodes coupling) ----
+    g = []
+    g.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=2mm]},")
+    g.append("  cnode/.style={circle,draw,thick,minimum size=8mm,fill=methodblue!14,font=\\small},")
+    g.append("  inode/.style={circle,draw,thick,dashed,minimum size=8mm,fill=black!6,font=\\small}]")
+    for n, (x, y) in POS.items():
+        st = "inode" if n in ISOLATED else "cnode"
+        g.append(f"  \\node[{st}] ({n}) at ({x},{y}) {{{n}}};")
+    order = {"false": 0, "transitive": 1, "direct": 2}   # draw false under, direct on top
+    for src, dst, cat, c in sorted(edges, key=lambda e: order[e[2]]):
         conn = " to[bend left=12]" if cat != "direct" else " to"
-        lines.append(f"  \\draw[->,draw={color[cat]},line width={width(c)}pt{dash}{op}]"
-                     f" ({src}){conn} ({dst});")
-    # width-scale legend (coupling -> width)
+        g.append(f"  \\draw[->,{estyle(cat,c)}] ({src}){conn} ({dst});")
     y0 = -0.5
-    lines.append(f"  \\node[font=\\scriptsize,text=black!70,anchor=east] at (1.0,{y0}) "
-                 f"{{edge width $=$ coupling:}};")
+    g.append(f"  \\node[font=\\scriptsize,text=black!70,anchor=east] at (1.0,{y0}) "
+             f"{{edge width $=$ coupling:}};")
     for i, cv in enumerate([0.02, 0.15, 0.50]):
         xa = 1.4 + i * 2.5
-        lines.append(f"  \\draw[->,draw=black!60,line width={width(cv)}pt] "
-                     f"({xa},{y0}) -- ({xa+1.2},{y0});")
-        lines.append(f"  \\node[font=\\scriptsize,text=black!60] at ({xa+0.6},{y0-0.34}) "
-                     f"{{{cv:.2f}}};")
-    lines.append("\\end{tikzpicture}")
-    OUT.write_text("\n".join(lines))
+        g.append(f"  \\draw[->,draw=black!60,line width={width(cv)}pt] "
+                 f"({xa},{y0}) -- ({xa+1.2},{y0});")
+        g.append(f"  \\node[font=\\scriptsize,text=black!60] at ({xa+0.6},{y0-0.34}) {{{cv:.2f}}};")
+    g.append("\\end{tikzpicture}")
+
+    # ---- RIGHT panel: the same edges as up-arrows, sorted ascending by coupling ----
+    # Height AND width both encode coupling; color/dash carry category. Groups become
+    # visible: hairline-short orange (isolated-negative noise floor) -> green dashed
+    # (transitive) -> tall fat green (direct cascades). The lone tall-ish orange is M-L.
+    HMAX, PITCH = 4.0, 0.16
+    srt = sorted(edges, key=lambda e: e[3])              # ascending by coupling
+    Xmax = (len(srt) - 1) * PITCH
+
+    def ypos(c):
+        return round(c / cmax * HMAX, 3) if cmax else 0.0
+
+    b = []
+    b.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.4mm]}]")
+    b.append(f"  \\draw[black!45] (-0.12,0) -- ({Xmax + 0.25:.2f},0);")
+    b.append(f"  \\draw[black!45] (-0.12,0) -- (-0.12,{HMAX + 0.25:.2f});")
+    for cc in (0.0, 0.25, 0.5):
+        b.append(f"  \\draw[black!45] (-0.24,{ypos(cc):.2f}) -- (-0.12,{ypos(cc):.2f}) "
+                 f"node[left,font=\\scriptsize,text=black!60,inner sep=1.5pt] {{{cc:.2f}}};")
+    b.append(f"  \\node[rotate=90,font=\\small,text=black!70] at (-1.0,{HMAX / 2:.2f}) {{coupling}};")
+    b.append(f"  \\node[font=\\scriptsize,text=black!60] at ({Xmax / 2:.2f},-0.55) "
+             f"{{recovered edges, sorted}};")
+    for i, (src, dst, cat, c) in enumerate(srt):
+        x = round(i * PITCH, 3)
+        b.append(f"  \\draw[->,{estyle(cat,c)}] ({x},0) -- ({x},{ypos(c)});")
+    b.append("\\end{tikzpicture}")
+
+    OUT.write_text("\\resizebox{\\linewidth}{!}{%\n" + "\n".join(g)
+                   + "\n\\hspace{6mm}%\n" + "\n".join(b) + "\n}\n")
 
     n_direct_truth = len({frozenset(e) for e in DIRECT})   # 11 (O<->P once)
     print(f"coupled pairs returned: {len(coupled)}")

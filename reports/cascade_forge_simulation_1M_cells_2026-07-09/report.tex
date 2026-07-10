@@ -289,17 +289,21 @@ pairs, is correct wherever a real cascade exists.
 \centering
 \input{found_graph.tex}
 \caption{\textbf{What \texttt{cascadir} recovered} (one run: \texttt{all}, eff $0.30$,
-$t\!=\!6$; 30 coupled pairs). Directed edges are the method's calls, oriented by
-\texttt{cross\_asym}, on the Figure~\ref{fig:system} layout.
-\textcolor{fgood}{\textbf{Green solid}}: an authored \emph{direct} cascade recovered with
-correct direction (11/11). \textcolor{fgood}{\textbf{Green dashed}}: a true but
-\emph{indirect} (transitive) coupling, e.g.\ $A\!\to\!C$ via $B$ (4).
-\textcolor{fbad}{\textbf{Orange}}: a \emph{false-positive} coupling with no cascade
-relationship (15). \textbf{Edge width $=$ coupling strength} (range $0.01$--$0.53$; see
-scale): the real cascades are the fat arrows, the isolated-negative over-call sits at the
-hairline noise floor, and the one substantive false positive, $M\!-\!L$ (a shared-downstream
-artifact, both drive $N$), is the visibly thicker orange edge. Zero authored direct edges
-were missed.}
+$t\!=\!6$; 30 coupled pairs). \textbf{Left:} the method's calls as a directed graph, oriented
+by \texttt{cross\_asym}, on the Figure~\ref{fig:system} layout;
+\textbf{edge width $=$ coupling strength} ($0.01$--$0.53$; see scale).
+\textcolor{fgood}{\textbf{Green solid}} $=$ an authored \emph{direct} cascade recovered with
+correct direction (11/11); \textcolor{fgood}{\textbf{green dashed}} $=$ a true \emph{indirect}
+(transitive) coupling, e.g.\ $A\!\to\!C$ via $B$ (4); \textcolor{fbad}{\textbf{orange}} $=$ a
+\emph{false-positive} coupling (15); zero direct edges missed. \textbf{Right:} the same 30
+edges as up-arrows sorted by coupling (both \emph{width and height} encode coupling), keeping
+each edge's colour and dash. The groups separate left-to-right: a hairline-short
+\textcolor{fbad}{orange} cluster (the isolated-negative over-call, at the noise floor), then
+\textcolor{fgood}{green-dashed} transitive links, then the tall, fat \textcolor{fgood}{green}
+direct cascades. The lone \textcolor{fbad}{orange} bar rising into the middle is $M\!-\!L$
+(a shared-downstream artifact --- both drive $N$), the only substantive false positive and the
+reason a plain coupling threshold cannot split true from false --- which motivates a
+failure-mode analysis.}
 \label{fig:found}
 \end{figure}
 
