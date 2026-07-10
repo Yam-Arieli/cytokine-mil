@@ -15,7 +15,8 @@ from pathlib import Path
 import pandas as pd
 
 CSV = sys.argv[1] if len(sys.argv) > 1 else "coupling_t6.csv"
-OUT = Path(__file__).resolve().parent / "found_graph.tex"
+OUT = Path(__file__).resolve().parent / "found_graph.tex"       # Figure 3: recovered graph
+OUT_BARS = Path(__file__).resolve().parent / "found_bars.tex"   # Figure 4: sorted arrow-bars
 
 # Node positions — identical to Figure 1.
 POS = {
@@ -149,8 +150,11 @@ def main():
         b.append(f"  \\draw[->,{estyle(cat,c)}] ({x},0) -- ({x},{ypos(c)});")
     b.append("\\end{tikzpicture}")
 
-    OUT.write_text("\\resizebox{\\linewidth}{!}{%\n" + "\n".join(g)
-                   + "\n\\hspace{6mm}%\n" + "\n".join(b) + "\n}\n")
+    # Two separate figures now: the recovered graph (Fig 3) and the sorted arrow-bars
+    # (Fig 4). Each is scaled to \linewidth on its own, so the bars are no longer squeezed
+    # into a shared row (that shared-row scaling was what made them look dense).
+    OUT.write_text("\\resizebox{\\linewidth}{!}{%\n" + "\n".join(g) + "\n}\n")
+    OUT_BARS.write_text("\\resizebox{\\linewidth}{!}{%\n" + "\n".join(b) + "\n}\n")
 
     n_direct_truth = len({frozenset(e) for e in DIRECT})   # 11 (O<->P once)
     print(f"coupled pairs returned: {len(coupled)}")
@@ -159,6 +163,7 @@ def main():
     print(f"  FALSE positives           : {counts['false']}")
     print(f"  missed direct edges       : {sorted(set(frozenset(e) for e in missed))}")
     print(f"[wrote] {OUT}")
+    print(f"[wrote] {OUT_BARS}")
 
 
 if __name__ == "__main__":

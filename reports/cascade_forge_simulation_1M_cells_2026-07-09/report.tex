@@ -14,6 +14,7 @@
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{caption}
+\usepackage{float}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,calc}
 \usepackage[colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black,
@@ -283,28 +284,44 @@ edge oriented by \texttt{cross\_asym}, on the same layout as the authored graph
 correct direction} (none missed) and \textbf{4} of the genuine \emph{indirect} (transitive)
 couplings, alongside \textbf{15 false-positive} couplings --- the over-call made concrete.
 The false edges are the honest cost of the coupling gate; direction, read only on coupled
-pairs, is correct wherever a real cascade exists.
+pairs, is correct wherever a real cascade exists. Figure~\ref{fig:foundbars} re-plots the same
+30 edges sorted by coupling strength, which makes the separability of true cascades, transitive
+links, and the isolated-negative noise floor --- and the single stubborn exception, $M\!-\!L$
+--- visible at a glance.
 
 \begin{figure}[h]
 \centering
 \input{found_graph.tex}
 \caption{\textbf{What \texttt{cascadir} recovered} (one run: \texttt{all}, eff $0.30$,
-$t\!=\!6$; 30 coupled pairs). \textbf{Left:} the method's calls as a directed graph, oriented
-by \texttt{cross\_asym}, on the Figure~\ref{fig:system} layout;
-\textbf{edge width $=$ coupling strength} ($0.01$--$0.53$; see scale).
-\textcolor{fgood}{\textbf{Green solid}} $=$ an authored \emph{direct} cascade recovered with
-correct direction (11/11); \textcolor{fgood}{\textbf{green dashed}} $=$ a true \emph{indirect}
-(transitive) coupling, e.g.\ $A\!\to\!C$ via $B$ (4); \textcolor{fbad}{\textbf{orange}} $=$ a
-\emph{false-positive} coupling (15); zero direct edges missed. \textbf{Right:} the same 30
-edges as up-arrows sorted by coupling (both \emph{width and height} encode coupling), keeping
-each edge's colour and dash. The groups separate left-to-right: a hairline-short
-\textcolor{fbad}{orange} cluster (the isolated-negative over-call, at the noise floor), then
-\textcolor{fgood}{green-dashed} transitive links, then the tall, fat \textcolor{fgood}{green}
-direct cascades. The lone \textcolor{fbad}{orange} bar rising into the middle is $M\!-\!L$
-(a shared-downstream artifact --- both drive $N$), the only substantive false positive and the
-reason a plain coupling threshold cannot split true from false --- which motivates a
-failure-mode analysis.}
+$t\!=\!6$; 30 coupled pairs), drawn as a directed graph oriented by \texttt{cross\_asym} on the
+Figure~\ref{fig:system} layout; \textbf{edge width $=$ coupling strength} ($0.01$--$0.53$; see
+scale). \textcolor{fgood}{\textbf{Green solid}} $=$ an authored \emph{direct} cascade recovered
+with correct direction (11/11); \textcolor{fgood}{\textbf{green dashed}} $=$ a true
+\emph{indirect} (transitive) coupling, e.g.\ $A\!\to\!C$ via $B$ (4); \textcolor{fbad}{\textbf{orange}}
+$=$ a \emph{false-positive} coupling (15); zero direct edges missed. The false positives are the
+isolated negatives $Q,R,S,T$ spuriously coupling among themselves and to the sink labels
+$I,J,K$, plus the one substantive $M\!\to\!L$ artifact (both drive $N$; shared-downstream
+common cause).}
 \label{fig:found}
+\end{figure}
+
+\clearpage
+\begin{figure}[H]
+\centering
+\input{found_bars.tex}
+\caption{\textbf{The same 30 recovered edges, sorted by coupling strength} (ascending
+left-to-right), each drawn as an up-arrow from the axis that keeps its Figure~\ref{fig:found}
+style: \textbf{both width and height encode coupling}, and colour/dash carry category
+(\textcolor{fgood}{green} true, \textcolor{fbad}{orange} false-positive, dashed $=$ transitive).
+Three groups separate cleanly: a hairline-short \textcolor{fbad}{orange} cluster on the left
+(the isolated-negative over-call, sitting at the $\sim\!0.01$--$0.03$ noise floor), then a band
+of \textcolor{fgood}{green-dashed} transitive links, then the tall, fat \textcolor{fgood}{green}
+direct cascades on the right ($0.17$--$0.53$). The bars grow wider \emph{and} taller and shift
+orange$\to$green / dashed$\to$solid rightward --- \emph{except} the lone \textcolor{fbad}{orange}
+bar rising into the middle band, $M\!-\!L$ (the shared-downstream artifact). That single
+exception is why a flat coupling threshold cannot split true from false, and motivates the
+failure-mode analysis.}
+\label{fig:foundbars}
 \end{figure}
 
 \section{Conclusion}
