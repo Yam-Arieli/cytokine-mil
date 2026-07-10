@@ -1,12 +1,12 @@
 \resizebox{\linewidth}{!}{%
-\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.1mm]}]
+\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.1mm]},
+  blab/.style={font=\tiny,text=black!62,rotate=45,anchor=north east,inner sep=1pt}]
   \draw[black!45] (-0.12,0) -- (4.89,0);
   \draw[black!45] (-0.12,0) -- (-0.12,2.25);
   \draw[black!45] (-0.24,0.00) -- (-0.12,0.00) node[left,font=\scriptsize,text=black!60,inner sep=1.5pt] {0.00};
   \draw[black!45] (-0.24,0.95) -- (-0.12,0.95) node[left,font=\scriptsize,text=black!60,inner sep=1.5pt] {0.25};
   \draw[black!45] (-0.24,1.90) -- (-0.12,1.90) node[left,font=\scriptsize,text=black!60,inner sep=1.5pt] {0.50};
   \node[rotate=90,font=\small,text=black!70] at (-1.0,1.00) {coupling};
-  \node[font=\scriptsize,text=black!60] at (2.32,-0.5) {recovered edges, sorted};
   \draw[->,draw=fbad,line width=0.2pt,opacity=0.85] (0.0,0) -- (0.0,0.037);
   \draw[->,draw=fbad,line width=0.21pt,opacity=0.85] (0.16,0) -- (0.16,0.040);
   \draw[->,draw=fbad,line width=0.24pt,opacity=0.85] (0.32,0) -- (0.32,0.051);
@@ -37,5 +37,35 @@
   \draw[->,draw=fgood,line width=4.1pt] (4.32,0) -- (4.32,1.632);
   \draw[->,draw=fgood,line width=4.76pt] (4.48,0) -- (4.48,1.901);
   \draw[->,draw=fgood,line width=5.0pt] (4.64,0) -- (4.64,2.0);
+  \node[blab] at (0.0,-0.04) {R$\to$I};
+  \node[blab] at (0.16,-0.04) {R$\to$J};
+  \node[blab] at (0.32,-0.04) {T$\to$J};
+  \node[blab] at (0.48,-0.04) {S$\to$J};
+  \node[blab] at (0.64,-0.04) {S$\to$K};
+  \node[blab] at (0.8,-0.04) {R$\to$K};
+  \node[blab] at (0.96,-0.04) {Q$\to$K};
+  \node[blab] at (1.12,-0.04) {K$\to$T};
+  \node[blab] at (1.28,-0.04) {R$\to$Q};
+  \node[blab] at (1.44,-0.04) {S$\to$R};
+  \node[blab] at (1.6,-0.04) {R$\to$T};
+  \node[blab] at (1.76,-0.04) {T$\to$Q};
+  \node[blab] at (1.92,-0.04) {A$\to$D};
+  \node[blab] at (2.08,-0.04) {S$\to$T};
+  \node[blab] at (2.24,-0.04) {S$\to$Q};
+  \node[blab] at (2.4,-0.04) {B$\to$D};
+  \node[blab] at (2.56,-0.04) {M$\to$L};
+  \node[blab] at (2.72,-0.04) {A$\to$C};
+  \node[blab] at (2.88,-0.04) {E$\to$G};
+  \node[blab] at (3.04,-0.04) {H$\to$K};
+  \node[blab] at (3.2,-0.04) {H$\to$J};
+  \node[blab] at (3.36,-0.04) {B$\to$C};
+  \node[blab] at (3.52,-0.04) {C$\to$D};
+  \node[blab] at (3.68,-0.04) {M$\to$N};
+  \node[blab] at (3.84,-0.04) {A$\to$B};
+  \node[blab] at (4.0,-0.04) {H$\to$I};
+  \node[blab] at (4.16,-0.04) {F$\to$G};
+  \node[blab] at (4.32,-0.04) {L$\to$N};
+  \node[blab] at (4.48,-0.04) {O$\to$P};
+  \node[blab] at (4.64,-0.04) {E$\to$F};
 \end{tikzpicture}
 }

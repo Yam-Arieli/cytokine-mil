@@ -136,18 +136,20 @@ def main():
         return round(c / cmax * HMAX, 3) if cmax else 0.0
 
     b = []
-    b.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.1mm]}]")
+    b.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.1mm]},")
+    # per-bar direction tick: small, 45deg CCW, so each bar's downstream label sits above
+    # the next bar's upstream label (they interlock and fit).
+    b.append("  blab/.style={font=\\tiny,text=black!62,rotate=45,anchor=north east,inner sep=1pt}]")
     b.append(f"  \\draw[black!45] (-0.12,0) -- ({Xmax + 0.25:.2f},0);")
     b.append(f"  \\draw[black!45] (-0.12,0) -- (-0.12,{HMAX + 0.25:.2f});")
     for cc in (0.0, 0.25, 0.5):
         b.append(f"  \\draw[black!45] (-0.24,{ypos(cc):.2f}) -- (-0.12,{ypos(cc):.2f}) "
                  f"node[left,font=\\scriptsize,text=black!60,inner sep=1.5pt] {{{cc:.2f}}};")
     b.append(f"  \\node[rotate=90,font=\\small,text=black!70] at (-1.0,{HMAX / 2:.2f}) {{coupling}};")
-    b.append(f"  \\node[font=\\scriptsize,text=black!60] at ({Xmax / 2:.2f},-0.5) "
-             f"{{recovered edges, sorted}};")
     for i, (src, dst, cat, c) in enumerate(srt):
         x = round(i * PITCH, 3)
         b.append(f"  \\draw[->,{estyle(cat,c)}] ({x},0) -- ({x},{ypos(c)});")
+        b.append(f"  \\node[blab] at ({x},-0.04) {{{src}$\\to${dst}}};")
     b.append("\\end{tikzpicture}")
 
     # Two separate figures now: the recovered graph (Fig 3) and the sorted arrow-bars
