@@ -139,7 +139,7 @@ def main():
     b.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.1mm]},")
     # per-bar direction tick: small, 45deg CCW, so each bar's downstream label sits above
     # the next bar's upstream label (they interlock and fit).
-    b.append("  blab/.style={font=\\tiny,text=black!62,rotate=45,anchor=north east,inner sep=1pt}]")
+    b.append("  blab/.style={font=\\fontsize{3}{3.6}\\selectfont,text=black!62,rotate=45,anchor=north east,inner sep=1pt}]")
     b.append(f"  \\draw[black!45] (-0.12,0) -- ({Xmax + 0.25:.2f},0);")
     b.append(f"  \\draw[black!45] (-0.12,0) -- (-0.12,{HMAX + 0.25:.2f});")
     for cc in (0.0, 0.25, 0.5):
