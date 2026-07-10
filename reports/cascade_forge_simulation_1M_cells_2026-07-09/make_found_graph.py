@@ -75,7 +75,7 @@ def main():
         else:
             cat = "false"
         counts[cat] += 1
-        edges.append((src, dst, cat))
+        edges.append((src, dst, cat, float(r["coupling"])))
 
     coupled_keys = {frozenset((str(r["condition_a"]), str(r["condition_b"])))
                     for _, r in coupled.iterrows()}
@@ -84,11 +84,17 @@ def main():
     # dedupe feedback for missed check
     missed = [e for e in DIRECT if frozenset(e) not in coupled_keys]
 
-    sty = {
-        "direct":     "draw=fgood, very thick",
-        "transitive": "draw=fgood, thick, densely dashed",
-        "false":      "draw=fbad, thin, opacity=0.75",
-    }
+    # Edge WIDTH encodes coupling strength (wide range so it is obvious); color = true
+    # (green) vs false (orange); dashed = transitive. Widths span the data's min..max.
+    cvals = [c for _, _, _, c in edges]
+    cmin, cmax = (min(cvals), max(cvals)) if cvals else (0.0, 1.0)
+    WMIN, WMAX = 0.2, 5.0   # pt
+
+    def width(c):
+        t = (c - cmin) / (cmax - cmin) if cmax > cmin else 0.5
+        return round(WMIN + max(0.0, min(1.0, t)) * (WMAX - WMIN), 2)
+
+    color = {"direct": "fgood", "transitive": "fgood", "false": "fbad"}
     lines = []
     lines.append("\\begin{tikzpicture}[>={Stealth[length=2mm]},")
     lines.append("  cnode/.style={circle,draw,thick,minimum size=8mm,fill=methodblue!14,font=\\small},")
@@ -96,12 +102,24 @@ def main():
     for n, (x, y) in POS.items():
         st = "inode" if n in ISOLATED else "cnode"
         lines.append(f"  \\node[{st}] ({n}) at ({x},{y}) {{{n}}};")
-    # edges: draw false first (under), then transitive, then direct (on top)
+    # draw false first (under), then transitive, then direct (on top)
     order = {"false": 0, "transitive": 1, "direct": 2}
-    for src, dst, cat in sorted(edges, key=lambda e: order[e[2]]):
-        bend = "bend left=12" if cat != "direct" else ""
-        opt = sty[cat] + ("," + bend if bend else "")
-        lines.append(f"  \\draw[->,{opt}] ({src}) to ({dst});")
+    for src, dst, cat, c in sorted(edges, key=lambda e: order[e[2]]):
+        dash = ",densely dashed" if cat == "transitive" else ""
+        op = ",opacity=0.85" if cat == "false" else ""
+        conn = " to[bend left=12]" if cat != "direct" else " to"
+        lines.append(f"  \\draw[->,draw={color[cat]},line width={width(c)}pt{dash}{op}]"
+                     f" ({src}){conn} ({dst});")
+    # width-scale legend (coupling -> width)
+    y0 = -0.5
+    lines.append(f"  \\node[font=\\scriptsize,text=black!70,anchor=east] at (1.0,{y0}) "
+                 f"{{edge width $=$ coupling:}};")
+    for i, cv in enumerate([0.02, 0.15, 0.50]):
+        xa = 1.4 + i * 2.5
+        lines.append(f"  \\draw[->,draw=black!60,line width={width(cv)}pt] "
+                     f"({xa},{y0}) -- ({xa+1.2},{y0});")
+        lines.append(f"  \\node[font=\\scriptsize,text=black!60] at ({xa+0.6},{y0-0.34}) "
+                     f"{{{cv:.2f}}};")
     lines.append("\\end{tikzpicture}")
     OUT.write_text("\n".join(lines))
 
