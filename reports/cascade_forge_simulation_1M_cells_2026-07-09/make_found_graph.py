@@ -128,7 +128,7 @@ def main():
     # Height AND width both encode coupling; color/dash carry category. Groups become
     # visible: hairline-short orange (isolated-negative noise floor) -> green dashed
     # (transitive) -> tall fat green (direct cascades). The lone tall-ish orange is M-L.
-    HMAX, PITCH = 4.0, 0.16
+    HMAX, PITCH = 2.0, 0.16   # short, wide strip so it sits under the graph on one page
     srt = sorted(edges, key=lambda e: e[3])              # ascending by coupling
     Xmax = (len(srt) - 1) * PITCH
 
@@ -136,14 +136,14 @@ def main():
         return round(c / cmax * HMAX, 3) if cmax else 0.0
 
     b = []
-    b.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.4mm]}]")
+    b.append("\\begin{tikzpicture}[baseline=(current bounding box.center),>={Stealth[length=1.1mm]}]")
     b.append(f"  \\draw[black!45] (-0.12,0) -- ({Xmax + 0.25:.2f},0);")
     b.append(f"  \\draw[black!45] (-0.12,0) -- (-0.12,{HMAX + 0.25:.2f});")
     for cc in (0.0, 0.25, 0.5):
         b.append(f"  \\draw[black!45] (-0.24,{ypos(cc):.2f}) -- (-0.12,{ypos(cc):.2f}) "
                  f"node[left,font=\\scriptsize,text=black!60,inner sep=1.5pt] {{{cc:.2f}}};")
     b.append(f"  \\node[rotate=90,font=\\small,text=black!70] at (-1.0,{HMAX / 2:.2f}) {{coupling}};")
-    b.append(f"  \\node[font=\\scriptsize,text=black!60] at ({Xmax / 2:.2f},-0.55) "
+    b.append(f"  \\node[font=\\scriptsize,text=black!60] at ({Xmax / 2:.2f},-0.5) "
              f"{{recovered edges, sorted}};")
     for i, (src, dst, cat, c) in enumerate(srt):
         x = round(i * PITCH, 3)
