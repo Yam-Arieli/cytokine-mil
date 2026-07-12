@@ -162,9 +162,9 @@ Our approach is built on two premises. The first is that every cytokine leaves a
 \label{sec:claim-signature}
 We define a cytokine's signature $S_X$ as the $k$ genes that, together, make its response most separable from the control baseline \citep{golub1999molecular}. Formally,
 \[
-  S_X \;=\; \operatorname*{arg\,max}_{\substack{G\subseteq\mathcal{G}\\ |G|=k}}\ \operatorname{acc}\!\big(M^{X}_{G}\big),
+  S_X \;=\; \operatorname*{arg\,max}_{\substack{G\subseteq\mathcal{G}\\ |G|=k}}\ \operatorname{acc}_{X}(G),
 \]
-where $\mathcal{G}$ is the set of all genes, $\operatorname{acc}(M^{X}_{G})$ is the accuracy of a classifier that tells $X$ from the control using only the genes $G$, and $k$ fixes the signature's size.
+where $\mathcal{G}$ is the set of all genes, $\operatorname{acc}_{X}(G)$ is the accuracy of a classifier that tells $X$ from the control using only the genes $G$, and $k$ fixes the signature's size (we choose $k=50$ in our experiments).
 Recent work makes this concrete: a single-cell dictionary of immune responses recorded a distinct signature for dozens of cytokines, confirming that their responses are separable at the transcriptional level \citep{cui2024dictionary}.
 The distinctiveness is not accidental: because a cytokine acts through its own receptor and a specific downstream pathway, it engages a particular set of transcription factors, and so induces its own target genes.
 Throughout, a cytokine's signature is measured in the responding cells' gene expression, not in the cytokine itself; the molecule is invisible to us, and only its transcriptional footprint is seen.
@@ -173,7 +173,7 @@ Throughout, a cytokine's signature is measured in the responding cells' gene exp
 \label{sec:claim-direction}
 If X lies upstream of Y, a sample given only X still generates Y internally: relay cells produce Y and others respond, imprinting Y's signature onto the X condition.
 That a stimulated sample generates such secondary responses is well documented: type I interferon induced downstream of Toll-like receptor activation acts back on the same and neighbouring cells to induce its own signature \citep{gautier2005type}, and single-cell measurements have resolved these paracrine cascades directly \citep{xue2015single}.
-The direction comes from an asymmetry: cells given X carry both X's own signature and the induced Y signature, whereas cells given Y carry mainly their own, since X is not produced downstream of Y; comparing how much of each signature appears in the other condition therefore points from upstream to downstream.
+The direction comes from an asymmetry: cells given X carry both X's own signature and the induced Y signature, while cells given Y carry mainly their own. This is because X is not produced downstream of Y, so little of X's signature appears in the Y condition. Comparing how much of each signature appears in the other condition therefore points from upstream to downstream.
 
 \begin{figure}[H]
 \centering
@@ -184,15 +184,15 @@ The direction comes from an asymmetry: cells given X carry both X's own signatur
   % axes (abstract gene space)
   \draw[->, gray!60] (0,0) -- (5.4,0);
   \draw[->, gray!60] (0,0) -- (0,5.4);
-  \node[below] at (3.1,-0.2) {\footnotesize $X$ signature subspace};
-  \node[rotate=90] at (-0.85,2.9) {\footnotesize $Y$ signature subspace};
+  \node[below] at (3.1,-0.2) {\footnotesize $X$ signature direction};
+  \node[rotate=90] at (-0.85,2.9) {\footnotesize $Y$ signature direction};
   % equal-length response vectors
   \coordinate (O) at (0,0);
   \coordinate (X) at (20:4);
   \coordinate (Y) at (85:4);
   \draw[->, line width=1.3pt, blue!70!black]   (O) -- (X) node[right] {$X$};
   \draw[->, line width=1.3pt, orange!90!black] (O) -- (Y) node[above] {$Y$};
-  % orthogonal projections onto the OTHER cytokine's subspace (dashed guides)
+  % orthogonal projections onto the OTHER cytokine's direction (dashed guides)
   \draw[dashed, gray!70] (X) -- (-0.3, {4*sin(20)});
   \draw[dashed, gray!70] (Y) -- ({4*cos(85)}, -0.3);
   % projection-magnitude arrows
@@ -230,15 +230,16 @@ The direction comes from an asymmetry: cells given X carry both X's own signatur
 {\footnotesize (b)}
 \end{minipage}
 \caption{\textbf{The direction cue as an asymmetry in signature space.} \textbf{(a)} The
-two axes are the $X$ and $Y$ signature subspaces, two sets of directions within the full
-gene space; the ringed dot at the origin is the unstimulated reference. The two
-equal-length vectors are the \emph{full transcriptional responses} to stimulus $X$ and to
-stimulus $Y$, and each is projected onto both signature subspaces. The dashed guides give
-each response's orthogonal projection onto the \emph{other} cytokine's subspace: the $X$
-response onto the $Y$ subspace (green) and the $Y$ response onto the $X$ subspace (red).
-\textbf{(b)} These two cross-projection lengths compared directly: the $X$ response's
-component in the $Y$ subspace (green, ``$Y$-signature in $X$'') far exceeds the $Y$
-response's component in the $X$ subspace (red, ``$X$-signature in $Y$''); their difference
+two axes are the $X$ and $Y$ signature directions, the equal-weighted average over each
+cytokine's signature genes, within the full gene space; the ringed dot at the origin is the
+unstimulated reference. The two equal-length vectors are the \emph{full transcriptional
+responses} to stimulus $X$ and to stimulus $Y$, and each is projected onto both signature
+directions. The dashed guides give each response's orthogonal projection onto the
+\emph{other} cytokine's direction: the $X$ response onto the $Y$ direction (green) and the
+$Y$ response onto the $X$ direction (red). \textbf{(b)} These two cross-projections compared
+directly: the $X$ response's component in the $Y$ direction (green, ``$Y$-signature in
+$X$'') far exceeds the $Y$ response's component in the $X$ direction (red, ``$X$-signature
+in $Y$''); their difference
 $\Delta$ is large ($\lvert\Delta\rvert \gg \epsilon$), read as the direction $X \to Y$.}
 \label{fig:asymmetry}
 \end{figure}
@@ -322,7 +323,7 @@ What remains is to specify the classifier: its architecture (Section~\ref{sec:si
 \label{sec:sig-architecture}
 The classifier maps a pseudo-tube (Section~\ref{sec:methods-data}) to a stimulus prediction with an embedding-based multiple-instance-learning (MIL) model, built from three components in sequence: a per-cell encoder, an attention layer that aggregates the cells, and a linear classifier. In MIL the label is attached to a whole bag of instances rather than to any one of them (Section~\ref{sec:comp-background}); here the bag is the pseudo-tube and the instances are its cells, so the model must identify the stimulus from the cells taken together.
 
-The encoder processes one cell at a time, mapping its gene-expression vector to a compact embedding of that cell's type. We train it to classify cell type for two reasons. First, cell identity is the strongest signal in single-cell expression, so capturing it first frees the rest of the model to attend to the subtler, stimulus-specific differences rather than rediscovering what each cell is. Second, cell type is the natural coordinate of the response: each cell type reacts to a stimulus in its own way, so an embedding organised by cell type gives a biologically meaningful space in which those effects can be read.
+The encoder processes one cell at a time, mapping its gene-expression vector to a compact embedding of that cell's type. We train it to classify cell type for two reasons. First, cell identity is usually the strongest signal in single-cell expression \citep{kang2018multiplexed,luecken2019current,srivatsan2020massively}, so capturing it first frees the rest of the model to attend to the subtler, stimulus-specific differences rather than rediscovering what each cell is (Figure~\ref{fig:umap}). Second, cell type is the natural coordinate of the response: each cell type reacts to a stimulus in its own way, so an embedding organised by cell type gives a biologically meaningful space in which those effects can be read.
 
 The stimulus acts on the tube as a whole and only some of its cells respond, so the evidence for which stimulus was applied lies in the cells collectively; we therefore need to aggregate all cells of a pseudo-tube into a single representation.
 The attention layer aggregates by a weighted sum whose weights are learned: the model decides how much each cell contributes to the tube representation.
@@ -405,13 +406,13 @@ per-cytokine signature is extracted from the trained model afterwards
 
 \subsubsection{Training}
 \label{sec:sig-training}
-We train in two stages. In the first, the encoder learns to classify cell type; in the second, the encoder is held fixed while the attention and classifier learn to identify the stimulus. Holding the encoder frozen in the second stage anchors the stimulus signal in the biologically-grounded cell-type space, and prevents the encoder from collapsing that structure to chase the stimulus label.
+We train in two stages. In the first, the encoder learns to classify cell type; in the second, the encoder is held fixed while the attention and classifier learn to identify the stimulus. Holding the encoder frozen in the second stage is a deliberate design choice: it keeps the encoder's cell-type representation intact, so the stimulus signal is read in that biologically-grounded space rather than in a representation reshaped to fit the stimulus label. In our experiments, unfreezing the encoder instead collapses that structure and degrades held-out performance (Section~\ref{res:unfreeze}). Freezing brings a further benefit: because the frozen encoder maps each cell to the same embedding at every step, those embeddings can be computed once and reused, making training substantially more efficient (Appendix~\ref{app:efficiency}).
 
 For each cytokine we train a binary classifier of its tubes versus control tubes, so the discriminative genes capture how that cytokine's response departs from baseline. A single multiclass model would instead have to separate each cytokine from all the others, including cytokines with similar effects, so its discriminative genes drift toward whatever tells those similar responses apart, subtle features that overfit the inter-cytokine boundaries rather than capture the cytokine's core response. The binary classifiers all share the one frozen Stage-one encoder, so the signatures are produced consistently; because the cross-engagement in Section~\ref{sec:methods-direction} compares one signature against another, that consistency is what makes the comparison fair.
 
 \subsubsection{Signature extraction}
 \label{sec:sig-extraction}
-The signature $S_X$ is defined by an objective, not given to us as data; lacking any ground truth for it, we recover it with an estimator. Because the model is nonlinear, the genes it relies on cannot be read off directly; Integrated Gradients \citep{sundararajan2017axiomatic} is a principled attribution method that recovers them by integrating the model's sensitivity from the baseline to the pseudo-tube. We keep the 50 genes it attributes most to, and these are our estimate of $S_X$. Crucially, these attributions are not interchangeable with differential expression: an ablation (Section~\ref{sec:results}) finds that a model-free fold-change list picks almost disjoint genes and loses the direction signal, confirming the model's attributions carry information a simple ranking does not.
+The signature $S_X$ is defined by an objective, not given to us as data; lacking any ground truth for it, we recover it with an estimator. The trained binary classifier (Section~\ref{sec:sig-training}) scores a pseudo-tube $\mathbf{x}$ with a logit $F(\mathbf{x})$ for the stimulus-$X$ class, which the softmax turns into its probability. Because the model is nonlinear, the genes behind that score cannot be read off directly; Integrated Gradients \citep{sundararajan2017axiomatic} recovers them by integrating $\nabla F$ from the baseline to the input. We keep the 50 genes it attributes most to, and these are our estimate of $S_X$. Crucially, these attributions are not interchangeable with differential expression: an ablation (Section~\ref{sec:results}) finds that a model-free fold-change list picks almost disjoint genes and loses the direction signal, confirming the model's attributions carry information a simple ranking does not.
 
 \begin{figure}[H]
 \centering
@@ -436,9 +437,9 @@ The signature $S_X$ is defined by an objective, not given to us as data; lacking
   \coordinate (inp)  at (7.1,4.4);
   \draw[thick, orange!85!black] (base) -- (inp);
   \fill (base) circle (2.6pt);
-  \node[below right, align=left]  at (base) {\scriptsize baseline\\(control)};
+  \node[below right, align=left]  at (base) {\scriptsize $\mathbf{b}$: baseline / control};
   \fill (inp) circle (2.6pt);
-  \node[above left, align=right]  at (inp)  {\scriptsize input\\(pseudo-tube)};
+  \node[above left, align=right]  at (inp)  {\scriptsize $\mathbf{x}$: stimulus $X$};
   % gradients sampled along the path (blue)
   \foreach \t in {0.18,0.40,0.62,0.84}{
     \pgfmathsetmacro{\px}{0.8 + \t*(7.1-0.8)}
@@ -482,14 +483,15 @@ The signature $S_X$ is defined by an objective, not given to us as data; lacking
 {\footnotesize (b)}
 \end{minipage}
 \caption{\textbf{Integrated Gradients: line integral of the gradient field, then select.}
-\textbf{(a)} The grey arrows are the gradient field $\nabla F$ of the target score over a
-two-gene input space; Integrated Gradients follows the straight path from the baseline
-(control) to the input (cell) and samples the gradient along it (blue). \textbf{(b)} The
-sampled gradients are summed and decomposed along the two gene axes (top); by the gradient
-theorem the total equals $F(\text{cell})-F(\text{control})$, and each axis component is
-that gene's attribution. Laying the two components side by side (bottom), the gene with the
-larger component (here gene~1) is kept for the signature $S_X$ and the smaller (gene~2) is
-dropped; with a full panel of thousands of genes, the top-50 by attribution form $S_X$.}
+$F$, the model's stimulus-$X$ logit, takes a whole pseudo-tube $\mathbf{x}\in\mathbb{R}^{N\times G}$
+($N$ cells, $G$ genes), so attribution runs in $\mathbb{R}^{N\times G}$ and the two axes stand in
+for its coordinates. The baseline $\mathbf{b}$ is the average of the control tubes' per-gene means,
+weighting each tube equally, copied across the $N$ cells; the input is the stimulated tube. \textbf{(a)} Grey arrows are the gradient field $\nabla F$; Integrated
+Gradients integrates it along the segment $\mathbf{b}\to\mathbf{x}$ (blue), giving attribution
+$(\mathbf{x}-\mathbf{b})\odot\int_0^1\nabla F\big(\mathbf{b}+\alpha(\mathbf{x}-\mathbf{b})\big)\,d\alpha$.
+\textbf{(b)} By the gradient theorem these sum to $F(\mathbf{x})-F(\mathbf{b})$; averaging over cells
+gives one value per gene (top), the larger kept and the smaller dropped (bottom). The top-50 genes by
+attribution form $S_X$.}
 \label{fig:ig3}
 \end{figure}
 
@@ -515,12 +517,12 @@ dropped; with a full panel of thousands of genes, the top-50 by attribution form
   % box around the kept top genes
   \draw[dashed, green!45!black, thick] (0.22,-0.15) rectangle (3.04,3.25);
   \node[green!45!black, anchor=west] at (3.25,2.98) {\footnotesize $S_X$: top-50 genes};
-  \node[green!45!black, anchor=west] at (3.25,2.55) {\footnotesize (a gene set $\to$ the $S_X$ subspace)};
+  \node[green!45!black, anchor=west] at (3.25,2.55) {\footnotesize (a gene set $\to$ the $S_X$ direction)};
   \node[anchor=west] at (6.0,1.35) {\footnotesize rest: dropped};
 \end{tikzpicture}
 \caption{\textbf{Selecting the signature.} Integrated Gradients gives one attribution per gene
 (Figure~\ref{fig:ig3}); ranking all genes and keeping the top-50 (green, boxed) yields the
-signature $S_X$, a \emph{set} of genes, and the subspace onto which cross-engagement is
+signature $S_X$, a \emph{set} of genes, and the direction onto which cross-engagement is
 measured in Section~\ref{sec:methods-direction}. The remaining genes (grey) are dropped.}
 \label{fig:sigselect}
 \end{figure}
@@ -532,7 +534,7 @@ Running this for every cytokine yields a set of signatures $\{S_X\}$, one per cy
 With a signature $S_X$ now in hand for every cytokine (Section~\ref{sec:methods-signatures}), we can decide, for each pair, whether the two cytokines are coupled and, if so, whether one is upstream of the other.
 
 \subsubsection{Engagement}
-Write $c_g$ for the expression of gene $g$ in cell $c$, let $\mathcal{C}_a$ be the cells of the sample given stimulus $a$, and let $\mathcal{C}_0$ be the control cells.
+A stimulus acts differently on each cell type, so every quantity in this section is computed separately within a single cell type; the construction is repeated for each cell type, and the per-cell-type results are combined across cell types as described below. Within a fixed cell type, write $c_g$ for the expression of gene $g$ in cell $c$, let $\mathcal{C}_a$ be the cells given stimulus $a$, and let $\mathcal{C}_0$ be the control cells.
 The score of a cell on a gene set $S$ is its mean expression over that set,
 \[
   \sigma_S(c)=\frac{1}{|S|}\sum_{g\in S} c_g,
@@ -546,20 +548,24 @@ The \emph{engagement} of $a$ with $b$'s signature is then $a$'s level minus the 
   s(a,S_b)=\bar\sigma_{S_b}(\mathcal{C}_a)-\bar\sigma_{S_b}(\mathcal{C}_0),
 \]
 which quantifies ``how much of $b$'s signature appears in $a$'s response.''
-Over all ordered pairs these values form the cross-engagement matrix $M$ with $M_{ab}=s(a,S_b)$; everything that follows reads off this one matrix.
+The engagement $s(a,S_b)$ is computed within one cell type; writing $s_T(a,S_b)$ for its value in cell type $T$, the cross-engagement matrix combines them by the median across cell types,
+\[
+  M_{ab}=\operatorname*{median}_{T}\, s_T(a,S_b),
+\]
+taken over the cell types in which $a$ and the control have enough cells to score; since that requirement involves $a$ but not $b$, $M_{ab}$ and $M_{ba}$ may run over different cell-type sets. $M$ then holds one number per ordered pair, which the coupling score below is built from. We take the median, rather than the mean, to keep this value robust: cell types respond unevenly and some contribute extreme or noisy engagement (rare types, few cells, or non-responders), and a pair is often present in only part of the cell types, so the median reflects the typical cell type instead of being pulled by an outlying or sparsely sampled one.
 
-Subtracting the control term is what turns a raw expression level into a measure of \emph{induction}. Signature genes are not silent at rest, so $\bar\sigma_{S_b}(\mathcal{C}_a)$ on its own conflates how much stimulus $a$ actually drives $b$'s program with the level those genes sit at anyway; subtracting their level in control cells, $\bar\sigma_{S_b}(\mathcal{C}_0)$, removes that resting baseline and leaves only the increase above rest. This matters most because $S_a$ and $S_b$ are different gene sets with different baselines: normalising each engagement to its own signature's control level puts $s(a,S_b)$ and $s(b,S_a)$ on a common footing, so that when the two are compared the difference reflects induction rather than a mismatch in resting expression between the gene sets.
+Subtracting the control term is what turns a raw expression level into a measure of \emph{induction}. Signature genes are not silent at rest. On its own, $\bar\sigma_{S_b}(\mathcal{C}_a)$ therefore conflates how much stimulus $a$ actually drives $b$'s program with the level those genes sit at anyway. Subtracting their level in control cells, $\bar\sigma_{S_b}(\mathcal{C}_0)$, removes that resting baseline and leaves only the increase above rest. This matters most because $S_a$ and $S_b$ are different gene sets with different baselines: normalising each engagement to its own signature's control level puts $s(a,S_b)$ and $s(b,S_a)$ on a common footing, so that when the two are compared the difference reflects induction rather than a mismatch in resting expression between the gene sets.
 
 \subsubsection{Coupling}
 A coupled pair is one whose signatures show up in each other's response, so we score coupling by the symmetric sum $M_{ab}+M_{ba}$; a high score flags shared biology, which could be a cascade or another form of correlation.
-\rev{But because almost every cytokine co-induces a shared-activation program, a broadly-engaged cytokine's signature turns up in many responses and would look coupled to everything.}
+But because many cytokines co-induce overlapping activation programs \citep{der1998identification,baysoy2023interweaved,mostafavi2016interferon,jenner2005insights,xue2014spectrum}, a broadly-engaged cytokine's signature turns up in many responses and would look coupled to everything.
 
 \rev{We therefore keep, in place of the raw coupling, only its \emph{excess} over each cytokine's average engagement, so that a signature appearing everywhere no longer inflates every pair it takes part in.}
 \rev{Collect the couplings into a matrix $C_{ab}=M_{ab}+M_{ba}$ and write $\bar C_a=\frac{1}{n-1}\sum_{b\ne a}C_{ab}$ for the mean of its $a$-th row, cytokine $a$'s average coupling to every other cytokine.}
 \rev{The corrected coupling is the residual $R_{ab}=C_{ab}-\bar C_a-\bar C_b+\bar C$, with $\bar C=\frac{1}{n}\sum_a \bar C_a$ the grand mean of the couplings.}
 \rev{Equivalently, $\bar C_a+\bar C_b-\bar C$ is the coupling expected for the pair from the two averages alone, and $R_{ab}$ keeps only the excess above it, the standard \emph{double-centring} of a matrix by its row, column, and grand means.}
 \rev{After this correction a broadly-engaged cytokine carries a high average coupling $\bar C_a$, which is subtracted from every pair it belongs to, so it no longer registers as coupled to everything; a large $R_{ab}$ now marks coupling specific to $a$ and $b$ (Figure~\ref{fig:doublecenter}).}
-\rev{Coupling and direction are the symmetric and antisymmetric halves of $M$; double-centring reshapes only the symmetric half, leaving the direction call unchanged.}
+\rev{Coupling and direction are the symmetric and antisymmetric combinations of the per-cell-type cross-engagements; double-centring acts only on the coupling side, so it leaves the direction call unchanged.}
 
 \begin{figure}[H]
 \centering
@@ -628,33 +634,56 @@ pair, so its row flattens to near zero and it no longer looks coupled to everyth
 c3--c4, coupled more than either partner's average predicts, remains the one strongly
 positive entry (orange, above average); pairs below their average go slightly negative
 (blue). The operation is symmetric, so it changes the coupling call only and leaves the
-direction statistic $\mathrm{cross\_asym}=M_{ab}-M_{ba}$ untouched.}}
+direction statistic $\mathrm{cross\_asym}$ untouched.}}
 \label{fig:doublecenter}
 \end{figure}
 
 \rev{It remains to decide whether a given $R_{ab}$ is large enough to be real, and here the choice of statistical unit is decisive: pooling all cells treats thousands of correlated measurements as independent and flags almost every pair as coupled.}
-\rev{The right unit is the donor: we recompute the residual once per donor, $R_{ab}^{(d)}$ for $d=1,\dots,D$ (with $D\approx10$), and with $n_+=\#\{d:R_{ab}^{(d)}>0\}$ the number of donors in which the pair couples positively, a one-sided sign test calls it coupled when
+\rev{The right unit is the donor: we recompute the residual once per donor, keeping the $R_{ab}^{(d)}$ from the $n_d$ donors in which both cytokines are present ($n_d\le D$, with $D\approx10$ donors in all). With $\overline{R_{ab}}=\frac{1}{n_d}\sum_d R_{ab}^{(d)}$ the mean of these residuals and $n_+=\#\{d:R_{ab}^{(d)}>0\}$ the number of them that are positive, a one-sided sign test calls the pair coupled when the mean residual is positive and the positive count exceeds a coin flip,
 \[
-  p \;=\; 2^{-D}\sum_{k=n_+}^{D}\binom{D}{k}\;\le\;\alpha,
+  \overline{R_{ab}}>0 \quad\text{and}\quad p \;=\; 2^{-n_d}\sum_{k=n_+}^{n_d}\binom{n_d}{k}\;\le\;\alpha,
 \]
-that is, when the excess coupling is positive in more donors than a coin flip would give.}
+that is, when the excess coupling is positive on average and holds in more donors than chance would give.}
 \rev{The donor is the right unit because the pseudo-tubes drawn from one donor and cytokine are resampled from the same cells, correlated by construction, not independent replicates, so only the $D\approx10$ donors are genuinely independent; the test then draws its power from agreement across donors rather than from the abundance of correlated pseudo-tubes, a conservative gate that reflects real reproducibility.}
 
 
 \subsubsection{Direction}
-Direction comes from the asymmetric part of the same matrix: $\mathrm{cross\_asym}(a,b)=M_{ab}-M_{ba}$, which is large and positive exactly when $a$'s cells carry $b$'s program but not the reverse, the upstream-to-downstream signature Claim~2 predicts \rev{(Figure~\ref{fig:asymmetry})}.
-The quantity is antisymmetric, $\mathrm{cross\_asym}(b,a)=-\mathrm{cross\_asym}(a,b)$, so unlike the symmetric coupling sum its sign points to the upstream cytokine ($a$ upstream when positive, under a fixed naming convention).
+\label{sec:direction-stat}
+Direction comes from the per-cell-type asymmetry: in each cell type, $\mathrm{cross\_asym}_T(a,b)=s_T(a,S_b)-s_T(b,S_a)$, and these are combined by the median across cell types, $\mathrm{cross\_asym}(a,b)=\operatorname*{median}_{T}\,\mathrm{cross\_asym}_T(a,b)$, which is large and positive exactly when $a$'s cells carry $b$'s program but not the reverse, the upstream-to-downstream signature Claim~2 predicts \rev{(Figure~\ref{fig:asymmetry})}.
+Because each term needs both cytokines measured in the same cell type, this median runs only over the cell types the pair shares, unlike the coupling entries $M_{ab}$ and $M_{ba}$, which are each taken over their own cell-type set.
+The quantity is antisymmetric, $\mathrm{cross\_asym}(b,a)=-\mathrm{cross\_asym}(a,b)$, so unlike the symmetric coupling sum its sign points to the upstream cytokine: the one whose cells carry more of the other's signature.
+Coupling and direction are complementary: the coupling step first establishes that a pair shares biology, and $\mathrm{cross\_asym}$ then orders that shared biology from upstream to downstream.
 
-Each quantity so far is computed within a cell type; we combine cell types into one call per pair by taking the median cross-engagement and the fraction of cell types that agree on its sign, so a direction rests on agreement across cell types rather than on any single one.
-Because it is read from one snapshot, a call points to the most likely direction of a cascade, evidence the Results confirm against known cascades, short of the intervention that would prove causation.
+Alongside the median we report the sign-consensus, the fraction of cell types whose own $\mathrm{cross\_asym}_T$ shares the sign of the median,
+\[
+  \kappa_{ab} = \frac{1}{|\mathcal{T}|}\sum_{T\in\mathcal{T}} \mathbf{1}\!\left[\operatorname{sign}\,\mathrm{cross\_asym}_T(a,b) = \operatorname{sign}\,\mathrm{cross\_asym}(a,b)\right],
+\]
+so a direction rests on agreement across cell types rather than on any single one.
+This call is a point estimate computed on cells pooled across all donors; unlike the donor-level coupling gate it is not aggregated to the donor level, and we judge it by matching its sign against known cascades (Section~\ref{sec:methods-evaluation}).
+Because a call is read from one snapshot, it points to the most likely direction of a cascade, evidence the Results confirm against known cascades, short of the intervention that would prove causation.
 
 \subsection{Assessing the method}
 \label{sec:methods-evaluation}
 We cannot score the method against a ground truth of cascades, none exists, so we test it against cascades the literature has already established.
 A recovered cascade has two parts to get right, that the pair is coupled at all and that its direction is correct, and we score each separately.
+For coupling we report recall, the fraction of the literature-established coupled pairs the method flags, and the over-call rate, the fraction of all cytokine pairs it flags as coupled; the two together measure how well it discriminates coupled pairs, recovering the known ones without flagging most pairs indiscriminately.
+
+The literature is all we can check against, and \textbf{it is incomplete}: a flagged pair it does not record is a candidate discovery, not a proven error, since finding new cascades is the point of the method.
+This makes both extremes uninformative: a method that flagged only the already-known pairs would merely overfit the benchmark and discover nothing, while one that flagged almost every pair would recover the known ones at the cost of any selectivity.
+What we look for instead is high recall together with the known cascades forming a substantial share of the flagged pairs, so that the further pairs, which engage each other much as the confirmed cascades do, are credible new candidates rather than noise.
+
+For direction we report the fraction of the literature's directional pairs on which the sign of $\mathrm{cross\_asym}$ (Section~\ref{sec:direction-stat}) matches the documented upstream-to-downstream order.
+Since a coin-flip assignment of direction would already match half the documented pairs, we judge $\mathrm{cross\_asym}$ by how far its sign-match rate rises above one-half.
+As an independent check with known ground truth, we apply $\mathrm{cross\_asym}$ to simulated cells carrying a planted cascade, where the correct direction is set in advance and can be compared against the statistic's call.
+
+Throughout, we require the findings to hold across independent training seeds and across separate datasets, so that neither the coupling nor the direction conclusions rest on a single run.
 
 \section{Results}
 \label{sec:results}
+% >>> write here
+
+\subsection{Frozen versus unfrozen encoder}
+\label{res:unfreeze}
 % >>> write here
 
 \section{Discussion}
@@ -678,6 +707,19 @@ A recovered cascade has two parts to get right, that the pair is coupled at all 
 \appendix
 \section{Supplementary Material}
 \label{app:supplementary}
-% >>> write here
+
+\subsection{Cell identity dominates single-cell variation}
+\label{app:umap}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{umap.png}
+\caption{\textbf{Cell identity, not cytokine, organises the single-cell landscape.} Two-dimensional UMAP of all cells from a single donor (three pseudo-tubes per cytokine), computed from the log-normalised high-variable-gene expression. \emph{Left}, points coloured by cell type; \emph{right}, the same points coloured by the applied cytokine. Cells separate into well-defined islands by cell type, while cytokines are intermixed within those islands, showing that cell identity, rather than the applied cytokine, is the dominant axis of transcriptional variation. This motivates pretraining the encoder on cell type (Section~\ref{sec:sig-architecture}).}
+\label{fig:umap}
+\end{figure}
+
+\subsection{Efficient training with a frozen encoder}
+\label{app:efficiency}
+Because the encoder is frozen in the second training stage (Section~\ref{sec:sig-training}), each cell is mapped to the same embedding at every step of the optimisation. That embedding can therefore be computed once per pseudo-tube and reused, so only the attention and classifier, a small fraction of the model, are evaluated during the repeated training steps. Since the encoder has no stochastic components, this caching leaves the trained model and its extracted signatures unchanged, and is purely a speed-up. \todo{expand: fuller description of the embedding cache}
 
 \end{document}
