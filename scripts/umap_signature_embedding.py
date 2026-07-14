@@ -136,6 +136,17 @@ def embed_variant(adata: ad.AnnData, genes: List[str], n_pcs: int) -> tuple[np.n
     avail = [g for g in genes if g in adata.var_names]
     sub = adata[:, avail].copy()
 
+    # Small gene sets (50 genes) produce many near/exact-duplicate rows in
+    # log-normalized expression, which crashes pynndescent's tree construction
+    # (numba shape-mismatch in rp_trees.py) and triggers UMAP's own "spectral
+    # initialisation failed" warning. Both point to the same, standard fix:
+    # add negligible jitter (1e-4, ~4 orders of magnitude below signal) to
+    # break exact ties. Applied uniformly to all variants so the comparison
+    # stays fair, not just to the ones that happen to crash.
+    X = sub.X.toarray() if hasattr(sub.X, "toarray") else np.asarray(sub.X)
+    rng = np.random.default_rng(0)
+    sub.X = (X.astype(np.float64) + rng.normal(scale=1e-4, size=X.shape)).astype(np.float32)
+
     n_comps = int(min(n_pcs, sub.n_vars - 1, sub.n_obs - 1))
     sc.pp.pca(sub, n_comps=n_comps)
     sc.pp.neighbors(sub)
