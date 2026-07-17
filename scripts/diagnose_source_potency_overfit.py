@@ -43,12 +43,61 @@ from cytokine_mil.analysis.source_potency import (
     DEEP_POOL as _DEEP, SHALLOW_POOL as _SHALLOW,
 )
 from cytokine_mil.analysis.attention_dynamics import spearman  # numpy-only
+from cytokine_mil.analysis.confusion_dynamics import compute_confusion_trajectory
 
 AXES_CSV = REPO / "reports/cascade_pairs/cytokine_axes.csv"
 
 
 def _dyn_paths(args):
     return [Path(args.base_dir) / f"seed_{s}" / "dynamics.pkl" for s in args.seeds]
+
+
+class _LabelShim:
+    """Minimal .cytokines/.encode() shim from the saved index-ordered cytokine list --
+    avoids needing the original CytokineLabel/manifest to rebuild the encoder."""
+    def __init__(self, cytokines_list):
+        self.cytokines = cytokines_list
+        self._to_idx = {c: i for i, c in enumerate(cytokines_list)}
+
+    def encode(self, name):
+        return self._to_idx[name]
+
+
+def _stem(name: str) -> str:
+    """Naive family-naming heuristic: strip a trailing greek-word-number or digit-letter
+    variant suffix so e.g. IL-17A/IL-17F -> 'IL-17', IFN-alpha1/IFN-alpha2 -> 'IFN-alpha',
+    IFN-lambda1/IFN-lambda3 -> 'IFN-lambda'. Deliberately does NOT strip a bare trailing
+    number (IL-4, IL-13 must stay distinct -- the number IS the interleukin's identity,
+    not a variant suffix). NOT a curated immunology family list -- just a transparent
+    string heuristic to flag candidates for the reader to judge."""
+    import re
+    s = name
+    s = re.sub(r"(alpha|beta|gamma|delta|epsilon|omega|lambda)\d+$", r"\1", s)
+    s = re.sub(r"(?<=[0-9])[A-F]$", "", s)  # IL-17A -> IL-17
+    return s
+
+
+def _confusion_diagnostics(records, cytokines_list, exclude):
+    """Per-cytokine top confused-with class at the FINAL logged epoch (train records --
+    reflects what the optimizer actually spent gradient effort resolving)."""
+    enc = _LabelShim(cytokines_list)
+    conf, names = compute_confusion_trajectory(records, enc)  # (K, K, T)
+    final = conf[:, :, -1]  # (K, K) at last logged epoch
+    out = {}
+    for a_idx, name in enumerate(names):
+        if name in exclude:
+            continue
+        row = final[a_idx].copy()
+        row[a_idx] = -1.0  # exclude self
+        order = np.argsort(row)[::-1]
+        top1_idx, top2_idx = int(order[0]), int(order[1])
+        out[name] = {
+            "top1_confusor": names[top1_idx], "top1_mass": float(row[top1_idx]),
+            "top2_confusor": names[top2_idx], "top2_mass": float(row[top2_idx]),
+            "top1_is_pbs": names[top1_idx] == "PBS",
+            "top1_same_stem": _stem(name) == _stem(names[top1_idx]),
+        }
+    return out
 
 
 def _donor_mean_traj(records, exclude):
@@ -80,6 +129,7 @@ def main():
     seed_train_metrics = []      # per-seed source_potency-style train metrics
     seed_val_traj = []           # per-seed {cyt -> val trajectory}
     seed_train_traj = []         # per-seed {cyt -> train trajectory}
+    seed_confusion = []          # per-seed {cyt -> confusion diagnostic dict}
     epochs_ref = None
 
     for dp in _dyn_paths(args):
@@ -94,6 +144,11 @@ def main():
         seed_train_metrics.append(per_cytokine_metrics(recs, epochs, exclude=args.exclude))
         seed_train_traj.append(_donor_mean_traj(recs, exclude))
         seed_val_traj.append(_donor_mean_traj(val_recs, exclude) if val_recs else {})
+        cyt_list = d.get("label_encoder_cytokines")
+        if cyt_list and recs[0].get("softmax_trajectory") is not None:
+            seed_confusion.append(_confusion_diagnostics(recs, cyt_list, exclude))
+        else:
+            seed_confusion.append({})
         print(f"loaded {dp}: {len(recs)} train / {len(val_recs)} val records, {len(epochs)} epochs")
 
     if not seed_train_metrics:
@@ -121,10 +176,23 @@ def main():
             "n_seeds_val": len(vps),
         }
 
+    # ---- NEW: confusion diagnostics, seed-averaged (Q4) ----
+    conf_metrics = {}
+    for c in all_cyts:
+        entries = [sc[c] for sc in seed_confusion if c in sc]
+        if not entries:
+            continue
+        conf_metrics[c] = {
+            "top1_is_pbs_frac": float(np.mean([e["top1_is_pbs"] for e in entries])),
+            "top1_same_stem_frac": float(np.mean([e["top1_same_stem"] for e in entries])),
+            "top1_confusor_seed0": entries[0]["top1_confusor"],
+            "top1_mass_seed0": entries[0]["top1_mass"],
+        }
+
     # ---- generalization gap + join ----
     rows = []
     for c in all_cyts:
-        r = dict(table[c]); r.update(val_metrics.get(c, {}))
+        r = dict(table[c]); r.update(val_metrics.get(c, {})); r.update(conf_metrics.get(c, {}))
         r["cytokine"] = c
         r["gen_gap"] = r["P_max"] - r.get("val_P_max", float("nan"))
         rows.append(r)
@@ -135,6 +203,16 @@ def main():
         [r["source_potency"] for r in included], [r["gen_gap"] for r in included])
     rho_valpmax, n_valpmax = spearman(
         [r["source_potency"] for r in included], [r["val_P_max"] for r in included])
+
+    # ---- Q4: does source_potency track family-confusion vs PBS-confusion? ----
+    with_conf = [r for r in included if "top1_is_pbs_frac" in r]
+    rho_pbs, n_pbs = spearman(
+        [r["source_potency"] for r in with_conf], [r["top1_is_pbs_frac"] for r in with_conf])
+    rho_stem, n_stem = spearman(
+        [r["source_potency"] for r in with_conf], [r["top1_same_stem_frac"] for r in with_conf])
+    n_top1_pbs = sum(1 for r in with_conf if r["top1_is_pbs_frac"] >= 0.5)
+    n_top1_other = len(with_conf) - n_top1_pbs
+    n_top1_same_stem = sum(1 for r in with_conf if r["top1_same_stem_frac"] >= 0.5)
 
     # ---- underfit-on-train candidates ----
     underfit = sorted([r["cytokine"] for r in rows if r["P_max"] < args.underfit_floor])
@@ -214,19 +292,38 @@ def main():
     L.append(f"**Spearman(source_potency, generalization_gap) = {rho_gap:.3f}** (n={n_gap}). "
              f"Spearman(source_potency, val_P_max) = {rho_valpmax:.3f} (n={n_valpmax}).\n\n")
     L.append("(interpretation added by hand after inspecting the numbers above)\n\n")
+    L.append("## Q4 -- family/similar-class confusion vs PBS confusion\n")
+    L.append("Per cytokine, at the FINAL logged epoch of TRAIN records, which OTHER class gets "
+             "the most softmax mass (`compute_confusion_trajectory`, reused unchanged from "
+             "`analysis/confusion_dynamics.py`). `top1_same_stem` is a naive string heuristic "
+             "(strip trailing greek-letter/number/single-letter suffixes, e.g. IL-17A/IL-17F -> "
+             "'IL-17') -- NOT a curated immunology family list; a flag to inspect, not a claim.\n\n")
+    L.append(f"Of {len(with_conf)} scored cytokines: **{n_top1_pbs}** have PBS as their #1 "
+             f"confusor (majority vote across seeds), **{n_top1_other}** have another cytokine. "
+             f"Of those {n_top1_other}, **{n_top1_same_stem}** share a name-stem with their #1 "
+             f"confusor.\n\n")
+    L.append(f"**Spearman(source_potency, top1_is_pbs_frac) = {rho_pbs:.3f}** (n={n_pbs}). "
+             f"**Spearman(source_potency, top1_same_stem_frac) = {rho_stem:.3f}** (n={n_stem}).\n\n")
+    L.append("(interpretation added by hand after inspecting the numbers above)\n\n")
     L.append("## Full per-cytokine table\n")
-    L.append("| cytokine | source_potency | train_Pmax | val_Pmax | gen_gap | val_final | pool |\n"
-             "|---|---:|---:|---:|---:|---:|---|\n")
+    L.append("| cytokine | source_potency | train_Pmax | val_Pmax | gen_gap | val_final | "
+             "top1_confusor | top1_mass | same_stem | pool |\n"
+             "|---|---:|---:|---:|---:|---:|---|---:|---:|---|\n")
     for r in sorted(rows, key=lambda r: -r["gen_gap"] if np.isfinite(r["gen_gap"]) else 999):
         pool = "DEEP" if r["cytokine"] in _DEEP else ("SHALLOW" if r["cytokine"] in _SHALLOW else "")
         L.append(f"| {r['cytokine']} | {r['source_potency']:+.2f} | {r['P_max']:.3f} | "
                  f"{r.get('val_P_max', float('nan')):.3f} | {r['gen_gap']:.3f} | "
-                 f"{r.get('val_final', float('nan')):.3f} | {pool} |\n")
+                 f"{r.get('val_final', float('nan')):.3f} | "
+                 f"{r.get('top1_confusor_seed0', '')} | {r.get('top1_mass_seed0', float('nan')):.3f} | "
+                 f"{r.get('top1_same_stem_frac', float('nan')):.2f} | {pool} |\n")
     outp.write_text("".join(L))
     print(f"\nSaved: {outp}")
     print(f"rho(potency, gen_gap)={rho_gap:.3f}  rho(potency, val_Pmax)={rho_valpmax:.3f}")
+    print(f"rho(potency, top1_is_pbs_frac)={rho_pbs:.3f}  rho(potency, top1_same_stem_frac)={rho_stem:.3f}")
     print(f"val peaks at epoch {epochs_ref[val_peak_idx]}/250, val_final={agg_val[-1]:.4f}")
     print(f"underfit-on-train (P_max<{args.underfit_floor}): {len(underfit)} cytokines")
+    print(f"top1-confusor: {n_top1_pbs} PBS / {n_top1_other} other-cytokine "
+          f"({n_top1_same_stem} of those same-stem)")
 
 
 if __name__ == "__main__":
