@@ -16,131 +16,39 @@ via cross-stimulus prediction (alignment), latent-space centroid geometry (geo),
 cell-type ablation. The cellular relay (the cell type that mediates A's effect on B's
 signature) can be identified by per-cell-type ablation.
 
-### Project status (2026-05-26, after adversarial audit)
+### Project status (current headline; full narrative in `reports/method_deep_dive/`)
 
-The project has produced **one** publication-grade contribution and **one** narrower
-methodology contribution after a self-audit revised earlier claims downward.
-**All prior work, code, and results remain in the repo and on `main`.**
+Two standing, independent contributions. **All prior work, code, and results remain in the
+repo and on `main`** — nothing below retires anything; sections that superseded an earlier
+approach say so explicitly at that section.
 
-**Update (2026-06-03)** (spec §27–§28; writeups `reports/cascade_pairs/GROUP_U_RESULTS.md`,
-`…/SIGNATURE_COUPLING_RESULTS.md`): two method explorations. (1) A **signature-space coupling
-reframe** — coupling measured in cytokine-specific genes (`S_X`) instead of the encoder
-embedding — **recovered the Sheu TLR→IFN cascades that latent-geometry Path A had missed
-(2/2 at 3hr and 5hr)**: a real win confirming the "shared-activation confound" diagnosis.
-(2) The first end-to-end **Group-U direction-FDR** (direct all 121 Path A axes, then test
-unlabeled-pair direction) and the Oesinghaus coupling gate both **over-call at the cell
-level** (over-powered permutation nulls → ~everything significant; plus a P4 signature
-regression), so **neither yields a valid discovery claim yet**. The open headline is
-**donor-level nulls** (§16). The standing results below (Path A 121 axes; cross_asym
-88/86/83% on *labeled* pairs) are unaffected.
+- **Path A — axis discovery on Oesinghaus 24h PBMC (91 cytokines, §20).** 121 cytokine
+  coupling axes recovered (17 textbook directional + 2 pre-registered + 29 coregulated + 13
+  partial + 54 novel; ~50% lit-supported vs ~1% chance baseline). Publication-grade, committed
+  to `main` (`reports/cascade_pairs/cytokine_axes_report.md`). Direction-agnostic by
+  construction (§20) — unaffected by everything below.
+- **Path B — `cross_asym` cascade direction (§26), the primary direction metric.** Scores
+  **88%** on Oesinghaus, **86%** on Sheu BMDM, **83%** on Immune Dictionary (vs ~47% chance
+  for the earlier symmetric `directional_score`, §24). This superseded **eight** independently
+  failed direction-inference attempts on the old encoder + PBS-RC + dot-product-on-centroid
+  bundle, and a since-audited curated-pathway-penetration method (§23's audit callout) —
+  do not re-attempt those approaches; post-mortems in `reports/SESSION_SUMMARY_2026-05-25.md`
+  and `reports/sheu2024_overnight_summary.md`.
 
-**Path A — axis discovery on Oesinghaus 24h PBMC (91 cytokines):**
-121 cytokine coupling axes recovered (17 textbook directional + 2 pre-registered + 29
-coregulated + 13 partial + 54 novel; ~50% lit-supported vs ~1% chance baseline). Result
-is publication-grade and committed to `main` (`reports/cascade_pairs/cytokine_axes_report.md`).
-The full geo / alignment / ablation pipeline, the PBS-RC refinement (§20.1), and the
-literature-validation infrastructure (`reports/cascade_pairs/literature_review.md`) were
-built and validated against this dataset. Path A (axis-discovery writeup) is in progress
-and **independent of the cascade-direction work** — its narrative, figures, and
-statistics do not change.
+**Two-layer attention v2 (§5.5):** paused, not retired — architecture preserved in code,
+candidate for reactivation if a future dataset's structure motivates it.
 
-**Path B — cascade direction inference on Sheu 2024 (REVISED 2026-05-26):**
-After eight independent failed checks of the encoder + PBS-RC + dot-product-on-centroid
-method bundle (see "Cumulative failed checks" below), a new methodology was developed
-on Sheu 2024 BMDM 3hr data:
+**Extensions built on `cross_asym`** (§27–§34): Group-U direction FDR, signature-space
+coupling, disease-progression (COVID-Haniffa), T-cell maturation (vaccination atlas),
+attention- and self-attention training-dynamics. Each section states its own headline
+verdict and pointer to its full writeup; `reports/method_deep_dive/` (the "method bible")
+and `reports/progress_report/progress_report.pdf` are the canonical up-to-date synthesis
+across all of them.
 
-> no encoder → **two** literature-curated, signaling-adaptor-specific gene sets paired
-> per cascade (one for the upstream stimulus's primary pathway P_A, one for the
-> downstream's primary pathway P_B) → per-cell pathway scores → **directional asymmetry
-> score** `(s_A − s_B on P_A) − (s_A − s_B on P_B)`
-
-The original 2026-05-25 draft of the writeup claimed "4 of 5 pre-registered tests pass
-Bonferroni α=0.01". An adversarial audit conducted 2026-05-26 (`scripts/run_pathway_audit.py`)
-**falsified three of those four claims**:
-- Audit 1 (cytokine-label permutation null on the binary IFNAR test): observed AUC=1.00
-  in mac_c2 has empirical `p = 0.096`, not 0.05 — does NOT clear permutation null.
-- Audit 2 (random-pathway null): 200 random 9-gene sets give AUC distributions whose
-  Q95 = 1.0 in mac_c2 — the curated IFNAR signature is NOT more discriminative than
-  random gene sets of the same size. The single-pathway AUC test reads "activation
-  level", not "pathway specificity".
-- Audit 3 (donor-level Wilcoxon signed-rank, replacing the per-cell Mann-Whitney): the
-  original `p ≈ 10⁻¹³¹` magnitude p-values were fictional inflations from pseudo-
-  replication. Honest donor-level p ≈ 0.0625 at the design floor (n=4 donors paired).
-  Plus in `mac_c3`, mean s_NFkB(TNF) < mean s_NFkB(PBS) — the baseline assumption
-  breaks in the cell type that gave the original magnitude result.
-
-**The audit's fourth test — directional asymmetry between paired pathways — does pass**
-for the textbook TLR3-TRIF and TLR4-TRIF → IFN-β cascades:
-
-| Cascade | mac_c2 directional_score | mac_c3 directional_score |
-|---|---:|---:|
-| PIC → IFNb | +1.87 | +1.67 |
-| LPS → IFNb | +2.35 | +2.02 |
-
-PIC and LPS engage IRF3-direct genes (their own primary pathway) MORE than IFNb does;
-IFNb engages IFNAR-induced ISGs (its primary pathway) MORE than PIC or LPS do. This
-asymmetric two-pathway pattern is the cascade fingerprint. It distinguishes
-cascade-source stimuli from direct ligand. Random or reverse-direction cascades would
-NOT produce `asym_PA > 0 AND asym_PB < 0` simultaneously.
-
-The NF-κB → TNF cascade test (LPS/LPSlo/P3CSK/CpG → TNF) **fails** by this methodology:
-the two paired pathways (NFkB_canonical and TNFR_autocrine) overlap too heavily for the
-asymmetry test to discriminate. This is a methodology limitation.
-
-**Defensible Path B claim (post-audit):** "A directional asymmetric signature of the
-textbook TLR3-TRIF and TLR4-TRIF → IFN-β cascades is detectable in 3h BMDM single-cell
-snapshots via two paired curated pathway signatures, when the two pathways are
-transcriptionally distinct." This is a methodology demonstration on two cascades, not a
-general-purpose cascade-direction inference tool. Full revised writeup:
-`reports/sheu2024_pathway/cascade_direction_results.md`.
-
-**Revised diagnosis (2026-05-26):** the diagnosis evolved in two steps:
-1. (2026-05-25) The 2026-05-22 reading "the bottleneck is data, not architecture" was
-   too narrow — the bottleneck was BOTH data AND method. The first pathway-signature
-   single-pathway AUC test seemed to fix both.
-2. (2026-05-26, after audit) The single-pathway AUC framing also failed. The
-   **two-paired-pathways directional asymmetry** framing is what actually has
-   discriminative power. Path B's methodological contribution is the asymmetry-score
-   construction, not the single-pathway penetration ratio.
-
-**Cumulative failed checks (kept for historical record):** the eight failed
-cascade-direction tests of the old method bundle were:
-(1) `geo` asymmetry score is algebraically symmetric by construction (§20.1);
-(2) Oesinghaus literature review: 49% correct direction on 39 documented pairs (chance);
-(3) Stage 3 CA-only on Oesinghaus: SA/CA entropy gap (~4 nat) but no val AUC gain;
-(4) Sheu 3hr baseline (first run);
-(5) Sheu 3hr narrowed (post-overfit fix);
-(6) Sheu 3hr Track A — adapter aux head;
-(7) Sheu 1hr Track B;
-(8) Sheu 3hr Track C — direction_mode=cell_type.
-See `reports/SESSION_SUMMARY_2026-05-25.md` and `reports/sheu2024_overnight_summary.md`.
-
-**Datasets used (all retained, complementary roles):**
-
-- **Oesinghaus 2024 (24h PBMC, 91 cytokines)** — basis for the completed axis-discovery
-  contribution (Path A). Continues to anchor the axis-discovery writeup. Not retired.
-- **Sheu 2024 (mouse BMDM time-course, GSE224518, 7 stimuli + Unstim, 8 time points
-  including 24hr in M1_IFNg)** — testbed for Path B cascade direction (positive result
-  at 3hr via §23 curated-pathway penetration). Targeted 500-gene immune-response panel,
-  12 biological contexts (M0/M1/M2 BMDMs + BMDM strain variants + 5 PM strain
-  backgrounds), 2 replicates per condition, ~295K well-annotated cells. The time axis
-  IS the validation signal: 1hr→3hr trajectory shows PIC/LPS penetration of IFNAR
-  rising sharply (cascade kinetics) while cascade-negatives stay flat. See §2.5, §21,
-  §23 and `reports/sheu2024_pathway/`.
-- **Zhang 2022 (human CD14+ monocytes, ~4K cells, 4 trainers + LPS at 4h)** — secondary
-  human sanity check. Lower priority. Run only after Sheu phase 1 results are in.
-
-**Two-layer attention v2 (§5.5):** paused, not retired. Architecture is preserved in
-code. The Oesinghaus sanity check showed the SA/CA mechanism works but the dataset isn't
-right for it. v2 remains a candidate architecture if a future dataset's structure
-motivates reactivation.
-
-**Original directional hypothesis** (cytokines learned early → direct/canonical
-responses; learned late → subtle/pleiotropic/multicellular cascades) was reformulated
-into the §23 cascade-penetration test, where it is now passing on Sheu 3hr (and rising
-monotonically from 1hr → 3hr). The substantive scientific claim survives; the
-implementation that carries it has changed from MIL training dynamics to
-literature-curated pathway signatures on time-resolved data.
+**Datasets in active use (complementary roles, all retained):** Oesinghaus 24h PBMC (§2,
+Path A's home), Sheu 2024 mouse BMDM time-course (§2.5), Immune Dictionary in-vivo lymph
+node (§2.7), Zhang 2022 human monocytes (§2.6, secondary), COVID-Haniffa and the
+SARS-CoV-2 vaccination CITE-seq atlas (§30/§32, progression/differentiation extensions).
 
 ---
 
@@ -657,78 +565,21 @@ dependencies = ["torch>=2.0", "scanpy>=1.9", "anndata>=0.9",
 dev = ["pytest>=7.0", "jupyter>=1.0", "ipykernel>=6.0"]
 ```
 
+Top-level layout (for the current exact file listing, use the project's `/index` skill
+rather than this hand-maintained tree — it goes stale as sections are added):
+
 ```
 cytokine_mil/               <- repo root
-│
-├── CLAUDE.md
-├── pyproject.toml
-├── README.md
-│
-├── cytokine_mil/           <- importable package
-│   ├── __init__.py
-│   ├── experiment_setup.py
-│   ├── data/
-│   │   ├── dataset.py          <- PseudoTubeDataset, collate_fn
-│   │   └── label_encoder.py    <- CytokineLabel, BinaryLabel
-│   ├── models/
-│   │   ├── instance_encoder.py
-│   │   ├── attention.py
-│   │   ├── bag_classifier.py
-│   │   ├── cytokine_abmil.py
-│   │   ├── two_layer_attention.py  <- TwoLayerAttentionModule (SA + CA)
-│   │   ├── cytokine_abmil_v2.py   <- CytokineABMIL_V2
-│   │   └── aux_decoder.py         <- AuxDecoder (Exp 3 contingency, Section 20.5)
-│   ├── training/
-│   │   ├── trainer.py          <- shared helpers, mega-batch logic
-│   │   ├── train_encoder.py    <- Stage 1
-│   │   └── train_mil.py        <- Stage 2/3
-│   └── analysis/
-│       ├── dynamics.py
-│       ├── validation.py
-│       ├── confusion_dynamics.py   <- confusion trajectory, asymmetry, cascade graph
-│       └── latent_geometry.py      <- cytokine centroid geometry, directional bias, asymmetry (Section 20)
-│
-├── scripts/
-│   ├── build_pseudotubes.py
-│   ├── build_pseudotubes_sheu2024.py          <- Sheu 2024 adapter (Section 2.5)
-│   ├── build_pseudotubes_zhang2022.py         <- Zhang 2022 adapter (Section 2.6)
-│   ├── build_pseudotubes_immune_dictionary.py <- ID adapter (Section 2.7)
-│   ├── synthetic_cascade_control.py           <- Experiment 0 go/no-go gate (Section 19.5)
-│   ├── train_oesinghaus_full.py               <- full 91-class confusion dynamics training
-│   ├── train_sheu2024_stage12.py              <- Sheu Stage 1+2 trainer (Section 21)
-│   ├── train_zhang2022_stage12.py             <- Zhang Stage 1+2 trainer (Section 2.6)
-│   ├── train_aux_decoder.py                   <- trains AuxDecoder on frozen MIL model (Section 20.5)
-│   ├── check_attention_cell_types.py          <- attention proxy check (Section 20.8)
-│   └── run_immune_dictionary_pathway_audit.py <- §25 ID directional-asymmetry sweep
-├── configs/
-│   ├── default.yaml
-│   ├── sheu2024.yaml                  <- per-dataset config for Sheu (Section 21)
-│   ├── zhang2022.yaml                 <- per-dataset config for Zhang (Section 2.6)
-│   └── immune_dictionary.yaml         <- per-dataset config for ID (Section 2.7)
-├── slurm/
-│   ├── run_sheu2024.slurm             <- sbatch wrapper (Section 21)
-│   ├── run_zhang2022.slurm            <- sbatch wrapper (Section 2.6)
-│   └── run_id_pathway_audit.slurm     <- sbatch wrapper for §25 ID sweep
-├── reports/
-│   ├── sheu2024/
-│   │   └── AXIS_GATE_VERDICT.md       <- phase 1 go/no-go verdict (Section 21)
-│   └── immune_dictionary/
-│       ├── PRE_REGISTRATION.md        <- pre-registered cascade list; commit BEFORE audit (Section 25)
-│       └── CASCADE_SWEEP_RESULTS.md   <- §25 verdict (written after audit)
-├── notebooks/
-│   ├── experiment.ipynb
-│   ├── experiment_subset.ipynb     <- 10-cytokine subset (fixed EASY/HARD groups)
-│   ├── experiment_binary.ipynb              <- binary experiment (one model per cytokine vs PBS, shared encoder)
-│   ├── experiment_bootstrap.ipynb           <- bootstrap experiment (random 5+5 from SIMPLE/COMPLEX pools, see Section 18)
-│   ├── experiment_v2_two_layer_attention.ipynb  <- v2 architecture experiment (CytokineABMIL_V2, SA vs CA analysis)
-│   └── preprocess_tubes.ipynb
-└── tests/
-    ├── make_demo_data.py
-    ├── test_demo.py
-    ├── make_demo_data_sheu.py  <- Sheu demo fixture (Section 12)
-    ├── test_demo_sheu.py       <- round-trips Sheu adapter through PseudoTubeDataset + CytokineLabel
-    ├── make_demo_data_id.py    <- ID demo fixture (Section 12)
-    └── test_demo_id.py         <- round-trips ID adapter through PseudoTubeDataset + CytokineLabel
+├── cytokine_mil/           <- importable package: data/, models/, training/, analysis/
+├── cascadir/                <- reusable dataset-agnostic package (Section 29)
+├── scripts/                <- one driver script per experiment/section
+├── configs/                 <- per-dataset YAML (default, sheu2024, zhang2022, immune_dictionary)
+├── slurm/                    <- sbatch wrappers + DAGs, one subdir per experiment
+├── reports/                  <- pre-registrations + results writeups, one subdir per experiment
+├── notebooks/                <- experiment.ipynb and variants (Sections 10, 17-18)
+├── tests/                    <- demo-data fixtures + unit tests (Section 12)
+├── hypotheses/                <- falsifiable-prediction docs, written before an experiment runs
+└── thesis/                   <- METHOD_GROUND_TRUTH.md, WONDERINGS.md (see /thesis-sync skill)
 ```
 
 ---
@@ -1618,23 +1469,16 @@ labeled-positive |cross_median|`), top-K=10, and the calibration predictions:
   `submit_group_u_dag.sh` (dry-run via `SUBMIT=echo`). Output dir `results/group_u/`.
 - **Bottom line:** `reports/cascade_pairs/GROUP_U_RESULTS.md` + `results/group_u/pipeline_full121/per_axis_summary.csv`.
 
-### 27.6 Results (2026-06-03) — NOT a valid discovery claim (null over-powered + P4 regression)
+### 27.6 Results (2026-06-03) — NOT a valid discovery claim
 
-Ran end-to-end (jobs 30726479–30726489). **P1 (power) PASS** (11/11 labeled non-AMBIGUOUS
-pass the null). But the pre-registration's other checks falsified the headline:
-- **P3 over-power artifact.** The cell-level permutation null with thousands of cells per
-  (cytokine, cell-type) makes ~all pairs significant (`dir_p_emp = 0.0000` for 16/17 labeled);
-  Storey π₀ = 0.038 ("96% of Group-U reliable") is the null being trivially beatable at large
-  n, not biology. **The null must be donor-level** (§16: unit of independence = donor ≈10, not
-  cells).
-- **P4 regression FAIL.** Labeled cross_asym accuracy 6/11 non-AMBIGUOUS (≈10/16 by sign) vs
-  §26's 15/17; the all45 re-run does not reproduce the published signatures — likely because
-  `train_oesinghaus_binary_groupu.py` used a separate encoder per 8-way chunk (3 cytokines
-  each) instead of §26's single shared encoder.
-
-**Verdict:** the two-stage machinery runs, but the Group-U discovery question is **OPEN**,
-pending (a) a donor-level direction null, (b) reproducing the §26 signatures. The §26 88% and
-Path A's 121 axes are unaffected. Honest writeup: `reports/cascade_pairs/GROUP_U_RESULTS.md`.
+Ran end-to-end (jobs 30726479–30726489). P1 (power) passed, but two pre-registered checks
+falsified the headline: the cell-level permutation null is over-powered (thousands of cells
+per cell-type make ~everything "significant" — the null must be donor-level, §16), and the
+all-45-cytokine re-run failed to reproduce §26's labeled accuracy (6/11 vs 15/17), likely
+because `train_oesinghaus_binary_groupu.py` used a separate encoder per chunk instead of a
+shared one. **Verdict: OPEN**, pending a donor-level null and signature reproduction — §26's
+88% and Path A's 121 axes are unaffected. Full writeup:
+`reports/cascade_pairs/GROUP_U_RESULTS.md`.
 
 ---
 
@@ -1689,54 +1533,40 @@ published 121-axis result until this is validated; it is a candidate reframe.
 
 ### 28.1 Results (2026-06-03)
 
-- **Sheu — WIN (decisive).** Signature-space coupling recovers **2/2** MUST IFN cascades
-  (LPS–IFNb, polyIC–IFNb) at **both** 3hr and 5hr that latent-geometry Path A failed (0/2,
-  q=1); clean negatives (P3CSK–IFNb, CpG–IFNb) stay uncoupled. Direction: LPS→IFNb correct at
-  both frames; polyIC flips at 5hr (known ISG-collapse). Confirms the diagnosis — Sheu's Path
-  A failure was measuring shared activation, not a missing signal.
-- **Oesinghaus — signal present, gate too loose.** 48 cytokines / 1128 pairs; right biology at
-  the top (IL-15/IL-2 #1, IFN/KNOWN pairs); Spearman(coupling, Path A `axis_strength`) = 0.11
-  (ranks coupling very differently). BUT the gene-set null is over-permissive
-  (**894/1128 "coupled"**) and hub-dominated (IL-15 in 11/20 top pairs, CD40L in 5/20) — needs
-  a **donor-level + degree/hub correction** before it discriminates on the broad pair space.
-- **Immune Dictionary — not run.** ID currently has no coupling result (latent-geometry Path A
-  also never emitted output there); its §26 83% is direction-only on hand-picked pairs.
-- **Two coupling paths are complementary** (latent: rich but shared-activation-confounded,
-  needs rich data, works on Oes; signature: specific/interpretable but over-permissive gate,
-  rescues Sheu). Likely endgame: signature specificity + donor-level discipline. Full writeup:
-  `reports/cascade_pairs/SIGNATURE_COUPLING_RESULTS.md`.
+**Sheu — WIN (decisive).** Recovers 2/2 MUST IFN cascades (LPS–IFNb, polyIC–IFNb) at both
+3hr and 5hr that latent-geometry Path A failed (0/2, q=1); clean negatives stay uncoupled.
+Confirms the diagnosis — Sheu's Path A failure was measuring shared activation, not a
+missing signal. **Oesinghaus — signal present, gate too loose.** Right biology at the top
+(IL-15/IL-2 #1), but the gene-set null is over-permissive (894/1128 pairs "coupled") and
+hub-dominated (IL-15 in 11/20 top pairs) — needs donor-level + degree correction (fixed in
+§28.2). **Immune Dictionary — not run.** The two coupling paths are complementary (latent:
+rich, shared-activation-confounded, works on Oes; signature: specific, over-permissive
+gate, rescues Sheu). Full writeup: `reports/cascade_pairs/SIGNATURE_COUPLING_RESULTS.md`.
 
 ### 28.2 Gate fix — donor-level + degree(hub) correction (VALIDATED 2026-06-19)
 
-The §28.1 over-call was diagnosed and fixed. Two orthogonal nulls/transforms, validated via
-`scripts/run_signature_ablation.py` (2×2 {IG,DE}×{vsPBS,vsPanel}), `run_donor_coupling_null.py`
-(donor sign-flip null + degree correction), and `run_cell_degree_coupling.py` (cell-level
-degree). Code in `cytokine_mil/analysis/signature_coupling.py`
-(`donor_excess_matrix`, `donor_residual_coupling_matrix`, `donor_coupling_test`,
-`_degree_center`, `cell_coupling_degree`). Findings:
-- **Signature definition (ablation):** IG_vsPBS reproduces ~88% direction; **DE ≠ IG**
-  (Jaccard 0.11, DE direction 59%≈chance) → the encoder/IG is *not* replaceable by DE (keep
-  it). **IG_vsPanel** (panel-residualised, removes shared activation) equals IG_vsPBS **on
-  direction** and is only marginally less hub-dominated, so it neither changes the direction
-  result nor reduced the coupling over-call (the cell-level null is over-powered regardless)
-  → it was **NOT adopted**. The **default signature is IG_vsPBS (raw top-50 by IG, no
-  residualisation)**, matching `cascadir.derive_signature` and the consolidated
-  `reports/progress_report/progress_report.pdf` (2026-06-25, Table 2 "IG, vs-PBS (current)");
-  the shared-activation / coupling over-call is fixed by **degree correction** (next bullet),
-  not by the signature. *(Correction 2026-07-07: this bullet previously read "→ adopt
-  [IG_vsPanel] as default signature," which the progress report and cascadir's raw-IG path
-  both contradict. A marginal vsPanel coupling-ranking edge exists on Oesinghaus only and
-  over-strips on ID/Cano-Gamez — a documented nuance, not the default:
-  `reports/cascade_pairs/COUPLING_DONOR_COUNT_OES.md`.)*
-- **Degree (hub) correction is THE fix** (double-center the coupling matrix → pair-specific
-  residual; symmetric, so `cross_asym`/direction unaffected). *Oesinghaus donor+degree:*
-  over-call 77%→**31%**, recall 8→**11/17** (≈2.1× enrichment). *Sheu cell+degree:* keeps
-  2/2 IFN cascades (PIC–IFNb #1), suppresses all 3 negatives, over-call ~80%→~40% (drops only
-  the both-hub LPS–TNF).
-- **Boundary:** the donor-level null needs ~8+ well-covered donors (Oesinghaus). Sheu (4) / ID
-  (3) are too few → donor gate inapplicable; use cell-level degree correction there.
-- **Ported to `cascadir`** (`signature_coupling(..., degree_correct=True)` default; no-op for
-  <3 conditions; donor path degree-corrected). MANUAL §4/§5/§8 updated. cascadir tests pass.
+The §28.1 over-call was diagnosed and fixed via `scripts/run_signature_ablation.py` (2×2
+{IG,DE}×{vsPBS,vsPanel}), `run_donor_coupling_null.py` (donor sign-flip null + degree
+correction), `run_cell_degree_coupling.py` (cell-level degree). Code in
+`cytokine_mil/analysis/signature_coupling.py` (`donor_excess_matrix`,
+`donor_residual_coupling_matrix`, `donor_coupling_test`, `_degree_center`,
+`cell_coupling_degree`).
+
+- **Default signature is IG_vsPBS** (raw top-50 by IG, no residualisation), matching
+  `cascadir.derive_signature` and `reports/progress_report/progress_report.pdf` (Table 2).
+  DE ≠ IG (Jaccard 0.11, DE direction ≈chance) — IG is not replaceable by DE. IG_vsPanel
+  (panel-residualised) ties IG_vsPBS on direction and doesn't reduce the coupling over-call,
+  so it was **not adopted** as default. *(Correction 2026-07-07: an earlier draft of this
+  bullet said to adopt IG_vsPanel — wrong; the progress report and cascadir's raw-IG path
+  both contradict it. A marginal vsPanel edge exists on Oesinghaus only and over-strips on
+  ID/Cano-Gamez: `reports/cascade_pairs/COUPLING_DONOR_COUNT_OES.md`.)*
+- **Degree (hub) correction is THE fix** (double-center the coupling matrix; symmetric, so
+  `cross_asym`/direction unaffected). Oesinghaus donor+degree: over-call 77%→**31%**, recall
+  8→**11/17**. Sheu cell+degree: keeps 2/2 IFN cascades, suppresses all 3 negatives.
+- **Boundary:** donor-level null needs ~8+ well-covered donors (Oesinghaus); Sheu (4)/ID (3)
+  use cell-level degree correction instead.
+- **Ported to `cascadir`** (`signature_coupling(..., degree_correct=True)` default). MANUAL
+  §4/§5/§8 updated; tests pass.
 
 ---
 
@@ -1983,50 +1813,33 @@ VACCINE_PROGRESSION_RESULTS}.md`. Reuses `scripts/apparatus_cross_asym_ladder.py
 
 ### 32.1 Results (2026-06-22) — timeline recovered, state direction REVERSED (boundary found)
 
-Ran end-to-end on the cluster (jobs 30907134–30907138; .rds read via base-R `attr()` since
-SeuratObject is not installed; states from CITE protein CD45RO/CD27, CCR7 absent from the
-panel; atlas samples Day0/2/**11**/28, not Day10). Honest writeup:
+Ran end-to-end on the cluster (jobs 30907134–30907138). Honest writeup:
 `reports/vaccine_progression/VACCINE_PROGRESSION_RESULTS.md`.
 
-- **Apparatus distinct-gate PASS** (cross 100% / τ+1; monotone-noseed cross 0%) → method sound.
-- **TIMEPOINT (corroboration): direction RECOVERED.** `cross_asym` recovers D2→D11→D28 at
-  100% with the symmetric control at 0% and Kendall τ=+1.0; **AMBER only** because the 6-donor
-  bootstrap CI is wide (underpowered), not because direction failed. The §30 progression result
-  reproduces on a vaccination time axis.
+- **Apparatus gate PASS**; **TIMEPOINT (corroboration): direction RECOVERED.** `cross_asym`
+  recovers D2→D11→D28 at 100% (symmetric control 0%, τ=+1.0); AMBER only because the 6-donor
+  bootstrap CI is wide (underpowered), not because direction failed. Reproduces §30's
+  progression result on a vaccination time axis.
 - **STATE (headline): direction REVERSED (RED).** `cross_asym` recovers Effector→Memory→Naive
-  (τ=−1.0), the exact reverse, **consistently across CD4/CD8/other T**. Tell-tale: **symmetric
-  control 100% vs cross_asym 0%** (inverse of the cytokine/COVID pattern; apparatus
-  monotone-noseed fingerprint).
-- **Mechanism — CONTROL-INDEPENDENT retention biology** (confirmed by a control-swap
-  decomposition, `scripts/analyze_vaccine_state_control_decomp.py`, holding signatures fixed):
-  the **raw** cross-engagement with NO control is the *most* inverted (Mem–Nai +0.588 vs +0.140
-  under Resting); the Resting control *reduces* the inversion, and **no control choice
-  un-inverts** the Naive pairs (τ=−1 for ZERO/Balanced/Naive-/Memory-as-control). A first-pass
-  "Naive≈Resting baseline (effect a)" attribution was **falsified** — control-composition
-  *mitigates*, it does not cause. The real cause: differentiation has the **opposite**
-  cross-engagement asymmetry from a cytokine cascade — `cross_asym` assumes the upstream cell
-  *acquires* the downstream program, but the **mature** cell *retains* the **progenitor's**
-  program (memory re-expresses naive IL7R/TCF7/SELL/CCR7), so `s(Memory,S_Naive) ≫
-  s(Naive,S_Memory)` and the statistic points mature→naive.
-- **Boundary lesson:** `cross_asym` direction transfers to a **temporal/disease-progression**
-  axis but is **fundamentally mis-signed on a cell-state differentiation axis** (control-
-  independent). The timeline is the right axis for an *acquisition*-based statistic; getting
-  *state* direction would need a *retention/loss*-keyed statistic. Caveats:
-  validation-not-discovery; early (day-28) memory; ~6 donors (donor-bootstrap underpowered);
-  direction ≠ causation.
+  — the exact reverse — consistently across CD4/CD8/other T; the symmetric control scores
+  100% here (inverse of the cytokine/COVID pattern).
+- **Mechanism** (confirmed by a control-swap decomposition holding signatures fixed):
+  differentiation has the **opposite** cross-engagement asymmetry from a cytokine cascade —
+  `cross_asym` assumes the upstream cell *acquires* the downstream program, but the mature
+  cell *retains* the progenitor's program (memory re-expresses naive IL7R/TCF7/SELL/CCR7), so
+  the statistic points mature→naive regardless of control choice.
+- **Boundary lesson:** `cross_asym` transfers to a temporal/progression axis but is
+  fundamentally mis-signed on a cell-state *differentiation* axis — an acquisition-keyed
+  statistic can't recover state direction; that would need a retention/loss-keyed one.
 
 ### 32.2 Tree-cascade synthetic follow-up (2026-06-25)
 
-`scripts/apparatus_tree_cascade.py` (+ `slurm/vaccine_progression/apparatus_tree.slurm`) adds a
-4th synthetic scenario to the §30 apparatus ladder, with identical hyperparameters: a
-**partial-order TREE** `p0→p1, p1→p2, p0→p3` where each node carries its own block (m) **+ half
-its parent's full program** (a RETENTION structure — descendant carries ancestor). Result
-(`reports/vaccine_progression/APPARATUS_TREE_RESULTS.md`): `cross_asym` mis-signs **all 4**
-ancestor→descendant edges (0% acc, τ=−1, each names the *descendant* upstream) while the 2
-sibling pairs stay correctly ambiguous (≈0); reversal magnitude tracks carry strength (direct
-edges |cross_asym|≈0.61, transitive grandparent ≈0.26). I.e. the tree reproduces the
-`monotone_noseed` regime on a non-linear topology → the reversal is about the
-acquisition-vs-retention asymmetry, not about the chain being linear.
+`scripts/apparatus_tree_cascade.py` adds a 4th synthetic scenario to the §30 apparatus
+ladder: a partial-order TREE where each node carries its own block **+ half its parent's
+program** (a RETENTION structure). Result (`reports/vaccine_progression/APPARATUS_TREE_RESULTS.md`):
+`cross_asym` mis-signs all 4 ancestor→descendant edges while sibling pairs stay correctly
+ambiguous — confirming the reversal is about acquisition-vs-retention asymmetry, not about
+the chain being linear.
 
 ---
 
@@ -2114,25 +1927,21 @@ Reuses `scripts/check_attention_cell_types.py` (`EXPECTED_DOMINANT`), `analysis/
 
 ### 33.6 Results (2026-07-01) — collapse NOT fixable by regularization; keeper is P3
 
-Ran the three collapse interventions (jobs 30962392–30962403) then a λ-sweep (jobs
-30966038–30966049), all 3 seeds, vs the baseline `results/attention_dynamics`. **All failed to
-recover the biological readout.** The entropy penalty mechanically works — top1_share (collapse)
-drops monotonically 0.42(λ=0)→0.31(λ=1)→0.09(λ=10)→0.06(λ=100) — but (1) **flattening attention
-does NOT recover P1** (final 0.47→0.27→0.33→0.47, never near the 0.73 training peak): the collapse
-was not *hiding* the responders; attention's argmax simply isn't the biological responder in a
-frozen-multiclass discriminative task except at a transient mid-training moment; (2) **fatal
-tradeoff, no sweet spot** — p_correct 0.43→0.41→0.15→0.07 (≈chance @91 classes); (3) the penalty
-also degrades P3 (rho −0.40→−0.15→+0.19→nan). Unfreeze (Stage-3) was catastrophic (p_correct→0.04);
-hygiene (drop pDC/ILC/Plasmablast) marginal and cost discriminability. **Resolution:** the collapse
-is a symptom of margin-maximizing softmax, not a fixable bottleneck; do NOT pursue more attention
-regularization. §33's direction layer (P2 relay-lag) is a negative (0/3 cascades at every λ). The
-keeper is the **baseline unregularized P3** (rho≈−0.40: direct cytokines recruit their primary cell
-type earlier) — a learnability-timing result, seed-noisy, NOT a cascade-direction tool. Reports:
-`reports/attention_dynamics/{INTERVENTION_COMPARISON,LAMBDA_SWEEP_COMPARISON}.md`. New (additive,
-backward-compatible): `train_mil` `attn_entropy_lambda`/`exclude_cell_types`;
-`train_oesinghaus_full.py` `--attn_entropy_lambda`/`--exclude_cell_types`; `extract_attention_trajectory.py`
-unfrozen-mode/stride/exclude; `scripts/{compare_attn_experiments,probe_attention_p1_over_epochs,
-plot_attention_by_celltype}.py`; `tests/test_train_mil_reg.py`; `slurm/{attn_reg,attn_lambda}/`.
+Ran three collapse interventions then a λ-sweep, all 3 seeds, vs the baseline. **All failed
+to recover the biological readout.** The entropy penalty mechanically shrinks attention
+collapse (top1_share 0.42→0.06 as λ: 0→100) but (1) does **not** recover P1 (stays well below
+the 0.73 training peak) — attention's argmax simply isn't the biological responder in a
+frozen-multiclass task except at a transient mid-training moment; (2) trades away
+discriminability with no sweet spot (p_correct falls to ≈chance at high λ); (3) also degrades
+P3. Unfreezing (Stage-3) was catastrophic; cell-type hygiene was marginal. **Resolution: the
+collapse is a symptom of margin-maximizing softmax, not a fixable bottleneck — do not pursue
+more attention regularization.** §33's direction layer (P2 relay-lag) is a negative (0/3
+cascades at every λ). The keeper is the **baseline unregularized P3** (rho≈−0.40: direct
+cytokines recruit their primary cell type earlier) — a learnability-timing result,
+seed-noisy, NOT a cascade-direction tool. Reports:
+`reports/attention_dynamics/{INTERVENTION_COMPARISON,LAMBDA_SWEEP_COMPARISON}.md`. New
+(additive): `train_mil` `attn_entropy_lambda`/`exclude_cell_types`;
+`scripts/{compare_attn_experiments,probe_attention_p1_over_epochs,plot_attention_by_celltype}.py`.
 
 ---
 
@@ -2202,10 +2011,9 @@ Local de-risk `scripts/run_demo_selfattn.py` (harness-only synthetic demo) + `te
 analysis runs `analyze_attention_dynamics` + `analyze_selfattn_interaction` + `score_selfattn_direction`
 + the §33 probe/plot). Output `results/selfattn/seed_*/`.
 
-**Honest caveats.** Attention is task-driven (discriminative), NOT biology — validate on held-out
-donors; a relay is visible only if it lives in the frozen cell-type-pretrained embedding subspace
-(representability risk); direction ≠ existence (coupling is Path A's job) ≠ causation; small donor N
-→ wide CIs; multi-seed before trusting ordering. Deferred: porting to `cascadir` (validate first).
+**Honest caveats.** Same as §33.4 (task-driven not biology, frozen-encoder representability,
+direction ≠ existence ≠ causation, small-N/multi-seed). Deferred: porting to `cascadir`
+(validate first).
 
 **File layout (new).** `cytokine_mil/models/set_transformer_mil.py`;
 `cytokine_mil/analysis/attention_interaction.py`; `scripts/{extract_selfattn_trajectory,
@@ -2218,3 +2026,14 @@ backward-compatible): `cytokine_mil/experiment_setup.py` (`build_selfattn_model`
 `models/{attention,bag_classifier,instance_encoder}.py`, `train_mil.py`,
 `analysis/attention_dynamics.py`, `scripts/{analyze_attention_dynamics,probe_attention_p1_over_epochs,
 plot_attention_by_celltype,retally_pipeline_against_audit}.py` unchanged.
+
+---
+
+## 35. Thesis Document & Overleaf Sync (2026-07)
+
+Pure infrastructure/tooling, no bearing on the research pipeline. The M.Sc. thesis source
+lives in its own separate git repo, sibling to this one: `/Users/yam/my-packages/overleaf-thesis-cascades/`
+(independent git history, synced via Overleaf's git bridge). Only `METHOD_GROUND_TRUTH.md`
+and `WONDERINGS.md` remain in `cytokine_mil/thesis/` — the thesis prose itself is not here.
+See `/thesis-sync` skill for the full location rationale, git-bridge auth, and sync workflow.
+
