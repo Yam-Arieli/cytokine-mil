@@ -44,7 +44,12 @@ def _parse_args():
     p.add_argument("--seeds", type=int, nargs="+", default=[42, 123, 7])
     p.add_argument("--exclude", nargs="+", default=["PBS"])
     p.add_argument("--zoom_epochs", type=int, default=50,
-                    help="right-panel x-limit (everything saturates fast)")
+                    help="right-panel x-limit from epoch 1 (everything saturates fast); "
+                         "ignored if --zoom_start/--zoom_end are given")
+    p.add_argument("--zoom_start", type=int, default=None,
+                    help="right-panel x-limit start (custom window, overrides --zoom_epochs)")
+    p.add_argument("--zoom_end", type=int, default=None,
+                    help="right-panel x-limit end (custom window, overrides --zoom_epochs)")
     p.add_argument("--out", default=str(REPO / "reports/cascade_forge_potency/label_trajectories.png"))
     return p.parse_args()
 
@@ -83,6 +88,8 @@ def main():
         sys.exit("No usable dynamics.pkl found.")
 
     all_labels = sorted({c for st in per_seed_traj for c in st})
+    # Draw small-cascade labels first, big-cascade labels last (on top).
+    all_labels.sort(key=lambda c: cascade_size.get(c, 0))
     traj = {}
     for c in all_labels:
         arrs = [st[c] for st in per_seed_traj if c in st]
@@ -90,28 +97,39 @@ def main():
         traj[c] = np.mean(np.stack([a[:n] for a in arrs]), axis=0)
 
     vmax = max(cascade_size.values())
-    cmap = matplotlib.colormaps["viridis"]
-    norm = matplotlib.colors.Normalize(vmin=0, vmax=vmax)
+    CASCADE_SIZE_COLOR = {0: "tab:gray", 1: "tab:blue", 2: "tab:green", 3: "tab:red"}
+    def _color_for(c):
+        return CASCADE_SIZE_COLOR.get(cascade_size.get(c, 0), "black")
+
+    if args.zoom_start is not None and args.zoom_end is not None:
+        zoom_xlim = (args.zoom_start, args.zoom_end)
+        zoom_title = f"Zoomed: epoch {args.zoom_start} to {args.zoom_end}"
+    else:
+        zoom_xlim = (1, args.zoom_epochs)
+        zoom_title = f"Zoomed: first {args.zoom_epochs} epochs"
+    n_epochs_total = len(epochs_ref)
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5), sharey=True)
     for ax, xlim, title in [
-        (axes[0], None, "Full training (400 epochs)"),
-        (axes[1], args.zoom_epochs, f"Zoomed: first {args.zoom_epochs} epochs"),
+        (axes[0], None, f"Full training ({n_epochs_total} epochs)"),
+        (axes[1], zoom_xlim, zoom_title),
     ]:
         for c in all_labels:
-            color = cmap(norm(cascade_size.get(c, 0)))
             n = min(len(epochs_ref), traj[c].size)
-            ax.plot(epochs_ref[:n], traj[c][:n], color=color, lw=1.4, alpha=0.9)
+            ax.plot(epochs_ref[:n], traj[c][:n], color=_color_for(c), lw=1.4, alpha=0.9)
         if xlim:
-            ax.set_xlim(1, xlim)
+            ax.set_xlim(*xlim)
         ax.set_xlabel("epoch")
         ax.set_title(title)
     axes[0].set_ylabel("p_correct (3-seed mean, donor-aggregated)")
 
-    sm = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=axes, pad=0.02)
-    cbar.set_label("cascade_size (downstream reach, incl. transitive)")
+    legend_handles = [
+        matplotlib.lines.Line2D([0], [0], color=CASCADE_SIZE_COLOR[k], lw=2.5,
+                                 label=f"cascade_size = {k}")
+        for k in sorted(CASCADE_SIZE_COLOR) if k <= vmax
+    ]
+    fig.legend(handles=legend_handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
+               title="cascade_size (downstream\nreach, incl. transitive)", frameon=False)
 
     fig.suptitle("cascade_forge: per-label training accuracy vs cascade depth "
                  "(color = downstream reach)")
