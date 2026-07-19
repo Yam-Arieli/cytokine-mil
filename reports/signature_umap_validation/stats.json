@@ -1,0 +1,21 @@
+{
+  "cytokine": "IFN-gamma",
+  "top_n": 50,
+  "variants": {
+    "all_hvg": {
+      "n_cells": 39190,
+      "n_genes": 4000,
+      "silhouette": 0.008761990815401077
+    },
+    "signature": {
+      "n_cells": 39190,
+      "n_genes": 50,
+      "silhouette": 0.011184080503880978
+    },
+    "random": {
+      "n_cells": 39190,
+      "n_genes": 50,
+      "silhouette": 0.002521346090361476
+    }
+  }
+}
