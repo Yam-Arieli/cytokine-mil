@@ -24,6 +24,7 @@ from pathlib import Path
 import anndata as ad
 
 import cascadir as cd
+from cascadir.config import PreprocessConfig
 
 
 def main() -> int:
@@ -43,9 +44,15 @@ def main() -> int:
     print(f"[load] {adata.n_obs} cells x {adata.n_vars} genes; "
           f"stimuli present: {sorted(set(adata.obs['cytokine']) - {args.control_label})}")
 
+    # Sheu tubes are already normalize_total+log1p'd with no raw `counts` layer
+    # (CLAUDE.md §3), and the 500-gene targeted panel makes HVG selection a no-op
+    # either way -- flavor="seurat" computes HVGs directly on log-normalized values
+    # instead of requiring raw counts (cascadir's own documented fallback, see
+    # PreprocessConfig / preprocess()'s NotPreprocessedError message).
     est = cd.CascadeDirection(
         condition_col="cytokine", donor_col="donor", celltype_col="cell_type",
         control_label=args.control_label, device=args.device, seed=args.seed,
+        preprocess_config=PreprocessConfig(flavor="seurat"),
     ).fit(adata, assume=args.assume)
     print("[fit] done. conditions:", est.tube_set.stimulus_conditions)
 
