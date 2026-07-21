@@ -14,6 +14,6 @@ mkdir -p results/sheu_cascadir_native
 PY=/cs/labs/mornitzan/yam.arieli/venvs/biovenv/bin/python
 
 $PY scripts/prepare_sheu_cascadir.py \
-    --manifest_path /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json \
+    --manifest_path /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_5hr_pseudotubes/manifest.json \
     --time_filter 5hr \
-    --out /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/prepared/sheu_5hr_prepared.h5ad
+    --out /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_5hr_pseudotubes/prepared/sheu_5hr_prepared.h5ad

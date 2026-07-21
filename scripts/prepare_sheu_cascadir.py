@@ -17,9 +17,18 @@ its cell-selection semantics, so a fresh cascadir fit is comparable to it).
 
 Usage (cluster):
     python scripts/prepare_sheu_cascadir.py \\
-        --manifest_path /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json \\
+        --manifest_path /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_5hr_pseudotubes/manifest.json \\
         --time_filter 5hr \\
-        --out /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/prepared/sheu_5hr_prepared.h5ad
+        --out /cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_5hr_pseudotubes/prepared/sheu_5hr_prepared.h5ad
+
+Note: the general `Sheu2024_pseudotubes/manifest.json` (CLAUDE.md §2.5) only covers
+{0hr, 3hr} -- it has no 5hr cells at all. The 5hr-specific pseudotubes/manifest live
+under a separate `Sheu2024_5hr_pseudotubes/` tree (built by
+`slurm/build_pseudotubes_sheu_5hr.slurm` with `--time_points 0hr 5hr`), which is what
+the existing 5hr `binary_ig.parquet` / `per_axis_summary.csv` were actually computed
+from. Pointing this script at the wrong manifest silently drops every stimulated tube
+(time filter matches zero cells) while PBS survives in full -- verify the assembled
+AnnData's obs['cytokine'] contains all expected stimuli, not just PBS.
 """
 from __future__ import annotations
 
@@ -32,7 +41,7 @@ import numpy as np
 import scanpy as sc
 import scipy.sparse
 
-MANIFEST_DEFAULT = "/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_pseudotubes/manifest.json"
+MANIFEST_DEFAULT = "/cs/labs/mornitzan/yam.arieli/datasets/Sheu2024_5hr_pseudotubes/manifest.json"
 
 
 def assemble(manifest_path: str, time_filter: str | None) -> ad.AnnData:
