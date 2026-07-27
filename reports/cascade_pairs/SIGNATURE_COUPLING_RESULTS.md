@@ -21,15 +21,19 @@ immune genes nearly every cytokine co-induces — so apparent coupling is domina
 
 ## Method
 
-Build the cross-engagement matrix `M[a,b] = s(a, S_b) − s(PBS, S_b)` (a's cells expressing
-b's signature, PBS-normalised, median over cell types), in raw gene-expression space — **no
-encoder embedding**. Two readouts:
-- **Coupling (symmetric):** `M[a,b] + M[b,a]`, gated by a gene-set null (vs random gene sets
-  of equal size) — "the strong-enough-signal gate."
-- **Direction (antisymmetric):** `M[a,b] − M[b,a]` = cross_asym (§26), read only on coupled
-  pairs.
+Build the cross-engagement matrix `M[a,b] = median over cell types T of s_T(a, S_b)`, where
+`s_T(a,S_b)` = a's T-cells expressing b's signature minus PBS's T-cells, in raw
+gene-expression space — **no encoder embedding**. Readouts:
+- **Coupling (symmetric):** raw `M[a,b] + M[b,a]`, reported as its degree-corrected
+  (double-centred) residual (§28.2), gated by a gene-set null (vs random gene sets of equal
+  size) — "the strong-enough-signal gate."
+- **Direction (antisymmetric):** cross_asym (§26) — the median over the cell types the pair
+  *shares* of `s_T(a,S_b) − s_T(b,S_a)`, read only on coupled pairs. Note this is a median
+  of per-cell-type differences, **not** `M[a,b] − M[b,a]`; the `cross_asym` column this
+  module emits is that difference-of-medians approximation and can differ in sign (6/21
+  pairs on Sheu 5 h). Direction numbers come from `directional_asymmetry_test`.
 
-(Unit-tested to match `directional_asymmetry_test` exactly; 11 tests pass.)
+(Unit-tested to match `directional_asymmetry_test`'s per-cell-type terms; 11 tests pass.)
 
 ## Sheu — the decisive "irrelevant features" test ✓ WIN
 

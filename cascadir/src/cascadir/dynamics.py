@@ -242,13 +242,15 @@ def coupling_trajectory(
 ) -> dict[int, pd.DataFrame]:
     """Per-epoch cross-engagement panel + degree correction, one DataFrame per epoch.
 
-    For each epoch's signatures, builds ``M[a,b] = s(a, S_b) - s(PBS, S_b)`` via
-    :func:`cascadir.signature_coupling.cross_engagement_matrix`, then reads off
-    ``coupling = M+Mᵀ`` (degree-corrected when ``degree_correct`` and >= 3 conditions —
-    the validated hub fix, symmetric so ``cross_asym`` is untouched) and
-    ``cross_asym = M-Mᵀ`` (direction). Same math as the static
+    For each epoch's signatures, builds ``M[a,b] = median_T s_T(a, S_b)`` via
+    :func:`cascadir.signature_coupling.cross_engagement_matrix`, then reads off the
+    symmetric coupling (raw ``M+Mᵀ``, degree-corrected when ``degree_correct`` and >= 3
+    conditions — the validated hub fix, symmetric so direction is untouched) and the
+    ``cross_asym`` difference-of-medians approximation ``M-Mᵀ``. Same math as the static
     :func:`cascadir.signature_coupling.signature_coupling`; only the per-epoch signatures
-    vary.
+    vary. As there, ``cross_asym`` here is **not** the validated direction statistic of
+    :func:`cascadir.cross_asym.direction_table` (median of the per-cell-type difference
+    over shared cell types) — see that module's docstring.
 
     Args:
         signatures_by_epoch: ``{epoch: {condition: Signature}}``.

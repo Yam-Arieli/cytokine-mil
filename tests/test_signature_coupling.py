@@ -4,7 +4,9 @@ Unit tests for cytokine_mil.analysis.signature_coupling (CLAUDE.md §28).
 Covers:
   * engagement_per_celltype E[t,i,j] matches pathway_audit.directional_asymmetry_test
     (sA_PB_norm / sB_PA_norm) when all cell types are fully present
-  * coupling = M[a,b]+M[b,a] (symmetric); cross_asym = M[a,b]-M[b,a] (antisymmetric)
+  * coupling = M[a,b]+M[b,a] (symmetric); cross_asym = M[a,b]-M[b,a] (the
+    difference-of-medians approximation this module emits — the validated direction
+    statistic is directional_asymmetry_test's median of per-cell-type differences)
   * coupling_null_p in [0,1]; planted strong coupling beats the random-gene null
 """
 
@@ -67,7 +69,7 @@ def test_coupling_direction_signs_and_null():
     assert len(rows) == 1
     r = rows[0]
     assert (r["axis_a"], r["axis_b"]) == ("A", "B")
-    # coupling = m_ab + m_ba ; cross_asym = m_ab - m_ba
+    # coupling = m_ab + m_ba ; cross_asym = m_ab - m_ba (difference of medians)
     assert np.isclose(r["coupling"], r["m_ab"] + r["m_ba"], atol=1e-9)
     assert np.isclose(r["cross_asym"], r["m_ab"] - r["m_ba"], atol=1e-9)
     # planted shared B-block => positive, strong coupling that beats the null

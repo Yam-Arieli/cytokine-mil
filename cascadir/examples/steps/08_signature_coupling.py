@@ -1,14 +1,19 @@
 """Step 8 — signature-space coupling + the degree (hub) correction.
 
 The SECOND coupling path: build one cross-engagement matrix in signature space,
-  M[a,b] = s(a, S_b) - s(PBS, S_b)         # a's cells engaging b's signature
-  coupling(a,b)  = M[a,b] + M[b,a]         # SYMMETRIC   -> existence
-  cross_asym(a,b)= M[a,b] - M[b,a]         # ANTISYMMETRIC -> direction (same as Path B)
+  s_T(a,S_b)     = mean(S_b in a's T-cells) - mean(S_b in PBS's T-cells)   # per cell type
+  M[a,b]         = median over T of s_T(a, S_b)
+  coupling(a,b)  = M[a,b] + M[b,a]         # SYMMETRIC -> existence (this step's answer)
 
 The RAW coupling over-calls: a broadly-engaged ("hub") signature looks coupled to
 everything. The **degree correction** (`degree_correct=True`, the default) double-centers
 the coupling matrix -> pair-SPECIFIC residual. It is symmetric, so it changes only
-coupling (existence), never `cross_asym` (direction).
+coupling (existence), never direction.
+
+DIRECTION is a different statistic and comes from step 9 / `direction_table()`: the median
+over shared cell types of `s_T(a,S_b) - s_T(b,S_a)`. The `cross_asym` column printed here
+is the `M[a,b] - M[b,a]` difference-of-medians approximation, which is NOT the same number
+(the median is not linear, and each M entry medians over its own cell-type set).
 
 This demo plants a hub (`make_hub_anndata`): CytA<->CytB are specifically coupled, CytC is
 independent, and CytH is a hub (its program is engaged by everyone). Watch CytH's pairs

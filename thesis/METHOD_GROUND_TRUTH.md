@@ -31,27 +31,32 @@ All references are `path:line`. Package root of the implementation:
 These are the places where reading `cascadir` gives a different answer than the thesis or
 `CLAUDE.md`. **Trust the code.**
 
-**C1 — `cross_asym` is aggregated two different ways, and the headline number does NOT use
-the thesis formula.**
-The thesis (`thesis.tex:551-552, 652`) defines
-$M_{ab} = \operatorname{median}_T s_T(a, S_b)$ and
-$\mathrm{cross\_asym}(a,b) = M_{ab} - M_{ba}$ — a **difference of medians**.
-That definition is what [`signature_coupling`](cascadir/src/cascadir/signature_coupling.py#L215-L348)
-and `cross_engagement_matrix` compute
-([signature_coupling.py:88-93](cascadir/src/cascadir/signature_coupling.py#L88-L93)).
-But the **primary, validated** outputs — `.direction()`, `.direction_table()`,
-`.benchmark()` (the 88 % / 86 % / 83 % numbers) — go through
+**C1 — `cross_asym` is aggregated two different ways inside `cascadir`; the headline number
+uses the `cross_asym.py` one.** *(Docs reconciled 2026-07-27 — see the resolution below.)*
+The **primary, validated** outputs — `.direction()`, `.direction_table()`, `.benchmark()`
+(the 88 % / 86 % / 83 % numbers) — go through
 [`directional_asymmetry_test` + `aggregate_direction`](cascadir/src/cascadir/cross_asym.py#L38-L132),
 which compute $\operatorname{median}_T\big(s_T(a,S_b) - s_T(b,S_a)\big)$ — a **median of the
 per-cell-type difference**, taken **only over cell types where $a$, $b$, *and* control all
-have $\ge$ `min_cells`**. `cross_engagement_matrix` instead medians each term over its own
-cell-type set (each requires only that *one* condition + control are present), so
-$M_{ab}$ and $M_{ba}$ can be medianed over **different** cell-type sets. The two agree
-only when $a$ and $b$ share the same scorable cell types. The `signature_coupling`
-docstring admits this ("matches `direction_table` when conditions share cell types",
-[signature_coupling.py:14-16](cascadir/src/cascadir/signature_coupling.py#L14-L16)).
-→ The thesis prose describes the `signature_coupling` aggregation; the reported direction
-accuracy comes from the `cross_asym.py` aggregation.
+have $\ge$ `min_cells`**.
+[`signature_coupling`](cascadir/src/cascadir/signature_coupling.py#L215-L348) instead emits
+$M_{ab} - M_{ba}$ — a **difference of medians** — off `cross_engagement_matrix`
+([signature_coupling.py:88-93](cascadir/src/cascadir/signature_coupling.py#L88-L93)), which
+medians each term over its own cell-type set (each requires only that *one* condition +
+control are present), so $M_{ab}$ and $M_{ba}$ can be medianed over **different** cell-type
+sets. The two agree only when $a$ and $b$ share the same scorable cell types; measured on
+the Sheu 5 h fit they differ in **sign on 6 of 21 pairs** (max $|\Delta| = 0.403$).
+
+**Resolution (2026-07-27).** No computation was changed — every existing result reproduces.
+The docs were brought into line with the code instead: `thesis.tex` (§Methods, the direction
+subsection) now defines $\mathrm{cross\_asym}$ as the median of per-cell-type differences
+over *shared* cell types and states explicitly that $M_{ab}$ and $M_{ba}$ use their own
+cell-type sets, and `CLAUDE.md` §28, `cascadir/MANUAL.md`, `README.md`, the example steps,
+`reports/method_deep_dive/06`, `SIGNATURE_COUPLING_RESULTS.md`, `SESSION_GATE_FIX`,
+`progress_report.tex` and the lab-meeting slides now say the same. The `cross_asym` column
+of `signature_coupling` / `coupling_trajectory` is documented everywhere as a
+**difference-of-medians approximation kept for backwards compatibility**; direction is taken
+from `direction_table`.
 
 **C2 — the coupling "coupled" gate has an extra condition and a different sign-test
 denominator.**
@@ -483,9 +488,10 @@ Source: [progression.py](cascadir/src/cascadir/progression.py) (`CLAUDE.md §30`
 condition axis that is a *progression* (severity grades, timepoints, cell states) with
 **nested donors** (each donor has one condition), operate on a `(donor, cell_type)` score
 cache and:
-- `pooled_cross_asym` — the same $M_{ab}-M_{ba}$ direction statistic
-  ([progression.py:111-162](cascadir/src/cascadir/progression.py#L111-L162)) with median
-  over cell types; positive ⇒ $a$ upstream.
+- `pooled_cross_asym` — the $M_{ab}-M_{ba}$ **difference-of-medians** form
+  ([progression.py:111-162](cascadir/src/cascadir/progression.py#L111-L162)), i.e. the
+  `signature_coupling` aggregation, **not** the `direction_table` one (**C1**); positive
+  ⇒ $a$ upstream. Its bootstrap CI is therefore a CI on that form.
 - `bootstrap_cross_asym` — resample donors **with replacement within each condition and
   the control** (donor = unit of independence), recompute pooled `cross_asym`, report
   per-pair CIs, sign-accuracy, and Kendall-$\tau$ vs the oracle order

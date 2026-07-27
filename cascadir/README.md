@@ -133,7 +133,7 @@ validate_anndata        # strict suitability check
   ├─ discover_axes      # coupling path 1 (latent geometry): which pairs are COUPLED (existence)
   └─ train_all_binary   # Stage 2: one stimulus-vs-control AB-MIL per condition
        → derive_signatures   # Integrated Gradients → top-N discovered S_X per condition
-       → signature_coupling  # coupling path 2 (signature space): M[a,b]; coupling=M+Mᵀ, direction=M−Mᵀ
+       → signature_coupling  # coupling path 2 (signature space): coupling = M+Mᵀ, degree-corrected
        → direction_call /    # cross_asym + null → STRONG/WEAK/AMBIGUOUS, who is upstream
          direction_table
   → score_directions    # analysis: accuracy vs known (upstream, downstream) labels

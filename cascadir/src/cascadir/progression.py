@@ -11,7 +11,11 @@ Two consequences this module addresses:
   1. Pooled `cross_asym(a,b) = M[a,b] - M[b,a]`, with
      `M[a,b] = median_T( mean_{a-cells@T}(score on S_b) - mean_{control@T}(score on S_b) )`,
      is STILL well-defined (a population statistic; control = the healthy donors).
-     The point estimate comes from cascadir's `direction_table()`.
+     NOTE this is the *difference-of-medians* form, matching `signature_coupling`, not
+     the median-of-per-cell-type-differences that `direction_table()` computes; the two
+     coincide only when the pair shares its scorable cell types. Report the point
+     estimate from `direction_table()` and this module's bootstrap as what they each
+     are — see the `cascadir.signature_coupling` module docstring.
 
   2. Donor-level rigour comes from a **donor-bootstrap**: resample donors WITH
      replacement *within each condition and within the control group* (donor = the

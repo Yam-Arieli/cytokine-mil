@@ -331,10 +331,13 @@ class CascadeDirection:
     ) -> dict[int, pd.DataFrame]:
         """Per-epoch degree-corrected cross-engagement panel (the "panel correction").
 
-        Reads ``coupling = M+Mᵀ`` (degree-corrected) and ``cross_asym = M-Mᵀ`` per pair
-        from each captured epoch's signatures (top-``top_n``, default
-        ``cross_asym_config.top_n``). Requires ``fit(ig_checkpoint_every=...)``; returns
-        ``{}`` otherwise. See :func:`cascadir.dynamics.coupling_trajectory`.
+        Reads the degree-corrected coupling (raw ``M+Mᵀ``, then double-centred) and the
+        ``cross_asym`` difference-of-medians approximation ``M-Mᵀ`` per pair from each
+        captured epoch's signatures (top-``top_n``, default ``cross_asym_config.top_n``).
+        For the validated direction statistic use :meth:`direction_table` — see the
+        :mod:`cascadir.signature_coupling` module docstring for why the two differ.
+        Requires ``fit(ig_checkpoint_every=...)``; returns ``{}`` otherwise. See
+        :func:`cascadir.dynamics.coupling_trajectory`.
         """
         self._check_fitted()
         if not self.signature_trajectories:
@@ -398,9 +401,11 @@ class CascadeDirection:
     ) -> pd.DataFrame:
         """Second coupling path: coupling in cytokine-SPECIFIC genes (signature space).
 
-        Builds the cross-engagement matrix ``M[a,b]=s(a,S_b)`` and returns, per pair, the
-        SYMMETRIC coupling (``M+Mᵀ`` — existence) and the ANTISYMMETRIC cross_asym
-        (``M−Mᵀ`` — direction; matches :meth:`direction_table`). Complementary to
+        Builds the cross-engagement matrix ``M[a,b]=median_T s_T(a,S_b)`` and returns, per
+        pair, the SYMMETRIC coupling — raw ``M+Mᵀ``, reported degree-corrected — which is
+        this method's answer (existence). The ``cross_asym`` column (``M−Mᵀ``) is a
+        difference-of-medians approximation of the direction statistic, **not** the
+        :meth:`direction_table` value; use that method for direction. Complementary to
         :meth:`discover_axes` (latent geometry): use this on targeted panels / where the
         latent gate has no power; use ``discover_axes`` on broad panels with several
         donors. See ``cascadir/MANUAL.md`` for which path fits which dataset.

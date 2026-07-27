@@ -75,12 +75,12 @@ Cascades detection
 
 - Build the **cross-engagement matrix** in gene space:
   **`M[a,b]` = how much cytokine a's cells express cytokine b's signature `S_b`** (PBS-normalized).
-- It is *directed*: `M[a,b] ≠ M[b,a]`. Read its two halves:
-  - **Coupling = `M[a,b] + M[b,a]`** (symmetric) — are a and b mutually engaged in each other's specific programs?
-  - **Direction = `M[a,b] − M[b,a]`** (antisymmetric) — who is upstream? (upstream carries both programs.)
+- It is *directed*: `M[a,b] ≠ M[b,a]`. Two questions, two statistics:
+  - **Coupling = `M[a,b] + M[b,a]`** (symmetric, then degree-corrected) — are a and b mutually engaged in each other's specific programs?
+  - **Direction = `cross_asym`** (antisymmetric) — who is upstream? (upstream carries both programs.) Computed per cell type as `s_T(a,S_b) − s_T(b,S_a)` and **medianed over the cell types the pair shares** — a median of differences, so it is not literally `M[a,b] − M[b,a]`, though that is the intuition to present.
 - No encoder embedding here — just gene expression in the specific dimensions.
 
-[[ Claude Design: draw M as a small heatmap, then split into M+Mᵀ (coupling) and M−Mᵀ (direction). ]]
+[[ Claude Design: draw M as a small heatmap, then split into a symmetric half (coupling) and an antisymmetric half (direction). ]]
 
 ---
 

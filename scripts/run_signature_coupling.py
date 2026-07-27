@@ -8,7 +8,13 @@ discovered binary-IG signatures S_X. Builds the cross-engagement matrix
 M[a,b]=s(a,S_b) (PBS-normalised), then:
 
     coupling(a,b)  = M[a,b] + M[b,a]   (symmetric; gated by a gene-set null)
-    cross_asym(a,b)= M[a,b] - M[b,a]   (antisymmetric; direction, §26)
+
+with M[a,b] = median over cell types of s_T(a,S_b). The emitted `cross_asym`
+column is the difference-of-medians approximation M[a,b]-M[b,a]; the validated
+direction statistic (§26) is the median over SHARED cell types of the
+per-cell-type difference s_T(a,S_b)-s_T(b,S_a), from
+`pathway_audit.directional_asymmetry_test`. They are not the same number — see
+`cytokine_mil/analysis/signature_coupling.py`.
 
 Two datasets:
   --dataset oesinghaus : compare the coupling axis set + literature support to
@@ -222,7 +228,11 @@ def main() -> None:
     L.append(f"- cytokines with S_X: {len(sig_cyts)}; pairs scored: {len(df)}; "
              f"time_filter={args.time_filter}; exclude_donors={args.exclude_donors}")
     L.append(f"- coupling(a,b) = M[a,b]+M[b,a] (symmetric, specific-dimension "
-             f"engagement); gate = gene-set null p<0.05 ({args.n_perm} perms).")
+             f"engagement), M[a,b] = median over cell types of s_T(a,S_b); "
+             f"gate = gene-set null p<0.05 ({args.n_perm} perms).")
+    L.append("- `cross_asym` below is the difference-of-medians approximation "
+             "M[a,b]-M[b,a], not the validated direction statistic "
+             "(median over shared cell types of s_T(a,S_b)-s_T(b,S_a)).")
     n_coupled = int(df["coupled"].sum())
     L.append(f"- **coupled pairs (null p<0.05): {n_coupled} / {len(df)}**")
     L.append("")

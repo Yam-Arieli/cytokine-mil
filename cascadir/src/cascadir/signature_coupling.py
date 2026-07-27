@@ -1,19 +1,39 @@
-"""Signature-space coupling — the second coupling path, unified with cross_asym.
+"""Signature-space coupling — the coupling path built on the cross-engagement matrix.
 
 This is the "specific-dimensions" reframe. It builds **one** cross-engagement matrix
-in GENE (signature) space and reads BOTH answers off it::
+in GENE (signature) space and reads coupling off it.
 
-    M[a, b]        = s(a, S_b) - s(PBS, S_b)     # a's cells engaging b's signature,
-                                                   PBS-normalized, median over cell types
-    coupling(a, b) = M[a, b] + M[b, a]           # SYMMETRIC   -> are a,b mutually
-                                                   engaged in each other's specific
-                                                   programs?  (existence)
-    cross_asym(a,b)= M[a, b] - M[b, a]           # ANTISYMMETRIC -> who is upstream?
-                                                   (direction; identical to cross_asym.py)
+**The cross-engagement entry.** Within one cell type ``T``, condition ``a``'s engagement of
+``b``'s signature is ``s_T(a, S_b) = mean(S_b over a's T-cells) - mean(S_b over PBS's
+T-cells)``. The matrix entry is the median of that over cell types::
 
-``M[a, b]`` is exactly the ``sA_PB_norm`` quantity of
-:func:`cascadir.cross_asym.directional_asymmetry_test`, so the ``cross_asym`` reported
-here matches :func:`cascadir.cross_asym.direction_table` when conditions share cell types.
+    M[a, b] = median_T s_T(a, S_b)
+
+Each entry medians over the cell types where **``a`` and the control** each have
+``>= min_cells``. ``b``'s presence is *not* required, so ``M[a, b]`` and ``M[b, a]`` may run
+over **different** cell-type sets — this matters below.
+
+**Coupling (the output of this module).** The raw symmetric coupling is::
+
+    C[a, b] = M[a, b] + M[b, a]                  # -> the ``coupling_raw`` column
+
+and the **reported, gated score** is its degree-corrected (additive double-centred)
+residual, ``R[a,b] = C[a,b] - d_a - d_b + g`` (see :func:`_degree_center`) — the
+``coupling`` column, on by default. Significance: a donor-level sign test (recommended) or
+the cell-level gene-set null (over-powered; see the caveat below).
+
+**Direction is NOT computed here.** The validated direction statistic lives in
+:mod:`cascadir.cross_asym`: it is the **median over cell types of the per-cell-type
+asymmetry** ``s_T(a, S_b) - s_T(b, S_a)``, taken only over cell types where ``a``, ``b``
+*and* the control all qualify. Use :func:`cascadir.cross_asym.direction_table` for
+direction — that is the path behind the validated accuracies.
+
+The ``cross_asym`` column returned here is the **difference of medians**
+``M[a, b] - M[b, a]``, which is a *fast approximation* of that statistic, not the same
+number: the median is not linear, and the two entries may be medianed over different
+cell-type sets (above). The two agree when the pair shares its scorable cell types and
+diverge otherwise — measured on Sheu 5 h: 6 of 21 pairs differ in **sign**. It is kept for
+backwards compatibility with existing result files; prefer ``direction_table``.
 
 TWO COUPLING PATHS (pick by dataset; see the MANUAL):
   * **Latent-geometry coupling** (:func:`cascadir.coupling.discover_axes`) — coupling in
@@ -104,8 +124,12 @@ def _pair_rows(conditions: list[str], M: np.ndarray) -> list[dict]:
                     "condition_b": conditions[j],
                     "m_ab": float(m_ab),
                     "m_ba": float(m_ba),
-                    "coupling": float(m_ab + m_ba),     # symmetric -> existence
-                    "cross_asym": float(m_ab - m_ba),   # antisymmetric -> direction
+                    "coupling": float(m_ab + m_ba),     # symmetric -> existence (raw;
+                                                        # degree-corrected below)
+                    # Difference of medians: an APPROXIMATION of the direction statistic
+                    # in cross_asym.py (which medians the per-cell-type difference over
+                    # shared cell types). Kept for compatibility; use direction_table().
+                    "cross_asym": float(m_ab - m_ba),
                 }
             )
     return rows
@@ -130,7 +154,8 @@ def _degree_center(C: np.ndarray) -> np.ndarray:
     donor-level on broad many-donor data (Oesinghaus: over-call 77%->31%, recall 8->11/17)
     and cell-level on a targeted few-donor panel (Sheu: preserves the 2/2 IFN cascades,
     suppresses all negatives, over-call ~80%->~40%). Being symmetric, it changes only the
-    coupling (existence) half — ``cross_asym`` (direction) is unaffected.
+    coupling (existence) half — direction is unaffected, both the ``cross_asym`` column
+    here and :func:`cascadir.cross_asym.direction_table`, which never sees this matrix.
     """
     with np.errstate(all="ignore"):
         d = np.nanmean(C, axis=1)        # node strength (diagonal NaN -> excluded)
@@ -238,13 +263,15 @@ def signature_coupling(
         degree_correct: subtract each condition's overall engagement strength (row+column
             "degree") from the coupling matrix before gating (:func:`_degree_center`).
             **Default True** — this is the validated fix for the gate over-call (hub
-            conditions otherwise look coupled to everything). Symmetric, so ``cross_asym``
-            (direction) is unaffected. Set False for the raw ``M[a,b]+M[b,a]`` coupling.
+            conditions otherwise look coupled to everything). Symmetric, so direction is
+            unaffected. Set False for the raw ``M[a,b]+M[b,a]`` coupling.
 
     Returns:
         DataFrame, one row per unordered pair, sorted by descending ``coupling``:
         ``condition_a, condition_b, coupling`` (degree-corrected by default), ``coupling_raw``
-        (uncorrected ``m_ab+m_ba``), ``cross_asym, coupling_null_p`` (cell-level,
+        (uncorrected ``m_ab+m_ba``), ``cross_asym`` (the difference-of-medians
+        approximation — see the module docstring; for direction use
+        :func:`cascadir.cross_asym.direction_table`), ``coupling_null_p`` (cell-level,
         exploratory); and if donor-level: ``donor_coupling_mean, donor_consensus,
         donor_sign_p, n_donors``; plus ``coupled`` (bool by the best available gate).
     """

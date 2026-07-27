@@ -52,7 +52,7 @@ def main() -> None:
     # 2b) Coupling path 2 — signature space (coupling + direction from one matrix).
     #     degree_correct=True (default) removes the hub/over-call bias -> pair-specific
     #     coupling; donor_level=True adds a donor sign test (use only with ~8+ donors).
-    print("[coupling 2: signature space] coupling = M+Mᵀ (degree-corrected), cross_asym = M−Mᵀ")
+    print("[coupling 2: signature space] coupling = M+Mᵀ, degree-corrected (direction below)")
     print(est.signature_coupling(donor_level=True).to_string(index=False), "\n")
 
     # 3) Path B — direction (who is upstream)

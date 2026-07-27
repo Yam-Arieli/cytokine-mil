@@ -15,10 +15,38 @@ cytokine's **specific signature `S_X`** (top-N genes). Build one **cross-engagem
 matrix** in gene space:
 
 ```
-M[a, b] = s(a, S_b) − s(PBS, S_b)     # a's cells' expression of b's signature, PBS-normalized
-coupling(a, b)   = M[a, b] + M[b, a]  # SYMMETRIC      → are a, b coupled?  (existence)
-cross_asym(a, b) = M[a, b] − M[b, a]  # ANTISYMMETRIC  → who is upstream?   (direction)
+s_T(a, S_b) = mean(S_b over a's T-cells) − mean(S_b over PBS's T-cells)   # per cell type T
+M[a, b]     = median over T of s_T(a, S_b)      # one number per ORDERED pair
 ```
+
+**Coupling (existence)** — symmetric, from `M`:
+
+```
+C[a, b] = M[a, b] + M[b, a]                     # raw   → the `coupling_raw` column
+R[a, b] = C[a, b] − d_a − d_b + ḡ               # degree-corrected → the `coupling` column
+```
+
+`R` (double-centred; `d_a` = a's mean coupling to everything else) is the **reported** score
+and the one the gate runs on — it removes the hub artefact where a broadly-engaged signature
+looks coupled to everything.
+
+**Direction (who is upstream)** — antisymmetric, and **not** read off `M`:
+
+```
+cross_asym_T(a, b) = s_T(a, S_b) − s_T(b, S_a)          # per cell type
+cross_asym(a, b)   = median over T of cross_asym_T(a, b)
+```
+
+taken **only over the cell types where `a`, `b` and PBS all have ≥ `min_cells`**. Reported
+with the sign-consensus κ (fraction of cell types agreeing with the median's sign).
+
+> ⚠ `cross_asym` is a **median of per-cell-type differences**, which is *not* the same as
+> `M[a,b] − M[b,a]` (a difference of medians): the median is not linear, and each `M` entry
+> medians over its own cell-type set (`M[a,b]` requires `a`+PBS, not `b`). Direction comes
+> from `direction_table()` (module `cross_asym.py`) — the path behind the validated
+> accuracies. The `cross_asym` column of `signature_coupling()` is the `M[a,b] − M[b,a]`
+> approximation, kept for backwards compatibility; on Sheu 5 h the two disagree in **sign**
+> on 6 of 21 pairs.
 
 Biology of direction: an **upstream** stimulus's cells carry *both* programs (their own +
 the autocrine downstream one); the downstream ligand's cells carry mainly their own ⇒
@@ -71,11 +99,14 @@ per-cytokine binary models → IG signatures. Each stage is also a standalone fu
 | question | method | returns |
 |---|---|---|
 | **Direction** — who is upstream? | `est.direction_table()` / `est.direction("A","B")` | `cross_asym_median`, `direction` (`a_to_b`/`b_to_a`/`ambiguous`), `classification` (STRONG/WEAK/AMBIGUOUS), `null_p` |
-| **Coupling — signature space** | `est.signature_coupling(donor_level=True)` | `coupling` (=M+Mᵀ), `cross_asym` (=M−Mᵀ), `coupled` (bool), donor-level stats |
+| **Coupling — signature space** | `est.signature_coupling(donor_level=True)` | `coupling` (degree-corrected `M+Mᵀ`), `coupling_raw`, `coupled` (bool), donor-level stats, and a `cross_asym` approximation (see below) |
 | **Coupling — latent space** | `est.discover_axes()` | `AxisResult`: `axis_strength`, `coupled` call, relay cell type, per-pair Wilcoxon |
 
-`signature_coupling` and `direction_table` report the **same** `cross_asym` (both read it
-off `M`); `signature_coupling` adds the symmetric coupling half.
+`signature_coupling` and `direction_table` do **not** report the same `cross_asym`.
+`direction_table` is the validated statistic (median of per-cell-type differences over
+shared cell types); `signature_coupling`'s column is the `M[a,b]−M[b,a]` approximation read
+off the coupling matrix. **Take direction from `direction_table()`** and coupling from
+`signature_coupling()`.
 
 ---
 
@@ -102,7 +133,7 @@ panels = est.coupling_trajectory()         # {epoch: DataFrame(coupling, cross_a
 |---|---|
 | `est.fit(..., ig_checkpoint_every=N)` | captures into `est.signature_trajectories` (a `dict[str, SignatureTrajectory]`) during the **same** training pass |
 | `est.signature_trajectory_table()` | long DataFrame `condition, epoch, gene, ig, rank_ig` (the full per-gene ranking unless `train_config.checkpoint_ig_top_n` is set) |
-| `est.coupling_trajectory(degree_correct=True)` | `{epoch: DataFrame}` — `M+Mᵀ` (degree-corrected) and `M−Mᵀ` per pair, reusing `cross_engagement_matrix` + `_degree_center` unchanged |
+| `est.coupling_trajectory(degree_correct=True)` | `{epoch: DataFrame}` — degree-corrected coupling (raw `M+Mᵀ`) and the `M−Mᵀ` direction approximation per pair, reusing `cross_engagement_matrix` + `_degree_center` unchanged |
 
 Composable, lower-level entry points (run your own loop / your own models):
 `cd.derive_signature_trajectory(tube_set, condition, encoder, checkpoint_every=10, ...)`

@@ -14,23 +14,30 @@ signatures S_X — bypassing the encoder embedding.
 
 THE CROSS-ENGAGEMENT MATRIX. For cytokines with discovered signatures S_X:
 
-    M[a, b] = s(a, S_b) - s(PBS, S_b)      (a's cells engaging b's signature,
-                                            PBS-normalised; median over cell types)
+    s_T(a, S_b) = mean(S_b in a's T-cells) - mean(S_b in PBS's T-cells)
+    M[a, b]     = median over cell types T of s_T(a, S_b)
 
-where s(x, S) = mean expression over the genes of S. This is exactly the
+where s(x, S) = mean expression over the genes of S. s_T is exactly the
 `sA_PB_norm` quantity of `pathway_audit.directional_asymmetry_test`, generalised
-to every ordered pair. Two readouts fall out of one matrix:
+to every ordered pair. Note M[a,b] medians over the cell types where a and PBS
+qualify (b is NOT required), so M[a,b] and M[b,a] may use different cell types.
 
     coupling(a, b)  = M[a, b] + M[b, a]    SYMMETRIC  -> do a and b mutually
                                            engage each other's SPECIFIC programs?
-    cross_asym(a,b) = M[a, b] - M[b, a]    ANTISYMMETRIC -> direction (M7/§26);
-                                           + => a upstream (a_to_b), a<b canonical.
 
 The "strong enough signal" gate (the user's step) is a GENE-SET NULL: is the
 symmetric coupling larger than the engagement of random gene sets of the same
 size (drawn disjoint from any observed S_X)? Pairs that clear it are coupled in
-SPECIFIC dimensions, not via generic activation. Direction (cross_asym) is then
-read only on coupled pairs.
+SPECIFIC dimensions, not via generic activation.
+
+DIRECTION IS A SEPARATE STATISTIC (M7/§26) and is NOT read off M here. It is the
+median over SHARED cell types of the per-cell-type difference
+`s_T(a,S_b) - s_T(b,S_a)`, computed by `pathway_audit.directional_asymmetry_test`
+(+ => a upstream (a_to_b), a<b canonical) — the path behind the reported
+accuracies. The `cross_asym` column emitted below is the difference-of-medians
+approximation `M[a,b] - M[b,a]`, which is NOT the same number: the median is not
+linear and the two entries may use different cell-type sets. It is kept for
+compatibility with existing result files.
 
 Allowed imports: numpy only (analysis layer; no scipy/matplotlib/pandas here).
 """
@@ -209,6 +216,8 @@ def coupling_direction(
             m_ab = M[i, j]
             m_ba = M[j, i]
             coupling = m_ab + m_ba
+            # difference of medians: an approximation of the direction statistic
+            # (see module docstring); the validated one is directional_asymmetry_test.
             cross = m_ab - m_ba
             n_ct = int(np.sum(finite_ab[:, i, j] & finite_ab[:, j, i]))
             p = float("nan")

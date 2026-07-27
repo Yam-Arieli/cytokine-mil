@@ -30,8 +30,10 @@ fresh in your own clean style, matching the deck:
 - Slide 5: a "pseudo-tube" — a bag of mixed cells mapping to one stimulus label (e.g. "IL-2").
 - Slide 6: a left-to-right flow — binary classifier (cytokine vs PBS) → Integrated Gradients →
   a top-50 gene list labeled `S_X`.
-- Slide 7: a small heatmap `M`, then an arrow splitting it into two heatmaps — `M + Mᵀ`
-  labeled "coupling (symmetric)" and `M − Mᵀ` labeled "direction (antisymmetric)".
+- Slide 7: a small heatmap `M`, then an arrow splitting it into two heatmaps — one labeled
+  "coupling (symmetric)" and one labeled "direction (antisymmetric)". Label the symmetric
+  half `M + Mᵀ`; leave the antisymmetric half labeled just "direction (cross_asym)" without
+  a formula, since it is computed per cell type and then medianed, not as `M − Mᵀ`.
 
 Tone: confident but honest — Slide 11 is a real "limitations" slide and should read as candid,
 not as a weakness to hide. Make Slides 8 and 10 (the two result figures) the visual peaks.

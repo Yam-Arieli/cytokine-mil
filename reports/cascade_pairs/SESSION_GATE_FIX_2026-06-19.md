@@ -81,11 +81,11 @@ Plus mean **Jaccard(DE_vsPBS, IG_vsPBS) = 0.11**.
 
 ## 2. Why the gate over-called — the two causes
 
-The statistic: `s(a,S_b)` = mean expression of B's signature genes in A's cells;
-`M[a,b] = s(a,S_b) − s(PBS,S_b)`; `coupling(a,b) = M[a,b] + M[b,a]` (symmetric).
-Computed **per cell type** (A's monocytes vs PBS's monocytes, etc.), then **median across
-cell types** — this controls for cell-type composition. The gate compares coupling to a
-**random-gene-set null**.
+The statistic: `s_T(a,S_b)` = mean expression of B's signature genes in A's cells of type T,
+minus the same in PBS's T-cells. Computed **per cell type** (A's monocytes vs PBS's
+monocytes, etc.), then **median across cell types** — this controls for cell-type
+composition — giving `M[a,b]`; `coupling(a,b) = M[a,b] + M[b,a]` (symmetric), reported
+degree-corrected (§28.2). The gate compares coupling to a **random-gene-set null**.
 
 - **Cause 1 — over-power.** We pool *thousands* of cells per (cytokine, cell-type), so
   every mean is razor-precise → the random-gene null is a thin spike → almost any nonzero

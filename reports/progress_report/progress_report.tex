@@ -56,25 +56,27 @@ We never label cells by hand. For every condition $X$ (a cytokine, a stimulus, a
 time-point) we train a small attention-MIL model to tell ``$X$ vs.\ control'' and read out its
 \textbf{discovered signature} $S_X$ = the top-50 genes by Integrated Gradients through the model.
 Direction and coupling then both come from one quantity --- how much condition $a$'s cells express
-condition $b$'s signature, PBS/control-normalised, computed \emph{per cell type} and then
-aggregated (median across cell types):
+condition $b$'s signature, control-normalised, computed \emph{per cell type} $T$:
 \begin{equation}
-M[a,b]\;=\;s(a,S_b)\;-\;s(\mathrm{control},S_b),
-\qquad s(x,S)=\text{mean expression of gene set }S\text{ in population }x .
+s_T(a,S_b)\;=\;\bar\sigma_{S_b}\big(a\text{'s }T\text{-cells}\big)\;-\;\bar\sigma_{S_b}\big(\text{control's }T\text{-cells}\big),
+\qquad \bar\sigma_S(\cdot)=\text{mean expression of gene set }S .
 \end{equation}
-The matrix $M$ splits into a symmetric and an antisymmetric half, and \emph{that split is the
-whole method}:
+Aggregating each ordered pair by the median across cell types gives the cross-engagement matrix
+$M[a,b]=\operatorname{median}_T s_T(a,S_b)$, whose \emph{symmetric} half answers existence:
 \begin{equation}
 \underbrace{\text{coupling}(a,b)=M[a,b]+M[b,a]}_{\text{symmetric}\;\Rightarrow\;\text{do they engage each other? (existence)}}
-\qquad
-\underbrace{\mathrm{cross\_asym}(a,b)=M[a,b]-M[b,a]}_{\text{antisymmetric}\;\Rightarrow\;\text{who is upstream? (direction)}}
 \end{equation}
-Spelled out with the control term, the direction statistic is
+reported as its degree-corrected (double-centred) residual --- see Section~\ref{sec:gate-fix}.
+Direction is the \emph{antisymmetric} counterpart, but it is aggregated differently: the
+asymmetry is formed \emph{within} each cell type and only then medianed, over the cell types in
+which \emph{both} conditions (and the control) are measured:
 \begin{equation}
-\mathrm{cross\_asym}(a,b)=\underbrace{\big[s(a,S_b)-s(b,S_a)\big]}_{\text{raw cross-engagement}}
--\underbrace{\big[\mathrm{ctrl}_{S_b}-\mathrm{ctrl}_{S_a}\big]}_{\text{control term}} .
+\mathrm{cross\_asym}(a,b)\;=\;\operatorname*{median}_{T}\;\underbrace{\big[s_T(a,S_b)-s_T(b,S_a)\big]}_{\text{per-cell-type cross-engagement asymmetry}} .
 \label{eq:cross}
 \end{equation}
+(A median of differences, not a difference of medians: the median is not linear, and $M[a,b]$
+and $M[b,a]$ are each aggregated over their own cell-type set, so $M[a,b]-M[b,a]$ is a related
+but distinct quantity.)
 \textbf{The biology it encodes:} an \emph{upstream} stimulus's cells carry \emph{both} their own
 and the (autocrine) \emph{downstream} program, so $s(\text{up},S_{\text{down}})>s(\text{down},
 S_{\text{up}})$ and $\mathrm{cross\_asym}$ is positive in the upstream-first direction. It is
@@ -82,7 +84,7 @@ antisymmetric by construction ($\mathrm{cross\_asym}(b,a)=-\mathrm{cross\_asym}(
 \emph{sign} encodes the arrow. Direction is read \emph{only} on pairs the coupling gate already
 calls coupled --- existence and direction are two different questions.
 
-\section{The coupling-gate fix}
+\section{The coupling-gate fix}\label{sec:gate-fix}
 The gate decides ``are $a,b$ coupled?''. The old version \textbf{over-called} ($\sim$77\% of
 Oesinghaus pairs ``coupled'') for two reasons:
 \begin{itemize}

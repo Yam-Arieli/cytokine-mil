@@ -47,9 +47,12 @@ Latent-geometry coupling has a known weakness: PBS-RC removes the *resting* base
 the **shared post-activation program**, so the embedding is partly "everyone activates" — it
 worked on Oesinghaus but had **no power on Sheu** (q=1 everywhere). The reframe measures
 coupling **in the cytokine-specific signature genes `S_X`** instead of the embedding: build
-`M[a,b]=s(a,S_b)−s(PBS,S_b)`, then **coupling = M[a,b]+M[b,a]** (symmetric) and
-**direction = M[a,b]−M[b,a]** (= cross_asym) — one matrix, two halves
-(`cytokine_mil/analysis/signature_coupling.py`).
+`M[a,b] = median over cell types T of s_T(a,S_b)`, then **coupling = M[a,b]+M[b,a]**
+(symmetric; reported degree-corrected, §28.2). **Direction** is the separate `cross_asym`
+statistic (M7) — the median over the cell types the pair *shares* of
+`s_T(a,S_b) − s_T(b,S_a)`, i.e. a median of per-cell-type differences rather than the
+difference of medians `M[a,b]−M[b,a]`
+(`cytokine_mil/analysis/signature_coupling.py`, `analysis/pathway_audit.py`).
 
 So there are now **two coupling paths**, mirror-image failure modes:
 

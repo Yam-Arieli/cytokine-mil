@@ -1345,8 +1345,11 @@ direction** — it measures *coupling distinctness*, not who is upstream (47% �
 Oesinghaus). The antisymmetric **cross-engagement** statistic is the fix:
 
 ```
-cross_asym(a,b) = s(a, S_b) − s(b, S_a)        # = sA_PB_norm − sB_PA_norm  (PBS-normalised)
-cross_asym(b,a) = − cross_asym(a,b)             # ANTISYMMETRIC ⇒ the sign encodes direction
+# per cell type T (only where a, b AND PBS all have >= min_cells):
+cross_asym_T(a,b) = s_T(a, S_b) − s_T(b, S_a)   # = sA_PB_norm − sB_PA_norm  (PBS-normalised)
+# the statistic = the MEDIAN of those, over the cell types the pair shares:
+cross_asym(a,b)   = median over T of cross_asym_T(a,b)
+cross_asym(b,a)   = − cross_asym(a,b)           # ANTISYMMETRIC ⇒ the sign encodes direction
 ```
 Convention (pairs stored alphabetically, `a < b`): `+` ⇒ a upstream (`a_to_b`); `−` ⇒ b
 upstream (`b_to_a`). Biology: an upstream stimulus's cells carry **both** programs (their own +
@@ -1499,20 +1502,36 @@ On Sheu the latent-geometry gate had **no power at all** (q=1 everywhere) — th
 
 **The reframe.** Run gene-set detection (binary-IG `S_X`) **first**, then measure
 coupling DIRECTLY in those specific dimensions, bypassing the encoder embedding.
-Build the **cross-engagement matrix** `M[a,b] = s(a, S_b) − s(PBS, S_b)`
-(median across cell types; = `directional_asymmetry_test`'s `sA_PB_norm`
-generalised to every ordered pair). Two readouts from one matrix:
+Build the **cross-engagement matrix** from the per-cell-type engagement
+`s_T(a,S_b) = mean(S_b in a's T-cells) − mean(S_b in PBS's T-cells)`
+(= `directional_asymmetry_test`'s `sA_PB_norm`, generalised to every ordered pair):
 
-- **Coupling(a,b) = M[a,b] + M[b,a]** (SYMMETRIC) — do a and b *mutually* engage
-  each other's specific programs? Gated by a **gene-set null** (is it > engagement
-  of random gene sets of the same size, drawn disjoint from any `S_X`? — the
-  "strong enough signal" gate).
-- **Direction(a,b) = M[a,b] − M[b,a]** = **cross_asym** (ANTISYMMETRIC; §26),
-  read only on coupled pairs (existence ≠ direction).
+```
+M[a,b] = median over cell types T of s_T(a, S_b)
+```
+
+Each entry medians over the cell types where **a and PBS** qualify (b is *not* required),
+so `M[a,b]` and `M[b,a]` may run over different cell-type sets.
+
+- **Coupling(a,b)** (SYMMETRIC) — do a and b *mutually* engage each other's specific
+  programs? Raw `C[a,b] = M[a,b] + M[b,a]`; the **reported and gated** score is its
+  degree-corrected (double-centred) residual `R[a,b] = C[a,b] − d_a − d_b + ḡ` (§28.2 —
+  the hub fix, on by default). Gate: donor-level sign test where donors allow, else the
+  **gene-set null** (is it > engagement of random gene sets of the same size, drawn
+  disjoint from any `S_X`? — the "strong enough signal" gate; over-powered at cell scale).
+- **Direction** is **not** read off `M`. It is `cross_asym` (§26): the median over the
+  cell types the pair *shares* of `s_T(a,S_b) − s_T(b,S_a)`. Read only on coupled pairs
+  (existence ≠ direction). ⚠ This is a **median of differences** and is *not* equal to
+  `M[a,b] − M[b,a]` (a difference of medians) — the median is not linear, and the two `M`
+  entries may use different cell types. The `cross_asym` column emitted by
+  `signature_coupling` / `coupling_trajectory` **is** that `M[a,b] − M[b,a]`
+  approximation, kept for compatibility (on Sheu 5 h it differs in **sign** on 6/21
+  pairs); take direction from `cascadir.cross_asym.direction_table` /
+  `directional_asymmetry_test`.
 
 **Code:** `cytokine_mil/analysis/signature_coupling.py`
 (`engagement_per_celltype`, `cross_engagement_matrix`, `coupling_direction`;
-numpy-only, unit-tested to match `directional_asymmetry_test`).
+numpy-only, unit-tested to match `directional_asymmetry_test`'s per-cell-type terms).
 Driver `scripts/run_signature_coupling.py --dataset {oesinghaus,sheu}`.
 
 **Two pre-registered tests (run 2026-06, alongside the §27 DAG):**
@@ -1586,9 +1605,11 @@ and the validated calibration numbers (88/86/83%).
   control_label="PBS").fit(adata)`.
 - Coupling path 1 — latent geometry: `est.discover_axes()` (broad panel + many donors).
 - Coupling path 2 — signature space: `est.signature_coupling(donor_level=True)` (the §28
-  reframe — `coupling = M+Mᵀ`, `cross_asym = M−Mᵀ` from one cross-engagement matrix; use on
-  targeted panels / few donors).
-- Direction: `est.direction_table()` (cross_asym; the validated 88/86/83% output).
+  reframe — `coupling` = degree-corrected `M+Mᵀ` off the cross-engagement matrix; use on
+  targeted panels / few donors). Its `cross_asym` column is the `M−Mᵀ` approximation, not
+  the direction statistic — see §28.
+- Direction: `est.direction_table()` (cross_asym; the validated 88/86/83% output). **This
+  is the only direction API** — do not read direction off the coupling table.
 
 **Perf (results-preserving, on by default): `TrainConfig.cache_frozen_embeddings=True`.**
 With a frozen encoder (the default/validated regime) Stage-2 re-runs the identical
