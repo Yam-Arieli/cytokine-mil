@@ -28,7 +28,8 @@ approach say so explicitly at that section.
   to `main` (`reports/cascade_pairs/cytokine_axes_report.md`). Direction-agnostic by
   construction (§20) — unaffected by everything below.
 - **Path B — `cross_asym` cascade direction (§26), the primary direction metric.** Scores
-  **88%** on Oesinghaus, **86%** on Sheu BMDM, **83%** on Immune Dictionary (vs ~47% chance
+  **88%** on Oesinghaus, **7/7** on Sheu BMDM (cascadir-native fit; 86% on the legacy fit —
+  see §26.3), **83%** on Immune Dictionary (vs ~47% chance
   for the earlier symmetric `directional_score`, §24). This superseded **eight** independently
   failed direction-inference attempts on the old encoder + PBS-RC + dot-product-on-centroid
   bundle, and a since-audited curated-pathway-penetration method (§23's audit callout) —
@@ -1372,8 +1373,20 @@ the autocrine downstream one), the downstream ligand's carry mainly their own �
 - **Oesinghaus 24h PBMC: cross_asym 15/17 = 88%** (vs `directional_score` 8/17 = 47%, same
   data, same signatures); 34/53 axes beat the random-gene-set null (p<0.05); benchmark
   label-permutation p = 0.003.
-- **Sheu BMDM single-frame, no cross-time leakage: 5h = 6/7 = 86%** (1h 4/5, 3h 5/7); NF-κB→TNF
-  4/4 at 5h. One consistent failure: **polyIC→IFNb** (S_polyIC is ISG-dominated ≈ S_IFNb).
+- **Sheu BMDM single-frame, no cross-time leakage: 5h = 7/7** on the **cascadir-native** fit
+  (`results/sheu_cascadir_native/5hr/`) — the thesis's source since 2026-07-28. Six are STRONG
+  (permutation p<0.01); the seventh, P3CSK→TNF, is a near-zero non-call (+0.006, p=0.95) whose
+  sign agrees. Symmetric control 2/6 = 33% (chance). NF-κB→TNF 4/4.
+  - The **legacy** fit (`results/sheu_cascade/5hr/pathB/`, the old headline) scores **6/7 = 86%**
+    (1h 4/5, 3h 5/7), missing polyIC→IFNb. Both fits read the same 5h data; they are separate
+    training runs, agreeing on sign for 17/21 pairs. The 4 disagreements are IFNb–PIC,
+    P3CSK–PIC, PIC–TNF, CpG–LPS — three involve PIC (S_polyIC is ISG-dominated ≈ S_IFNb, §26.4).
+  - **Why native is the thesis source:** Sheu's *coupling* only ever existed for the native fit
+    (`coupling_cell.csv`), so using it for direction too removes a mixed-provenance split and
+    makes Sheu reproducible end-to-end through the packaged `cascadir` API. **Not** because it
+    scores higher — one pair out of seven is inside run-to-run noise, and selecting the fit on
+    its benchmark score would bias the reported number. Quote the fit whenever quoting a Sheu
+    5h direction value; do not average the two.
 
 ### 26.4 Honest caveats
 - **cross_asym gives direction, NOT existence.** Negative pairs also have large `|cross_asym|`;
