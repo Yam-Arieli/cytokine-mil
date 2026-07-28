@@ -8,7 +8,9 @@ truly-coupled pairs and false-positive rate (incl. the isolated negative-control
 
 Usage:
     python scripts/benchmark_large_cascade.py --h5ad results/.../snapshot_t6.h5ad
-Outputs (next to the h5ad): <stem>.metrics.json, <stem>.direction.csv, <stem>.coupling.csv
+Outputs (next to the h5ad): <stem>.metrics.json, <stem>.direction.csv (labeled edges only,
+the scored benchmark), <stem>.direction_all.csv (every coupled pair, for figures), and
+<stem>.coupling.csv
 """
 
 from __future__ import annotations
@@ -101,6 +103,16 @@ def main(argv=None):
         frozenset((str(r["condition_a"]), str(r["condition_b"])))
         for _, r in coupling.iterrows() if bool(r["coupled"])
     }
+    # ---- direction for EVERY coupled pair (not just the labeled ones) ----
+    # est.benchmark() only scores the authored signed edges, so the transitive links and
+    # false positives that the recovered-graph figure draws have no cross_asym anywhere.
+    # (coupling's own cross_asym column is the M-M^T difference-of-medians approximation,
+    # not the direction statistic -- see CascadeDirection.signature_coupling's docstring.)
+    if coupled_pred:
+        est.direction_table(
+            pairs=sorted(tuple(sorted(p)) for p in coupled_pred)
+        ).to_csv(out_dir / f"{stem}.direction_all.csv", index=False)
+
     tp = len(truth_pairs & coupled_pred)
     fp = len(non_truth & coupled_pred)
     isolated_pairs = {p for p in all_pairs if p & set(isolated)}
