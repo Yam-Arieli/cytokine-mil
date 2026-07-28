@@ -1,0 +1,28 @@
+{
+  "snapshot": "snapshot_t6",
+  "snapshot_time": 6.0,
+  "responder_mode": "all",
+  "effect_size": 0.3,
+  "n_cells": 1050000,
+  "n_genes": 1410,
+  "n_donors": 10,
+  "n_signed_edges": 10,
+  "n_found": 10,
+  "cross_accuracy": 1.0,
+  "cross_accuracy_nonambig": 1.0,
+  "dirscore_accuracy": 1.0,
+  "classification_counts": {
+    "STRONG": 10
+  },
+  "n_truth_coupled_pairs": 15,
+  "coupling_recall": 1.0,
+  "coupling_false_positive_rate": 0.08571428571428572,
+  "isolated_labels": [
+    "Q",
+    "R",
+    "S",
+    "T"
+  ],
+  "isolated_false_positives": 14,
+  "n_isolated_pairs": 70
+}
