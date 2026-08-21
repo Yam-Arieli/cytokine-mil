@@ -4,5 +4,28 @@
   "cross_asym_recall": 0.875,
   "magnitude_correct": 7,
   "magnitude_recall": 0.4375,
-  "agreement_with_cross_asym_sign": 7
+  "agreement_with_cross_asym_sign": 7,
+  "ordering": {
+    "spearman_theta_vs_response_strength": 0.6844,
+    "spearman_p": 0.0006,
+    "n_conditions": 21,
+    "ordering_top5": [
+      "IFN-omega",
+      "IFN-beta",
+      "IFN-gamma",
+      "IL-2",
+      "IL-15"
+    ],
+    "ordering_bottom5": [
+      "IL-6",
+      "TNF-alpha",
+      "IL-9",
+      "IL-16",
+      "VEGF"
+    ],
+    "closed_triangles": 38,
+    "cyclic": 1,
+    "cyclic_fraction": 0.0263,
+    "random_tournament_fraction": 0.25
+  }
 }

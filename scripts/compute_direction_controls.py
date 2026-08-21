@@ -31,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import spearmanr
 
 REPO = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO / "reports" / "direction_controls"
@@ -260,6 +261,93 @@ def run_potential_fit(bench: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return pd.DataFrame(rows), pd.concat(thetas, ignore_index=True)
 
 
+# --------------------------------------------------------------------------------------
+# Control 2b - is the ordering emergent, and is it response strength?
+# --------------------------------------------------------------------------------------
+
+def self_engagement(per_celltype: pd.DataFrame) -> pd.Series:
+    """Each condition's engagement on its OWN signature, median over cell types and axes.
+
+    This is the direct measure of "how strongly did this condition respond", and so the
+    quantity the amplitude explanation of the ordering would predict theta to be.
+    """
+    a_side = per_celltype[["A", "sA_PA_norm"]].rename(
+        columns={"A": "condition", "sA_PA_norm": "self_engagement"}
+    )
+    b_side = per_celltype[["B", "sB_PB_norm"]].rename(
+        columns={"B": "condition", "sB_PB_norm": "self_engagement"}
+    )
+    return pd.concat([a_side, b_side]).groupby("condition")["self_engagement"].median()
+
+
+def cycle_rate(pairs: pd.DataFrame) -> dict:
+    """Fraction of closed triangles whose three signs form a cycle.
+
+    Each edge of a triangle is measured on its own pair of signatures, so transitivity is
+    not forced by construction; a random tournament is cyclic in 1 of 4 triangles.
+    """
+    signed = {}
+    for a, b, value in zip(pairs["a"], pairs["b"], pairs["value"]):
+        signed[(a, b)] = value
+        signed[(b, a)] = -value
+    conditions = sorted({c for edge in signed for c in edge})
+    total = cyclic = 0
+    for i, x in enumerate(conditions):
+        for j, y in enumerate(conditions[i + 1:], start=i + 1):
+            for z in conditions[j + 1:]:
+                if (x, y) in signed and (y, z) in signed and (x, z) in signed:
+                    total += 1
+                    signs = np.sign([signed[(x, y)], signed[(y, z)], signed[(z, x)]])
+                    if abs(signs.sum()) == 3:
+                        cyclic += 1
+    return {
+        "closed_triangles": total,
+        "cyclic": cyclic,
+        "cyclic_fraction": round(cyclic / total, 4) if total else float("nan"),
+        "random_tournament_fraction": 0.25,
+    }
+
+
+def run_ordering_checks(bench: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Score the benchmark from each candidate ordering, and test theta against amplitude."""
+    per_ct = pd.read_csv(OES_PER_CELLTYPE)
+    pairs = collect_panels()["Oesinghaus (53 axes)"].dropna(subset=["value"])
+    theta, _ = fit_potential(pairs)
+    strength = self_engagement(per_ct)
+
+    rankings = {
+        "response strength, signed": strength,
+        "response strength, absolute": strength.abs(),
+        "the fitted ordering theta": theta,
+    }
+    rows = []
+    for name, score in rankings.items():
+        predicted = np.sign(
+            bench["axis_a"].map(score).to_numpy() - bench["axis_b"].map(score).to_numpy()
+        )
+        correct = int((predicted == bench["expected_sign"].to_numpy()).sum())
+        rows.append(
+            {"ranking": name, "correct": correct, "n_pairs": len(bench),
+             "recall": round(correct / len(bench), 4)}
+        )
+    rows.append(
+        {"ranking": "cross_asym itself", "correct": int(bench["correct"].sum()),
+         "n_pairs": len(bench), "recall": round(bench["correct"].mean(), 4)}
+    )
+
+    common = theta.index.intersection(strength.index)
+    rho, p_value = spearmanr(theta[common], strength[common])
+    diagnostics = {
+        "spearman_theta_vs_response_strength": round(float(rho), 4),
+        "spearman_p": round(float(p_value), 4),
+        "n_conditions": int(len(common)),
+        "ordering_top5": list(theta.sort_values(ascending=False).head(5).index),
+        "ordering_bottom5": list(theta.sort_values().head(5).index),
+        **cycle_rate(pairs),
+    }
+    return pd.DataFrame(rows), diagnostics
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -271,6 +359,10 @@ def main() -> None:
     potential.to_csv(OUT_DIR / "potential_fit.csv", index=False)
     thetas.to_csv(OUT_DIR / "potential_theta.csv", index=False)
 
+    orderings, diagnostics = run_ordering_checks(bench)
+    orderings.to_csv(OUT_DIR / "ordering_comparison.csv", index=False)
+
+    summary["ordering"] = diagnostics
     (OUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 
     print("=== Control 1: asymmetric magnitude baseline, Oesinghaus benchmark")
@@ -280,6 +372,10 @@ def main() -> None:
     print()
     print("=== Control 2: additive-potential fit")
     print(potential.to_string(index=False))
+    print()
+    print("=== Control 2b: is the ordering emergent, and is it response strength?")
+    print(orderings.to_string(index=False))
+    print(json.dumps(diagnostics, indent=2))
 
 
 if __name__ == "__main__":

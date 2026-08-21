@@ -1,0 +1,5 @@
+ranking,correct,n_pairs,recall
+"response strength, signed",9,16,0.5625
+"response strength, absolute",8,16,0.5
+the fitted ordering theta,12,16,0.75
+cross_asym itself,14,16,0.875
