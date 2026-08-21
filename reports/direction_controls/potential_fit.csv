@@ -1,0 +1,6 @@
+panel,n_conditions,n_pairs,explained_fraction,null_explained_fraction,excess_over_null,residual_direction_recall,residual_correct
+Oesinghaus (53 axes),21,53,0.9071,0.378,0.5292,,
+"Sheu 5h, cascadir-native (21 pairs)",7,21,0.9508,0.2843,0.6664,,
+"Sheu 5h, legacy fit",7,21,0.746,0.2897,0.4562,,
+Immune Dictionary,12,12,0.96,0.8291,0.1309,,
+"Oesinghaus benchmark, residual after removing the potential",21,16,,,,0.5,8.0

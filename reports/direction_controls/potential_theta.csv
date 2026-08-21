@@ -1,0 +1,48 @@
+panel,condition,theta
+Oesinghaus (53 axes),CD30L,-0.004130309347942384
+Oesinghaus (53 axes),Decorin,-0.014534137600352754
+Oesinghaus (53 axes),GM-CSF,-0.001270000416517003
+Oesinghaus (53 axes),IFN-beta,0.06722786294139785
+Oesinghaus (53 axes),IFN-gamma,0.03908576087869574
+Oesinghaus (53 axes),IFN-lambda1,-0.005313088733226578
+Oesinghaus (53 axes),IFN-omega,0.12687563416081032
+Oesinghaus (53 axes),IL-12,-0.002717266990824399
+Oesinghaus (53 axes),IL-13,-0.021371724324539557
+Oesinghaus (53 axes),IL-15,0.013663970100058813
+Oesinghaus (53 axes),IL-16,-0.024334146395692955
+Oesinghaus (53 axes),IL-17A,-0.014316653000905658
+Oesinghaus (53 axes),IL-2,0.031835337645981274
+Oesinghaus (53 axes),IL-27,-0.016436341052545423
+Oesinghaus (53 axes),IL-35,-0.017815360530708018
+Oesinghaus (53 axes),IL-36-alpha,-0.009152290284304738
+Oesinghaus (53 axes),IL-6,-0.04363257054700154
+Oesinghaus (53 axes),IL-9,-0.035480498375453445
+Oesinghaus (53 axes),TL1A,-0.006679655728078767
+Oesinghaus (53 axes),TNF-alpha,-0.03855820881530392
+Oesinghaus (53 axes),VEGF,-0.022946313583546853
+"Sheu 5h, cascadir-native (21 pairs)",CpG,0.11963097538266865
+"Sheu 5h, cascadir-native (21 pairs)",IFNb,-0.26867865664618373
+"Sheu 5h, cascadir-native (21 pairs)",LPS,0.1534463763236999
+"Sheu 5h, cascadir-native (21 pairs)",LPSlo,0.24942997523716517
+"Sheu 5h, cascadir-native (21 pairs)",P3CSK,-0.1586485334805079
+"Sheu 5h, cascadir-native (21 pairs)",PIC,0.07330420187541405
+"Sheu 5h, cascadir-native (21 pairs)",TNF,-0.16848433869225618
+"Sheu 5h, legacy fit",CpG,0.05692585877009803
+"Sheu 5h, legacy fit",IFNb,-0.1813321198735919
+"Sheu 5h, legacy fit",LPS,0.0647413219724382
+"Sheu 5h, legacy fit",LPSlo,0.2273551906858172
+"Sheu 5h, legacy fit",P3CSK,0.03070453235081275
+"Sheu 5h, legacy fit",PIC,-0.12806923048836852
+"Sheu 5h, legacy fit",TNF,-0.07032555341720571
+Immune Dictionary,IFNb,0.043545224600367916
+Immune Dictionary,IFNg,-0.033435694045490676
+Immune Dictionary,IL10,-0.012951842612690306
+Immune Dictionary,IL12,-0.008766940898365438
+Immune Dictionary,IL13,-0.025623924202389094
+Immune Dictionary,IL15,0.03444559209876584
+Immune Dictionary,IL18,0.02715260618262811
+Immune Dictionary,IL1b,0.004272858301798497
+Immune Dictionary,IL2,0.0246007525258594
+Immune Dictionary,IL4,-0.04896577364868575
+Immune Dictionary,IL6,-0.005676180124282834
+Immune Dictionary,TNFa,0.0014033218224843327

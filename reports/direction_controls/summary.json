@@ -1,0 +1,8 @@
+{
+  "n_pairs": 16,
+  "cross_asym_correct": 14,
+  "cross_asym_recall": 0.875,
+  "magnitude_correct": 7,
+  "magnitude_recall": 0.4375,
+  "agreement_with_cross_asym_sign": 7
+}

@@ -1,0 +1,17 @@
+axis_a,axis_b,expected_direction,expected_sign,cross_asym_median,cross_asym_correct,magnitude_median,n_cell_types,magnitude_sign,magnitude_correct
+CD30L,IL-17A,a_to_b,1,0.0052,True,0.0066213011741638,17,1,True
+GM-CSF,TL1A,a_to_b,1,0.0194,True,-0.011644467711448699,18,-1,False
+IFN-lambda1,IL-6,a_to_b,1,0.0407,True,-0.003479108214378402,17,-1,False
+IFN-omega,IL-15,a_to_b,1,0.1307,True,-0.16438782215118405,18,-1,False
+IL-15,VEGF,a_to_b,1,0.0352,True,0.1805796325206757,17,1,True
+IL-16,IL-6,a_to_b,1,0.0195,True,0.0043532848358153985,17,1,True
+IL-36-alpha,IL-9,a_to_b,1,0.0169,True,-0.0201311856508255,18,-1,False
+IL-36-alpha,VEGF,a_to_b,1,0.012,True,-0.0014203488826751995,17,-1,False
+IL-6,VEGF,a_to_b,1,-0.0227,False,0.005845919251442001,17,1,True
+IL-9,VEGF,a_to_b,1,0.0002,True,0.0193301141262055,17,1,True
+IFN-gamma,IFN-omega,b_to_a,-1,-0.0646,True,0.02490714192390445,18,1,False
+IFN-gamma,IL-2,b_to_a,-1,-0.0006,True,-0.03007020801305775,18,-1,True
+IL-13,TL1A,b_to_a,-1,-0.0164,True,-0.0069841668009757996,18,-1,True
+IL-13,VEGF,b_to_a,-1,0.0108,False,0.0052949041128159,17,1,False
+IL-17A,IL-36-alpha,b_to_a,-1,-0.0028,True,0.0006119012832642001,17,1,False
+IL-6,TNF-alpha,b_to_a,-1,-0.0085,True,0.005829438567161602,17,1,False
