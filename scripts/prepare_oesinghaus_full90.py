@@ -162,6 +162,9 @@ def main() -> int:
     ap.add_argument("--limit_cytokines", type=int, default=None,
                     help="Debug only: cap the number of stimulus conditions.")
     ap.add_argument("--skip_tubes", action="store_true", help="Only rebuild stage1_cells.h5ad.")
+    ap.add_argument("--sizing_only", action="store_true",
+                    help="Preflight: report tube counts and the memory each later stage "
+                         "needs, from the manifest alone. Writes nothing.")
     args = ap.parse_args()
 
     out = Path(args.output_dir)
@@ -187,6 +190,28 @@ def main() -> int:
         raise SystemExit(f"FATAL: control {C.CONTROL!r} absent from the filtered manifest")
     _log(f"[plan] {len(stimuli)} stimuli + {C.CONTROL}; "
          f"donors {sorted({e['donor'] for e in manifest})}")
+
+    if args.sizing_only:
+        cells = [int(e["n_cells"]) for e in manifest]
+        total = int(np.sum(cells))
+        copy_gb = total * len(gene_names) * 4 / 1e9
+        groups = len({(e["donor"], e["cytokine"]) for e in manifest})
+        _log("")
+        _log("=== SIZING PREFLIGHT (nothing written) ===")
+        _log(f"  tubes            : {len(manifest)}  in {groups} (donor, condition) shards")
+        _log(f"  cells            : {total}  (mean {np.mean(cells):.0f}/tube, "
+             f"min {np.min(cells)}, max {np.max(cells)})")
+        _log(f"  genes            : {len(gene_names)}")
+        _log(f"  one full copy    : {copy_gb:.1f} GB  (float32, dense)")
+        _log(f"  shards on disk   : {copy_gb:.1f} GB")
+        _log("")
+        _log(f"  stage 2 per task : ~{copy_gb * (10 + 1) / max(len(stimuli), 1):.1f} GB "
+             "(its 10 conditions + PBS)")
+        _log(f"  stage 5 direction: ~{2*copy_gb:.0f} GB  (tube_set + cells_by_pair)")
+        _log(f"  stage 4 coupling : ~{3*copy_gb:.0f} GB  (+ the per-donor cells_by_pair dicts)")
+        _log("")
+        _log("Compare against slurm/oes90/{train,direction,coupling}.slurm --mem.")
+        return 0
 
     meta = {"stimuli": stimuli, "n_manifest_entries": len(manifest),
             "excluded_donors": sorted(excl), "hvg_path": args.hvg_path,
