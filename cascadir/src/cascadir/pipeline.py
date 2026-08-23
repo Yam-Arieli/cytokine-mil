@@ -37,7 +37,7 @@ from cascadir.dynamics import (
     signature_trajectory_collector,
 )
 from cascadir.signature_coupling import signature_coupling as _signature_coupling
-from cascadir.exceptions import NotFittedError
+from cascadir.exceptions import DataValidationError, NotFittedError
 from cascadir.preprocess import preprocess
 from cascadir.pseudotubes import build_pseudotubes
 from cascadir.signatures import derive_signatures
@@ -102,6 +102,113 @@ class CascadeDirection:
         self.signature_trajectories: dict[str, SignatureTrajectory] = {}
         self._cells_by_pair: dict | None = None
         self._fitted = False
+
+    # -- constructing from artifacts (staged / out-of-process fit) ------------
+
+    @classmethod
+    def from_artifacts(
+        cls,
+        tube_set: PseudoTubeSet,
+        signatures: dict[str, Signature],
+        *,
+        condition_col: str,
+        donor_col: str,
+        celltype_col: str,
+        control_label: str = "PBS",
+        encoder=None,
+        models: dict | None = None,
+        preprocess_config: PreprocessConfig | None = None,
+        tube_config: TubeConfig | None = None,
+        train_config: TrainConfig | None = None,
+        cross_asym_config: CrossAsymConfig | None = None,
+        device: str | None = None,
+        seed: int = 42,
+    ) -> "CascadeDirection":
+        """Build a **fitted** estimator from artifacts of a staged / out-of-process fit.
+
+        :meth:`fit` runs preprocess -> tubes -> encoder -> binary models -> signatures in
+        one process. When those stages are split across jobs (a SLURM DAG, a chunked GPU
+        array, or a resumed run), the pieces come back as persisted artifacts rather than a
+        live estimator. This rebuilds exactly the state :meth:`fit` leaves behind, so every
+        query method — :meth:`direction_table`, :meth:`signature_coupling`,
+        :meth:`benchmark`, :meth:`direction` — behaves identically.
+
+        Use this instead of calling the module-level ``signature_coupling`` /
+        ``direction_call`` functions yourself: the orchestrator is what wires up the
+        per-donor cell data for the donor-level coupling gate, and bypassing it silently
+        falls back to the over-powered cell-level null.
+
+        Args:
+            tube_set: The pseudo-tubes the models were trained on (all conditions,
+                including the control).
+            signatures: ``{condition: Signature}`` — the discovered ``S_X``.
+            condition_col / donor_col / celltype_col: ``obs`` column names the artifacts
+                were built from (recorded for provenance; the tubes already carry labels).
+            control_label: The resting/unstimulated label. Must match ``tube_set``'s.
+            encoder: Optional trained encoder — only needed for :meth:`discover_axes`.
+            models: Optional ``{condition: AbMil}``; only needed to re-derive signatures.
+            preprocess_config / tube_config / train_config / cross_asym_config / device /
+                seed: As on the constructor. Pass the same configs the artifacts were
+                produced with so queries use matching parameters.
+
+        Returns:
+            A fitted :class:`CascadeDirection`.
+
+        Raises:
+            DataValidationError: if the signatures and tube set are inconsistent — unknown
+                conditions, a missing control, or signature genes absent from
+                ``tube_set.gene_names``.
+        """
+        if not signatures:
+            raise DataValidationError(
+                "from_artifacts: `signatures` is empty; nothing to query."
+            )
+        if control_label != tube_set.control_label:
+            raise DataValidationError(
+                f"from_artifacts: control_label={control_label!r} does not match "
+                f"tube_set.control_label={tube_set.control_label!r}."
+            )
+        conds = set(tube_set.conditions)
+        if control_label not in conds:
+            raise DataValidationError(
+                f"from_artifacts: control {control_label!r} is not represented in the "
+                f"tube set (conditions: {sorted(conds)})."
+            )
+        unknown = sorted(set(signatures) - conds)
+        if unknown:
+            raise DataValidationError(
+                "from_artifacts: signatures reference conditions absent from the tube "
+                f"set: {unknown}. The signatures and tubes are not from the same fit."
+            )
+        known_genes = set(tube_set.gene_names)
+        for cond, sig in signatures.items():
+            missing = [g for g in sig.genes if g not in known_genes]
+            if missing:
+                raise DataValidationError(
+                    f"from_artifacts: signature for {cond!r} has {len(missing)} gene(s) "
+                    f"absent from tube_set.gene_names (e.g. {missing[:5]}). The "
+                    "signatures were derived on a different gene space."
+                )
+
+        est = cls(
+            condition_col=condition_col,
+            donor_col=donor_col,
+            celltype_col=celltype_col,
+            control_label=control_label,
+            preprocess_config=preprocess_config,
+            tube_config=tube_config,
+            train_config=train_config,
+            cross_asym_config=cross_asym_config,
+            device=device,
+            seed=seed,
+        )
+        est.tube_set = tube_set
+        est.signatures = dict(signatures)
+        est.encoder = encoder
+        est.models = dict(models) if models else {}
+        est._cells_by_pair = tube_set.cells_by_pair()
+        est._fitted = True
+        return est
 
     # -- fitting -------------------------------------------------------------
 

@@ -2071,3 +2071,91 @@ lives in its own separate git repo, sibling to this one: `/Users/yam/my-packages
 and `WONDERINGS.md` remain in `cytokine_mil/thesis/` — the thesis prose itself is not here.
 See `/thesis-sync` skill for the full location rationale, git-bridge auth, and sync workflow.
 
+
+---
+
+## 36. Oesinghaus full-90 — coupling + direction on a neutral background (2026-08)
+
+**Motivation (the gap this closes).** Every published Oesinghaus coupling number is measured
+on a **24-cytokine panel whose members were selected because they appear in a literature
+benchmark pair** (`reports/coupling_figures_draft/donor_coupling_hub_IG_vsPBS.csv` = all
+C(24,2)=276 pairs, 76 coupled; thesis Limitations, "Which cytokines enter each panel"). The
+background is therefore non-neutral: the §28.2 enrichment and over-call figures (77% → 31%)
+are computed against a family assembled from the prior itself. This section fits **all 90
+cytokines + PBS** in one `cascadir` fit, giving coupling and `cross_asym` for all
+**C(90,2) = 4005** pairs — the first neutral background for those figures, and the first
+prior-free candidate list (3729 pairs never scored).
+
+**This is a SEPARATE fit.** 66 of the 90 cytokines have no published signature, so mixing
+its numbers with the published 24/45-cytokine results would be the mixed-provenance failure
+§26.3 documents for Sheu. Never average or quote them together. Path A's 121 axes, §26's
+88%, and §28.2's gate validation are all unaffected by this run.
+
+### 36.1 Locked decisions (all taken with the user before the run)
+| | |
+|---|---|
+| Stage-2 binary epochs | **250** — see §36.2; nothing plateaus earlier |
+| Tube source | the **committed** Oesinghaus pseudo-tubes, loaded into cascadir's contract (not re-sampled) |
+| Hyperparameters | the published **"wide"** config (embed=512, hidden=(512,512), attn=128, Stage-1 20@0.005, Stage-2 250@3e-5), i.e. `train_oesinghaus_binary_missing16.py:108-115`, **not** `cascadir.TrainConfig`'s packaged defaults |
+| Audited-pair regression check | **reported, never aborting** (§36.3) |
+| Coupling FDR | **BH over all 4005** on cascadir's `donor_sign_p`, primary q=0.05, secondary q=0.10 |
+| Held-out donors | D2/D3 excluded **everywhere**, Stage-1 included (§16; stricter than some earlier runs) |
+
+### 36.2 Epoch-count evidence (checked BEFORE the run, from §31's recurrent IG)
+At epoch 50 only **81%** of each final top-50 signature has ever entered the band (⇒
+Jaccard(top50@50, top50@250) ≤ 0.69), the top-50 **coupled-pair set** has Jaccard **0.52**
+against the final one, and 9% of `cross_asym` signs differ. Even at 200 the coupled set is
+at Jaccard 0.89 and still moving. A shorter schedule is a *different result*, not a cheaper
+one. The **loss/p_correct plateau is unmeasured** — no binary-MIL per-epoch trajectory is
+persisted anywhere in the repo (the §31 driver saves only `ig_traj.parquet`; the
+`oesinghaus_full_*` pickles are the 91-class multiclass runs). Say so, don't infer it.
+
+### 36.3 Why the regression check does not gate
+Two independent *faithful* fresh fits have already under-reproduced the published 15/17:
+§27.6 at 6/11, and **§31's recurrent-IG run at 11/17 = 0.65 despite a single shared Stage-1
+encoder and the wide config**. So "separate encoder per chunk" is **not** established as the
+sole cause of §27.6, and a hard ~88% gate would abort on run-to-run variance. The check runs
+via `est.benchmark(...)` and is reported next to the symmetric `directional_score` control —
+a shortfall matters only if the control rises with it.
+
+### 36.4 The §27.6 guard, made structural
+The encoder is trained **once** (stage 1) and its `state_dict` sha256 persisted; every
+training chunk recomputes the digest and **refuses to run** on a mismatch. The pseudo-tubes
+are materialised **once** (stage 0) as `(donor, condition)` shards with their own sha256,
+verified per chunk and again at merge. Both are assertions, not conventions —
+`cascadir.build_pseudotubes` advances a single RNG over the sorted (condition, donor) pairs,
+so rebuilding from a condition subset would give different tubes for the same pair.
+
+### 36.5 cascadir API addition
+`CascadeDirection.from_artifacts(tube_set, signatures, ...)` (+ `cascadir/tests/
+test_from_artifacts.py`, MANUAL.md §3.1) rebuilds exactly the state `fit()` leaves, for fits
+staged across jobs. It is what keeps coupling/direction on the **orchestrator**: the bare
+module-level `signature_coupling()` silently falls back to the over-powered cell-level null
+while still returning a `coupled` column. **Never call the module-level functions.**
+
+### 36.6 DAG + honest reporting
+SLURM DAG `slurm/oes90/` + `submit_oes90_dag.sh` (`SUBMIT=echo` → readable dry run with
+synthetic ids): `prepare`(CPU 64G) → `encoder`(GPU) → `train`(GPU array 0-8%3) →
+`merge`(CPU) → `coupling`(CPU 260G) → `direction`(CPU 180G) → `analysis`(CPU), each with an
+`afternotok` sentinel writing `results/oes_full90/STATUS.md`, plus a self-resubmitting
+watchdog appending to `HEALTH.md` every 30 min. Memory asks follow from one full tube-set
+copy ≈ 64 GB (9,100 tubes × ~438 cells × 4000 genes × 4 B): direction holds 2 copies,
+coupling 3 (it adds the per-donor `cells_by_pair` dicts, `pipeline.py:411-414`).
+
+**Reporting caveat that must survive into any writeup:** the *pair family* is neutral, but
+the *literature labels* are not — only the 121 axes in `cytokine_axes.csv` carry an
+adjudicated `literature_status`, and those were selected by Path A on the old panel.
+`RESULTS.md` therefore reports enrichment **two ways** (full-4005, treating unlabeled as
+unsupported — an explicit lower bound; and within the labeled subset) and never quotes
+either as the §0 "~50% vs ~1%" number. `retally_pipeline_against_audit.py` is **not** usable
+here (it consumes a per-cell-type CSV `direction_table` does not emit); `est.benchmark`
+replaces it.
+
+**File layout (new).** `scripts/{_full90_config,_full90_estimator,prepare_oesinghaus_full90,
+train_oesinghaus_full90_encoder,train_oesinghaus_full90_chunk,merge_full90_signatures,
+run_oesinghaus_full90_coupling,run_oesinghaus_full90_direction,analyze_oesinghaus_full90,
+run_demo_full90_pipeline}.py`; `cytokine_mil/analysis/full90_tube_io.py`;
+`tests/test_full90_tube_io.py`; `cascadir/tests/test_from_artifacts.py`;
+`slurm/oes90/{prepare,encoder,train,merge,coupling,direction,analysis,sentinel,
+watchdog}.slurm` + `submit_oes90_dag.sh`; `reports/oesinghaus_full90/RESULTS.md`.
+**Edited (additive):** `cascadir/src/cascadir/pipeline.py`, `cascadir/MANUAL.md`.

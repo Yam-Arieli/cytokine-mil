@@ -108,6 +108,29 @@ shared cell types); `signature_coupling`'s column is the `M[a,b]−M[b,a]` appro
 off the coupling matrix. **Take direction from `direction_table()`** and coupling from
 `signature_coupling()`.
 
+### 3.1 Querying a fit that ran across several jobs
+
+`fit()` does everything in one process. When the stages are split across a SLURM DAG or a
+chunked GPU array — train the shared encoder once, train the binary models in chunks,
+derive signatures per chunk — rebuild a fitted estimator from the persisted artifacts:
+
+```python
+est = cd.CascadeDirection.from_artifacts(
+    tube_set, signatures,                       # the pieces you persisted
+    condition_col="cytokine", donor_col="donor", celltype_col="cell_type",
+    control_label="PBS", cross_asym_config=cfg,
+)
+est.signature_coupling(donor_level=True)        # identical to a live fit()
+est.direction_table()
+```
+
+It sets exactly the state `fit()` leaves and validates that the signatures and tubes come
+from the same fit (same conditions, same control, same gene space). Use it instead of
+calling the module-level `signature_coupling()` / `direction_call()` yourself: the
+orchestrator is what assembles the per-donor cell data behind `donor_level=True`, and the
+bare function silently falls back to the over-powered cell-level null while still returning
+a `coupled` column. Pass `encoder=` too if you want `discover_axes()`.
+
 ---
 
 ## 3.5 Recurrent IG — signature trajectories over training (OPT-IN)
