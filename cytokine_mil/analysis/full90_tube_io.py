@@ -151,6 +151,7 @@ def load_tube_set(
     donors: Optional[Sequence[str]] = None,
     include_control: bool = True,
     verify_sha: bool = False,
+    tube_indices: Optional[Sequence[int]] = None,
 ) -> PseudoTubeSet:
     """Reconstruct a `PseudoTubeSet` from shards, optionally restricted.
 
@@ -161,6 +162,10 @@ def load_tube_set(
         donors: Keep only these donors (``None`` = all).
         include_control: Always load the control condition's tubes (cross_asym needs the
             PBS baseline).
+        tube_indices: Keep only these ``tube_idx`` values within every (donor, condition)
+            group (``None`` = all). The same indices are applied to every group, including
+            the control, so the subset carries no per-condition choice. This is how the
+            fixed main/reserve tube split is taken.
         verify_sha: Re-hash each loaded shard and check it against `meta.json`. Off by
             default (hashing 64 GB is slow); the DAG verifies `shards_sha256` instead.
 
@@ -177,6 +182,7 @@ def load_tube_set(
         if include_control:
             keep_cond.add(control)
     keep_donor = set(map(str, donors)) if donors is not None else None
+    keep_idx = set(map(int, tube_indices)) if tube_indices is not None else None
 
     tubes: List[PseudoTube] = []
     for shard in meta["shards"]:
@@ -191,16 +197,20 @@ def load_tube_set(
         start = 0
         for spec in shard["tubes"]:
             n = int(spec["n_cells"])
-            tubes.append(
-                PseudoTube(
-                    X=X[start : start + n],
-                    condition=shard["condition"],
-                    donor=shard["donor"],
-                    cell_types=tuple(spec["cell_types"]),
-                    cell_types_included=tuple(spec["cell_types_included"]),
-                    tube_idx=int(spec["tube_idx"]),
+            if keep_idx is None or int(spec["tube_idx"]) in keep_idx:
+                # Copy when subsetting: a view would pin the whole shard array in memory
+                # for the sake of a few of its tubes.
+                block = X[start : start + n]
+                tubes.append(
+                    PseudoTube(
+                        X=block if keep_idx is None else np.ascontiguousarray(block),
+                        condition=shard["condition"],
+                        donor=shard["donor"],
+                        cell_types=tuple(spec["cell_types"]),
+                        cell_types_included=tuple(spec["cell_types_included"]),
+                        tube_idx=int(spec["tube_idx"]),
+                    )
                 )
-            )
             start += n
         if start != X.shape[0]:
             raise ValueError(
@@ -210,10 +220,125 @@ def load_tube_set(
     if not tubes:
         raise ValueError(
             f"load_tube_set: no shards matched conditions={conditions} donors={donors} "
-            f"under {d}"
+            f"tube_indices={tube_indices} under {d}"
         )
     return PseudoTubeSet(
         tubes=tubes,
         gene_names=tuple(meta["gene_names"]),
         control_label=control,
     )
+
+
+# ---------------------------------------------------------------------------
+# Frozen-encoder embedding cache (the encoded pseudo-tubes)
+# ---------------------------------------------------------------------------
+
+EMBED_META_NAME = "embeddings_meta.json"
+
+
+def save_embedding_cache(cache: dict, out_dir: str | Path) -> dict:
+    """Persist a `cascadir.build_frozen_embedding_cache` result.
+
+    The cache is ``{(condition, donor, tube_idx): H}`` with ``H`` a ``(n_cells,
+    embed_dim)`` tensor. Tubes are grouped into one ``.npy`` per (donor, condition), the
+    same sharding the expression tubes use, so a chunk task can load only its own
+    conditions. Pure I/O — no statistics.
+
+    Returns the meta dict (also written to ``embeddings_meta.json``).
+    """
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    groups: Dict[tuple, List[tuple]] = {}
+    for (condition, donor, tube_idx), h in cache.items():
+        groups.setdefault((str(donor), str(condition)), []).append((int(tube_idx), h))
+
+    shards: List[dict] = []
+    embed_dim: Optional[int] = None
+    for (donor, condition), items in sorted(groups.items()):
+        items.sort(key=lambda kv: kv[0])
+        arrs = [np.asarray(h.detach().cpu().numpy() if hasattr(h, "detach") else h,
+                           dtype=np.float32) for _, h in items]
+        if embed_dim is None:
+            embed_dim = int(arrs[0].shape[1])
+        block = np.concatenate(arrs, axis=0)
+        fname = f"{_shard_name(donor, condition)}.npy"
+        np.save(out / fname, block)
+        shards.append({
+            "file": fname,
+            "donor": donor,
+            "condition": condition,
+            "sha256": _sha256_file(out / fname),
+            "tubes": [
+                {"tube_idx": idx, "n_cells": int(a.shape[0])}
+                for (idx, _), a in zip(items, arrs)
+            ],
+        })
+
+    meta = {
+        "n_shards": len(shards),
+        "n_tubes": sum(len(s["tubes"]) for s in shards),
+        "embed_dim": embed_dim,
+        "shards": shards,
+        "shards_sha256": hashlib.sha256(
+            "".join(s["sha256"] for s in sorted(shards, key=lambda s: s["file"])).encode()
+        ).hexdigest(),
+    }
+    with open(out / EMBED_META_NAME, "w") as fh:
+        json.dump(meta, fh, indent=2)
+    return meta
+
+
+def read_embedding_meta(embed_dir: str | Path) -> dict:
+    with open(Path(embed_dir) / EMBED_META_NAME) as fh:
+        return json.load(fh)
+
+
+def load_embedding_cache(
+    embed_dir: str | Path,
+    conditions: Optional[Sequence[str]] = None,
+    control_label: Optional[str] = None,
+) -> dict:
+    """Reload an embedding cache in the shape `train_all_binary(embedding_cache=...)` wants.
+
+    Args:
+        embed_dir: Directory written by :func:`save_embedding_cache`.
+        conditions: Keep only these conditions (``None`` = all).
+        control_label: Always kept when ``conditions`` is given (every binary model needs
+            the control tubes).
+
+    Returns:
+        ``{(condition, donor, tube_idx): torch.Tensor}``.
+    """
+    import torch  # local: keeps this module importable without torch for pure I/O use
+
+    d = Path(embed_dir)
+    meta = read_embedding_meta(d)
+    keep = None
+    if conditions is not None:
+        keep = set(map(str, conditions))
+        if control_label is not None:
+            keep.add(str(control_label))
+
+    cache: dict = {}
+    for shard in meta["shards"]:
+        if keep is not None and shard["condition"] not in keep:
+            continue
+        block = np.load(d / shard["file"])
+        start = 0
+        for spec in shard["tubes"]:
+            n = int(spec["n_cells"])
+            key = (shard["condition"], shard["donor"], int(spec["tube_idx"]))
+            cache[key] = torch.from_numpy(
+                np.ascontiguousarray(block[start : start + n])
+            )
+            start += n
+        if start != block.shape[0]:
+            raise ValueError(
+                f"embedding shard {shard['file']} has {block.shape[0]} rows but meta "
+                f"accounts for {start}"
+            )
+    if not cache:
+        raise ValueError(
+            f"load_embedding_cache: no shards matched conditions={conditions} under {d}"
+        )
+    return cache

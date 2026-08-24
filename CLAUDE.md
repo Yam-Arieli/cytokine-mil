@@ -2159,3 +2159,128 @@ run_demo_full90_pipeline}.py`; `cytokine_mil/analysis/full90_tube_io.py`;
 `slurm/oes90/{prepare,encoder,train,merge,coupling,direction,analysis,sentinel,
 watchdog}.slurm` + `submit_oes90_dag.sh`; `reports/oesinghaus_full90/RESULTS.md`.
 **Edited (additive):** `cascadir/src/cascadir/pipeline.py`, `cascadir/MANUAL.md`.
+
+---
+
+## 37. Oesinghaus 90-cytokine PURE run — the cytokine-agnostic re-fit (2026-08)
+
+**Motivation.** §36's full-90 run completed cleanly but its signatures came out **2.7×
+less cytokine-specific** than the published ones (mean between-cytokine Jaccard 0.178 vs
+0.065 on the *same* 24 cytokines; median Jaccard against the published top-50 = 0.064;
+`IKZF2` in 73 of 90 signatures). Both downstream statistics inherit that: direction fell to
+7/12 non-AMBIGUOUS (one-sided binomial **p = 0.39** — not distinguishable from chance) and
+coupling reproduced only 17 of the published fit's 76 calls (Spearman ρ = 0.42).
+Signature specificity is the method's linchpin (§26.4), so those numbers are a *consequence*
+of the signatures, not an independent regression in `cross_asym`.
+
+**The finding that redirected the work.** The published 88% anchor (`binary_ig_all24`) is a
+**merge of two runs** (`results/oesinghaus_binary/` + `…_missing16/`) whose Stage-1 encoders
+were each trained on **17–18 conditions** — subsets of the very cytokines the benchmark
+scores — with **D2/D3 included** in Stage 1 (`train_oesinghaus_binary_missing16.py:150` applies
+`VAL_DONORS` only to the Stage-2 binary split). Two consequences, both recorded here:
+1. **§27.6's diagnosis is contradicted by its own anchor.** "Separate Stage-1 encoder per
+   chunk" cannot be the sole cause of the 45-cytokine failure, because the 88% anchor has
+   exactly that. §31's recurrent-IG run (single shared encoder, wide config) scoring 11/17
+   already pointed the same way.
+2. **Any diagnostic that reproduces the published Stage-1 setup reproduces its test-data
+   leakage.** That killed the narrow-encoder comparison that was the obvious next step.
+
+**What this run is.** A preregistration-style, **cytokine-agnostic** re-fit: every cytokine
+carries equal weight at every stage, and no stage may read the audited pair list or the
+published 24-cytokine panel. **There is deliberately no analysis stage** — it produces
+artifacts only; scoring waits for a committed pre-registration (§25.1).
+
+**This is a separate fit.** Never average or mix its numbers with the published 24/45-cytokine
+results, nor with §36's `results/oes_full90/` (§26.3, the Sheu mixed-provenance lesson).
+
+### 37.1 Locked decisions (taken with the user before the run)
+| | |
+|---|---|
+| Encoder width | **2× the published wide config**: `embed_dim=1024`, `hidden_dims=(1024,1024)` ≈ 6.2 M params |
+| Signature size | **`top_n=100`** (was 50) |
+| Encoder early stopping | 10% of cells held out **stratified by cell type**; stop on val-loss patience but **keep running past the plateau** and record it; the encoder used downstream is the **best-val checkpoint** |
+| Tube budget | **k=4 tubes per (donor, cytokine)** (`tube_idx 0–3`) = 3 640 tubes, plus a **disjoint reserve** (`tube_idx 4–7`) used *only* for the signature-stability check |
+| Tube usage | **one fixed sample throughout** (§37.2) |
+| Binary epochs | **250, unchanged** — a recorded deviation (§37.3) |
+| Coupling | `signature_coupling(donor_level=True, degree_correct=True)` + BH-FDR over all 4005 |
+| Held-out donors | D2/D3 excluded **everywhere**, Stage-1 included (§16) |
+| Tube source | the **§36 shards reused read-only** and sha-verified — never rebuilt |
+
+### 37.2 Why one fixed tube sample is enough (and what replaces a split)
+`cross_asym` compares `s_T(a, S_b)` against `s_T(b, S_a)`. `S_b` comes from b's binary model,
+trained on b's tubes plus PBS — **a's cells never entered S_b's derivation**, and symmetrically.
+Same for coupling's `M[a,b]`. The cross terms are **structurally out-of-sample already**; the
+only genuinely shared component is PBS (training negative, IG baseline, and engagement
+normaliser alike), which a train/eval split would not remove either.
+
+What in-sample derivation *does* leave open — whether `S_X` is memorised tube idiosyncrasy — is
+measured directly instead: every signature is derived **twice**, once from the k=4 training
+tubes and once from the disjoint reserve, and `signature_stability.csv` reports the per-cytokine
+Jaccard. One extra IG pass over already-saved models; degrades nothing.
+
+### 37.3 Recorded deviations (state these wherever the run is reported)
+- **Gradient steps.** `_epoch_megabatches` (`cascadir/src/cascadir/train.py:241`) sets
+  steps-per-epoch = tubes-per-class. Published: 100 tubes/condition × 250 epochs = **25 000
+  steps**; here 40 × 250 = **10 000**. Epochs were deliberately not rescaled, so training
+  length is a third changed variable alongside encoder width and `top_n`.
+- Three variables move at once (width, `top_n`, training length) — this run cannot attribute
+  a change to any one of them, by design. It establishes what the method does under a
+  leakage-free protocol, not why it differs from the published fit.
+
+### 37.4 The agnosticism guard (mechanical, not a convention)
+`scripts/_oes90_pure_config.py` is written from scratch and does **not** import
+`_full90_config`, so `AUDITED_CSV` / `PUBLISHED_COUPLING_CSV` / `load_audited_labels` are not in
+scope. `C.assert_agnostic()` runs at the top of every stage and fails if `_full90_config` is in
+`sys.modules`. The condition list comes only from the tube manifest (sorted, 90 + PBS), and the
+main/reserve split uses the **same** `tube_idx` values in every (donor, condition) group, so it
+encodes no per-cytokine choice. `run_demo_oes90_pure.py` asserts the guard holds end-to-end.
+
+### 37.5 Provenance guards (structural, not conventional)
+Three digests, each an assertion that refuses to run on mismatch: the **encoder** state_dict
+sha256 (§27.6 — the array can never shard encoder training), the **tube shard** digest, and the
+**embedding cache** digest (so models are provably trained on the embeddings that were saved).
+Saved model heads carry the encoder sha and refuse to be recombined with a different encoder.
+`merge_oes90_pure_signatures.py` aborts unless all nine chunks agree on encoder and tubes.
+
+### 37.6 cascadir changes (additive, opt-in, defaults bit-identical)
+`cascadir/src/cascadir/train.py`:
+- `train_encoder(..., val_fraction, patience, min_delta, extra_epochs_after_stop,
+  return_history)` — cell-type-stratified validation split, early stopping that runs past the
+  plateau, best-val restore, per-epoch history (`history.attrs` carries `best_epoch`,
+  `stopped_epoch`, `last_state_dict`).
+- `train_binary_mil(..., return_history)` — per-epoch mean mega-batch loss.
+- `train_all_binary(..., embedding_cache, return_history)` — accept a **prebuilt** cache and
+  forward the history flag.
+Locked by `cascadir/tests/test_train_history.py` (defaults bit-identical; prebuilt cache ≡
+internally built). `cytokine_mil/analysis/full90_tube_io.py` gains `tube_indices` on
+`load_tube_set` plus `save_embedding_cache` / `load_embedding_cache` (pure I/O).
+
+### 37.7 Hard-rule note
+Coupling and direction go only through the orchestrator (`from_artifacts` →
+`signature_coupling` / `direction_table`). One module-level exception, used to **persist
+values, never to make a call**: `cascadir.cross_asym.directional_asymmetry_test` (a public
+export) supplies the per-cell-type `sA_PB_norm` / `sB_PA_norm` engagement numbers that the
+summary tables median away, and there is no other API for them.
+
+### 37.8 DAG
+`slurm/oes90_pure/` + `submit_oes90_pure_dag.sh` (`SUBMIT=echo` dry run): `prepare`(CPU 64G) →
+`encoder`(GPU) → `encode`(GPU) → `train`(GPU array 0-8%3) → `ig`(GPU array 0-8%3) →
+`merge`(CPU) → `coupling`(CPU 110G) → `direction`(CPU 80G), each with an `afternotok` sentinel
+writing `results/oes90_pure/STATUS.md`, plus the 30-minute self-resubmitting watchdog appending
+to `HEALTH.md`. Memory follows from one k=4 tube-set copy ≈ 25 GB (0.4 × §36's 63.5 GB):
+direction holds ~2 copies, coupling ~3.
+
+**Deliverables** (`results/oes90_pure/`, gitignored): `encoder.pt` + `encoder_last.pt` +
+`encoder_history.csv`; `models/<cond>_head.pt` × 90 + `history/<cond>_train.csv` × 90;
+`embeddings/` (the encoded pseudo-tubes); `signatures_{main,reserve}.parquet` (top-100) +
+`signature_stability.csv`; `coupling_donor_degree.csv`; `direction_table.csv`;
+`engagement_per_celltype.parquet`.
+
+**File layout (new).** `scripts/{_oes90_pure_config,_oes90_pure_estimator,prepare_oes90_pure,
+train_oes90_pure_encoder,encode_oes90_pure_tubes,train_oes90_pure_chunk,ig_oes90_pure,
+merge_oes90_pure_signatures,run_oes90_pure_coupling,run_oes90_pure_direction,
+run_demo_oes90_pure}.py`; `slurm/oes90_pure/{prepare,encoder,encode,train,ig,merge,coupling,
+direction,sentinel,watchdog}.slurm` + `submit_oes90_pure_dag.sh`;
+`cascadir/tests/test_train_history.py`.
+**Edited (additive):** `cascadir/src/cascadir/train.py`, `cascadir/MANUAL.md`,
+`cytokine_mil/analysis/full90_tube_io.py`, `tests/test_full90_tube_io.py`.

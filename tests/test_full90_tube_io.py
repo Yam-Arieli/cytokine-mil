@@ -91,3 +91,91 @@ def test_no_match_raises(tube_set, tmp_path):
     save_tube_shards(tube_set, tmp_path)
     with pytest.raises(ValueError, match="no shards matched"):
         load_tube_set(tmp_path, conditions=["NotAStimulus"], include_control=False)
+
+
+# ---------------------------------------------------------------------------
+# Fixed tube split (main / reserve) and the encoded-tube cache
+# ---------------------------------------------------------------------------
+
+
+def test_tube_indices_subset_is_exact_and_uniform(tube_set, tmp_path):
+    """`tube_indices` keeps the same indices in every (donor, condition) group."""
+    save_tube_shards(tube_set, tmp_path)
+    n_idx = max(t.tube_idx for t in tube_set.tubes) + 1
+    main = list(range(0, max(1, n_idx // 2)))
+    sub = load_tube_set(tmp_path, tube_indices=main)
+
+    assert {t.tube_idx for t in sub.tubes} == set(main)
+    # every group that existed still exists, just with fewer tubes
+    groups = {(t.donor, t.condition) for t in tube_set.tubes}
+    assert {(t.donor, t.condition) for t in sub.tubes} == groups
+    # and the surviving arrays are byte-identical to the originals
+    by_key = {(t.donor, t.condition, t.tube_idx): t.X for t in tube_set.tubes}
+    for t in sub.tubes:
+        assert np.array_equal(t.X, by_key[(t.donor, t.condition, t.tube_idx)])
+
+
+def test_main_and_reserve_are_disjoint(tube_set, tmp_path):
+    save_tube_shards(tube_set, tmp_path)
+    n_idx = max(t.tube_idx for t in tube_set.tubes) + 1
+    if n_idx < 2:
+        pytest.skip("fixture has a single tube per group")
+    half = n_idx // 2
+    main = load_tube_set(tmp_path, tube_indices=list(range(half)))
+    reserve = load_tube_set(tmp_path, tube_indices=list(range(half, n_idx)))
+    keys = lambda ts: {(t.donor, t.condition, t.tube_idx) for t in ts.tubes}
+    assert keys(main).isdisjoint(keys(reserve))
+    assert len(keys(main)) + len(keys(reserve)) == len(tube_set.tubes)
+
+
+def test_unmatched_tube_indices_raises(tube_set, tmp_path):
+    save_tube_shards(tube_set, tmp_path)
+    with pytest.raises(ValueError, match="no shards matched"):
+        load_tube_set(tmp_path, tube_indices=[999])
+
+
+def test_embedding_cache_roundtrip(tube_set, tmp_path):
+    """The encoded tubes reload in exactly the shape train_all_binary wants."""
+    import torch
+
+    from cytokine_mil.analysis.full90_tube_io import (
+        load_embedding_cache,
+        read_embedding_meta,
+        save_embedding_cache,
+    )
+
+    embed_dim = 5
+    rng = np.random.default_rng(0)
+    cache = {
+        (t.condition, t.donor, t.tube_idx): torch.from_numpy(
+            rng.standard_normal((t.X.shape[0], embed_dim)).astype(np.float32)
+        )
+        for t in tube_set.tubes
+    }
+    meta = save_embedding_cache(cache, tmp_path / "emb")
+    assert meta["n_tubes"] == len(cache)
+    assert meta["embed_dim"] == embed_dim
+    assert meta["shards_sha256"] == read_embedding_meta(tmp_path / "emb")["shards_sha256"]
+
+    back = load_embedding_cache(tmp_path / "emb")
+    assert set(back) == set(cache)
+    for k, v in cache.items():
+        assert torch.equal(back[k], v)
+
+
+def test_embedding_cache_condition_subset_keeps_control(tube_set, tmp_path):
+    import torch
+
+    from cytokine_mil.analysis.full90_tube_io import (
+        load_embedding_cache,
+        save_embedding_cache,
+    )
+
+    cache = {
+        (t.condition, t.donor, t.tube_idx): torch.zeros((t.X.shape[0], 3))
+        for t in tube_set.tubes
+    }
+    save_embedding_cache(cache, tmp_path / "emb")
+    stim = list(tube_set.stimulus_conditions)[:1]
+    back = load_embedding_cache(tmp_path / "emb", conditions=stim, control_label="PBS")
+    assert {k[0] for k in back} == set(stim) | {"PBS"}

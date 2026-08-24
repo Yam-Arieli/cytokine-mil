@@ -131,6 +131,53 @@ orchestrator is what assembles the per-donor cell data behind `donor_level=True`
 bare function silently falls back to the over-powered cell-level null while still returning
 a `coupled` column. Pass `encoder=` too if you want `discover_axes()`.
 
+### 3.2 Encoder early stopping + training history (OPT-IN)
+
+By default `train_encoder` runs a fixed number of epochs on every cell and returns only the
+encoder. When you need to *see* whether Stage 1 plateaued, underfit, or overfit — and to
+stop it at the right place — hold out a validation split:
+
+```python
+encoder, history = cd.train_encoder(
+    adata, celltype_col="cell_type",
+    embed_dim=1024, hidden_dims=(1024, 1024), epochs=200, lr=0.005,
+    val_fraction=0.10,              # stratified BY CELL TYPE, not plain random
+    patience=10, min_delta=1e-4,
+    extra_epochs_after_stop=20,     # keep going past the plateau so it is recorded
+    return_history=True,
+)
+history.to_csv("encoder_history.csv", index=False)   # epoch, train/val loss + acc, is_best, past_plateau
+history.attrs["best_epoch"], history.attrs["stopped_epoch"], history.attrs["last_state_dict"]
+```
+
+The returned encoder is the **best-validation checkpoint**, not the final epoch — the extra
+epochs exist to document the overfitting regime, not to be used. Stratifying the split by
+cell type matters: the classes are strongly imbalanced, and a plain random split can leave a
+rare cell type unrepresented, making the stopping signal blind to the hardest classes.
+`patience` requires `val_fraction > 0`.
+
+`train_binary_mil` and `train_all_binary` take `return_history=True` the same way, giving
+per-epoch mean mega-batch loss per condition.
+
+**All of these default to a no-op.** With the new arguments left alone, both functions are
+behaviourally identical to before, including their RNG stream — every validated result in
+the project was produced on that path, and `tests/test_train_history.py` locks it.
+
+### 3.3 Reusing a persisted embedding cache
+
+`train_all_binary` builds the frozen-encoder embedding cache internally. When an earlier job
+computed and *saved* it, pass it in instead, so the models are provably trained on the
+embeddings you persisted rather than on a silent rebuild:
+
+```python
+cache = cd.build_frozen_embedding_cache(encoder, tube_set)   # job A: compute + save
+models = cd.train_all_binary(tube_set, encoder, embedding_cache=cache)  # job B: reuse
+```
+
+Bit-identical to the internal build (locked by `test_prebuilt_cache_matches_internally_built`).
+Note that **Integrated Gradients cannot use the cache** — it attributes back to genes, so it
+runs the full model from gene-space inputs.
+
 ---
 
 ## 3.5 Recurrent IG — signature trajectories over training (OPT-IN)

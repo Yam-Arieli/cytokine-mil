@@ -20,12 +20,13 @@ import logging
 from typing import Callable
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from anndata import AnnData
 from torch.utils.data import DataLoader, Dataset
 
-from cascadir.exceptions import InsufficientDataError
+from cascadir.exceptions import DataValidationError, InsufficientDataError
 from cascadir.models import AbMil, AttentionModule, BagClassifier, InstanceEncoder
 from cascadir.pseudotubes import InMemoryTubeDataset
 from cascadir.types import BinaryLabel, MultiLabel, PseudoTubeSet
@@ -73,6 +74,57 @@ class _CellDataset(Dataset):
         return torch.from_numpy(row), int(self.y[i])
 
 
+def _stratified_holdout(
+    y: np.ndarray, val_fraction: float, seed: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Split row indices into (train, val), holding out ``val_fraction`` **per class**.
+
+    Stratifying by cell type matters here: the classes are strongly imbalanced, and a
+    plain random split can leave a rare cell type with no validation cells at all, which
+    would make the early-stopping signal ignore exactly the classes that are hardest.
+
+    A class with fewer than ``ceil(1/val_fraction)`` cells contributes one validation
+    cell; a class with a single cell stays entirely in train.
+    """
+    rng = np.random.default_rng(seed)
+    train_idx: list[np.ndarray] = []
+    val_idx: list[np.ndarray] = []
+    for cls in np.unique(y):
+        rows = np.flatnonzero(y == cls)
+        rows = rng.permutation(rows)
+        n_val = int(round(val_fraction * len(rows)))
+        if len(rows) > 1:
+            n_val = max(1, min(n_val, len(rows) - 1))
+        else:
+            n_val = 0
+        val_idx.append(rows[:n_val])
+        train_idx.append(rows[n_val:])
+    return (
+        np.sort(np.concatenate(train_idx)),
+        np.sort(np.concatenate(val_idx)) if val_idx else np.array([], dtype=int),
+    )
+
+
+@torch.no_grad()
+def _evaluate_encoder(
+    encoder: InstanceEncoder, loader: DataLoader, criterion: nn.Module, dev: torch.device
+) -> tuple[float, float]:
+    """Mean loss and accuracy of the cell-type head over ``loader``."""
+    was_training = encoder.training
+    encoder.eval()
+    total, n_correct, n_total = 0.0, 0, 0
+    for X, labels in loader:
+        X = X.to(dev)
+        labels = labels.to(dev)
+        logits = encoder.cell_type_head(encoder(X))
+        total += criterion(logits, labels).item() * len(X)
+        n_correct += int((logits.argmax(1) == labels).sum())
+        n_total += len(X)
+    if was_training:
+        encoder.train()
+    return total / max(n_total, 1), n_correct / max(n_total, 1)
+
+
 def train_encoder(
     adata: AnnData,
     *,
@@ -86,7 +138,12 @@ def train_encoder(
     device: str | torch.device | None = None,
     seed: int = 42,
     verbose: bool = False,
-) -> InstanceEncoder:
+    val_fraction: float = 0.0,
+    patience: int | None = None,
+    min_delta: float = 0.0,
+    extra_epochs_after_stop: int = 0,
+    return_history: bool = False,
+) -> InstanceEncoder | tuple[InstanceEncoder, pd.DataFrame]:
     """Pre-train an :class:`InstanceEncoder` on cell-type labels (Stage 1).
 
     Trains on the **real cells** of the preprocessed AnnData (not on pseudo-tube
@@ -106,9 +163,31 @@ def train_encoder(
         device: Where to train (``None`` = auto).
         seed: Torch seed for reproducibility.
         verbose: Log per-epoch loss/accuracy.
+        val_fraction: OPT-IN. Hold out this fraction of cells, **stratified by cell
+            type**, as a validation set. ``0.0`` (default) = train on everything, exactly
+            as before. Required for ``patience``.
+        patience: OPT-IN early stopping. Stop after this many consecutive epochs without
+            a validation-loss improvement of more than ``min_delta``. ``None`` (default)
+            = run the full ``epochs``.
+        min_delta: Improvement threshold for the patience counter.
+        extra_epochs_after_stop: Keep training this many epochs **past** the plateau
+            before returning, so the recorded history shows the overfitting regime. The
+            returned encoder is still the best-validation checkpoint, not the last one.
+        return_history: Also return the per-epoch history (see below).
 
     Returns:
-        The trained :class:`InstanceEncoder` (with ``cell_type_head`` set).
+        The trained :class:`InstanceEncoder` (with ``cell_type_head`` set) — restored to
+        its best-validation weights when ``val_fraction > 0``. With
+        ``return_history=True``, a ``(encoder, history)`` tuple where ``history`` is a
+        DataFrame with one row per epoch (``epoch, train_loss, train_acc, val_loss,
+        val_acc, is_best, past_plateau``) and ``history.attrs`` carrying ``best_epoch``,
+        ``stopped_epoch``, ``n_epochs_run``, ``n_train_cells``, ``n_val_cells`` and
+        ``last_state_dict`` (the final-epoch weights, before best-val restoration).
+
+    Note:
+        All new arguments default to a no-op: with ``val_fraction=0.0``, ``patience=None``
+        and ``return_history=False`` this function is behaviourally identical to before,
+        including its RNG stream.
     """
     torch.manual_seed(seed)
     dev = resolve_device(device)
@@ -127,11 +206,40 @@ def train_encoder(
         hidden_dims=hidden_dims,
     ).to(dev)
 
-    loader = DataLoader(
-        _CellDataset(adata.X, y), batch_size=batch_size, shuffle=True, num_workers=0
-    )
+    if val_fraction > 0.0:
+        if not 0.0 < val_fraction < 1.0:
+            raise DataValidationError(
+                f"train_encoder: val_fraction must be in (0, 1); got {val_fraction}."
+            )
+        tr_rows, va_rows = _stratified_holdout(y, val_fraction, seed)
+        train_ds = _CellDataset(adata.X[tr_rows], y[tr_rows])
+        val_loader: DataLoader | None = DataLoader(
+            _CellDataset(adata.X[va_rows], y[va_rows]),
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=0,
+        )
+        n_train_cells, n_val_cells = len(tr_rows), len(va_rows)
+    else:
+        if patience is not None:
+            raise DataValidationError(
+                "train_encoder: patience requires val_fraction > 0 (early stopping needs "
+                "a held-out set to measure the plateau on)."
+            )
+        train_ds = _CellDataset(adata.X, y)
+        val_loader = None
+        n_train_cells, n_val_cells = adata.n_obs, 0
+
+    loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(encoder.parameters(), lr=lr, momentum=momentum)
+
+    rows: list[dict] = []
+    best_val = float("inf")
+    best_state: dict | None = None
+    best_epoch = 0
+    n_bad = 0
+    stopped_epoch: int | None = None
 
     encoder.train()
     for epoch in range(1, epochs + 1):
@@ -149,16 +257,66 @@ def train_encoder(
             total += loss.item() * len(X)
             n_correct += int((logits.argmax(1) == labels).sum())
             n_total += len(X)
+        train_loss = total / max(n_total, 1)
+        train_acc = n_correct / max(n_total, 1)
+
+        val_loss = val_acc = float("nan")
+        is_best = False
+        if val_loader is not None:
+            val_loss, val_acc = _evaluate_encoder(encoder, val_loader, criterion, dev)
+            if val_loss < best_val - min_delta:
+                best_val, best_epoch, n_bad, is_best = val_loss, epoch, 0, True
+                best_state = {
+                    k: v.detach().cpu().clone() for k, v in encoder.state_dict().items()
+                }
+            else:
+                n_bad += 1
+
+        rows.append({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss,
+            "val_acc": val_acc,
+            "is_best": is_best,
+            "past_plateau": stopped_epoch is not None,
+        })
         if verbose:
             logger.info(
-                "[Stage 1] epoch %d/%d loss=%.4f acc=%.4f",
-                epoch,
-                epochs,
-                total / max(n_total, 1),
-                n_correct / max(n_total, 1),
+                "[Stage 1] epoch %d/%d loss=%.4f acc=%.4f val_loss=%.4f val_acc=%.4f",
+                epoch, epochs, train_loss, train_acc, val_loss, val_acc,
             )
+
+        if patience is not None:
+            if stopped_epoch is None and n_bad >= patience:
+                stopped_epoch = epoch
+                logger.info(
+                    "[Stage 1] plateau at epoch %d (best epoch %d, val_loss=%.4f); "
+                    "running %d extra epoch(s) to record the overfitting regime.",
+                    epoch, best_epoch, best_val, extra_epochs_after_stop,
+                )
+            if stopped_epoch is not None and epoch >= stopped_epoch + extra_epochs_after_stop:
+                break
+
+    last_state = {k: v.detach().cpu().clone() for k, v in encoder.state_dict().items()}
+    if best_state is not None:
+        encoder.load_state_dict(best_state)
+        logger.info("[Stage 1] restored best-validation weights from epoch %d.", best_epoch)
     encoder.eval()
-    return encoder
+
+    if not return_history:
+        return encoder
+    history = pd.DataFrame(rows)
+    history.attrs.update({
+        "best_epoch": best_epoch,
+        "stopped_epoch": stopped_epoch,
+        "n_epochs_run": len(rows),
+        "n_train_cells": n_train_cells,
+        "n_val_cells": n_val_cells,
+        "val_fraction": val_fraction,
+        "last_state_dict": last_state,
+    })
+    return encoder, history
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +462,8 @@ def train_binary_mil(
     embedding_cache: dict[tuple[str, str, int], torch.Tensor] | None = None,
     checkpoint_every: int | None = None,
     on_checkpoint: Callable[[int, AbMil], None] | None = None,
-) -> AbMil:
+    return_history: bool = False,
+) -> AbMil | tuple[AbMil, pd.DataFrame]:
     """Train one binary AB-MIL: ``condition`` vs ``control_label``.
 
     Uses the shared (frozen) Stage-1 encoder. One mega-batch = one ``condition`` tube
@@ -331,9 +490,13 @@ def train_binary_mil(
             unchanged behavior. Used for recurrent IG (:mod:`cascadir.dynamics`).
         on_checkpoint: Callback ``(epoch, model) -> None`` invoked at each checkpoint.
             Must not mutate the model's parameters (it may read/attribute only).
+        return_history: Also return the per-epoch training history. Recording only; it
+            does not touch the optimization or the RNG stream.
 
     Returns:
-        The trained :class:`AbMil` (in ``eval`` mode).
+        The trained :class:`AbMil` (in ``eval`` mode). With ``return_history=True``, a
+        ``(model, history)`` tuple where ``history`` has columns ``epoch, loss,
+        n_megabatches`` — ``loss`` being the mean mega-batch loss over the epoch.
 
     Raises:
         InsufficientDataError: if either the condition or the control has no tubes.
@@ -377,6 +540,7 @@ def train_binary_mil(
 
     queues = _build_class_queues(dataset.get_entries(), label_encoder)
     rng = np.random.default_rng(seed)
+    rows: list[dict] = []
     for epoch in range(1, epochs + 1):
         epoch_loss = 0.0
         megabatches = _epoch_megabatches(queues, rng)
@@ -388,6 +552,10 @@ def train_binary_mil(
             epoch_loss += _train_one_megabatch(
                 model, optimizer, tubes, criterion, dev, from_H=use_cache
             )
+        mean_loss = epoch_loss / max(len(megabatches), 1)
+        rows.append(
+            {"epoch": epoch, "loss": mean_loss, "n_megabatches": len(megabatches)}
+        )
         if (
             checkpoint_every
             and on_checkpoint is not None
@@ -402,10 +570,14 @@ def train_binary_mil(
                 condition,
                 epoch,
                 epochs,
-                epoch_loss / max(len(megabatches), 1),
+                mean_loss,
             )
     model.eval()
-    return model
+    if not return_history:
+        return model
+    history = pd.DataFrame(rows)
+    history.attrs.update({"condition": condition, "control_label": control_label})
+    return model, history
 
 
 def train_all_binary(
@@ -416,10 +588,12 @@ def train_all_binary(
     control_label: str | None = None,
     device: str | torch.device | None = None,
     use_embedding_cache: bool = True,
+    embedding_cache: dict[tuple[str, str, int], torch.Tensor] | None = None,
     checkpoint_every: int | None = None,
     on_checkpoint_factory: Callable[[str], Callable[[int, AbMil], None]] | None = None,
+    return_history: bool = False,
     **kwargs,
-) -> dict[str, AbMil]:
+) -> dict[str, AbMil] | tuple[dict[str, AbMil], dict[str, pd.DataFrame]]:
     """Train one binary AB-MIL per stimulus condition.
 
     Args:
@@ -434,25 +608,33 @@ def train_all_binary(
             condition. Result-preserving; only active when ``encoder_frozen`` (default).
         checkpoint_every: OPT-IN recurrent-IG interval, forwarded to each
             :func:`train_binary_mil`. ``None`` (default) = unchanged behavior.
+        embedding_cache: OPT-IN. A pre-built ``{(condition, donor, tube_idx): H}`` cache
+            (see :func:`build_frozen_embedding_cache`) to use instead of building one
+            here. Pass this when the embeddings were computed and persisted by an earlier
+            job, so the models are provably trained on the embeddings that were saved.
+            ``None`` (default) = build one internally, as before.
         on_checkpoint_factory: ``condition -> (epoch, model) -> None``. Builds a fresh
             per-condition checkpoint callback so each model's trajectory is captured
             separately (see :mod:`cascadir.dynamics`). ``None`` = no checkpointing.
+        return_history: Also return ``{condition: per-epoch history DataFrame}``.
         **kwargs: Forwarded to :func:`train_binary_mil`.
 
     Returns:
-        ``{condition: AbMil}``.
+        ``{condition: AbMil}``, or ``({condition: AbMil}, {condition: history})`` when
+        ``return_history=True``.
     """
     ctrl = control_label or tube_set.control_label
     conds = conditions if conditions is not None else list(tube_set.stimulus_conditions)
     encoder_frozen = kwargs.get("encoder_frozen", True)
-    shared_cache: dict[tuple[str, str, int], torch.Tensor] | None = None
-    if use_embedding_cache and encoder_frozen:
+    shared_cache: dict[tuple[str, str, int], torch.Tensor] | None = embedding_cache
+    if shared_cache is None and use_embedding_cache and encoder_frozen:
         shared_cache = build_frozen_embedding_cache(encoder, tube_set, device=device)
     models: dict[str, AbMil] = {}
+    histories: dict[str, pd.DataFrame] = {}
     for cond in conds:
         logger.info("train_all_binary: training %s vs %s", cond, ctrl)
         cb = on_checkpoint_factory(cond) if on_checkpoint_factory is not None else None
-        models[cond] = train_binary_mil(
+        result = train_binary_mil(
             tube_set,
             cond,
             encoder,
@@ -462,9 +644,14 @@ def train_all_binary(
             embedding_cache=shared_cache,
             checkpoint_every=checkpoint_every,
             on_checkpoint=cb,
+            return_history=return_history,
             **kwargs,
         )
-    return models
+        if return_history:
+            models[cond], histories[cond] = result
+        else:
+            models[cond] = result
+    return (models, histories) if return_history else models
 
 
 # ---------------------------------------------------------------------------
