@@ -73,6 +73,38 @@ def diversity(df: pd.DataFrame, top_n: int) -> dict:
     }
 
 
+def seen_contrast(df: pd.DataFrame, seen: set, top_n: int) -> dict:
+    """Within-arm contrast: panel cytokines the encoder SAW vs ones it did not.
+
+    Breadth is not the only thing that changes across arms — as breadth falls, so does the
+    chance that a given panel cytokine was itself in the encoder's training set. Those two
+    make OPPOSITE predictions:
+
+      * invariance (this sweep's hypothesis): seeing more conditions is worse, so within an
+        arm, seen and unseen panel cytokines should look about the SAME;
+      * familiarity (closer to the published anchor's leakage story): seeing a cytokine
+        helps it specifically, so seen should look BETTER than unseen.
+
+    This contrast is within-arm, so it is free of the between-arm confound. It is only
+    informative for the mixed arms (rand18, rand45) — `pbs_only` has no seen cytokines and
+    `all90` has no unseen ones.
+    """
+    d = df[df.rank_ig < top_n]
+    sets = {c: set(g.gene) for c, g in d.groupby("cytokine")}
+    out = {}
+    for label, group in (("seen", [c for c in sets if c in seen]),
+                         ("unseen", [c for c in sets if c not in seen])):
+        pair_j = [
+            len(sets[a] & sets[b]) / len(sets[a] | sets[b])
+            for a, b in itertools.combinations(sorted(group), 2)
+        ]
+        t5 = d[(d.rank_ig < 5) & (d.cytokine.isin(group))]
+        out[f"n_{label}"] = len(group)
+        out[f"meanJ_{label}"] = float(np.mean(pair_j)) if pair_j else np.nan
+        out[f"top5_pool_{label}"] = int(t5.gene.nunique()) if len(t5) else 0
+    return out
+
+
 def main() -> int:
     C.assert_agnostic()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -94,6 +126,7 @@ def main() -> int:
                "n_encoder_conditions": meta["arms"][arm]["n_encoder_conditions"],
                "n_stage1_cells": meta["arms"][arm]["n_cells"]}
         rec.update(diversity(df, args.top_n))
+        rec.update(seen_contrast(df, set(meta["encoder_subsets"][arm]), args.top_n))
         rows.append(rec)
 
         sd = adir / "signature_sign_diagnosis.csv"
@@ -153,6 +186,27 @@ def main() -> int:
         "(2.4x); §37 PURE 40, 14/24, 0.241, 261/1200 (4.6x).",
         "",
     ]
+    mixed = div[(div.n_seen > 1) & (div.n_unseen > 1)]
+    if len(mixed):
+        lines += [
+            "## Within-arm contrast: panel cytokines the encoder saw vs did not",
+            "",
+            "Only the mixed arms are informative here (`pbs_only` saw none of the panel,",
+            "`all90` saw all of it). Similar seen/unseen columns support the invariance",
+            "reading; markedly better `seen` would instead point at familiarity with the",
+            "specific cytokine — closer to the published anchor's Stage-1 leakage.",
+            "",
+            "| arm | n seen | n unseen | meanJ seen | meanJ unseen | top-5 pool seen | unseen |",
+            "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+        for _, r in mixed.iterrows():
+            lines.append(
+                f"| `{r.arm}` | {int(r.n_seen)} | {int(r.n_unseen)} | "
+                f"{r.meanJ_seen:.3f} | {r.meanJ_unseen:.3f} | "
+                f"{int(r.top5_pool_seen)} | {int(r.top5_pool_unseen)} |"
+            )
+        lines.append("")
+
     if sign is not None:
         lines += ["## Signature sign validity", "",
                   "| arm | median frac_up | max frac_up | median rho(IG rank, Δ) | median mean_Δ |",
