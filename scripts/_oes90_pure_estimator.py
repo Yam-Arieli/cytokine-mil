@@ -206,13 +206,30 @@ def load_signatures(parquet_path, top_n: int = C.TOP_N) -> dict:
 
 
 def build_estimator(out_dir, signatures_name: str = "signatures_main.parquet",
-                    verbose: bool = True):
-    """Load MAIN tubes + signatures and return a fitted `CascadeDirection` (+ provenance)."""
+                    verbose: bool = True, conditions=None):
+    """Load MAIN tubes + signatures and return a fitted `CascadeDirection` (+ provenance).
+
+    `conditions` restricts the fit to a subset of stimuli (the control is always kept).
+    Tubes and signatures are restricted together — a mismatch between them would leave
+    the orchestrator scoring signatures whose cells are absent. Restricting changes the
+    coupling degree terms (they are computed over whatever matrix is passed), which is
+    exactly why a subset analysis has to be re-run rather than filtered after the fact;
+    `cross_asym` is pairwise and is unaffected either way.
+    """
     import cascadir as cd
 
     out = Path(out_dir)
-    tube_set, tube_meta = load_tubes(out, which="main", verbose=verbose)
+    keep = None if conditions is None else sorted({str(c) for c in conditions})
+    tube_set, tube_meta = load_tubes(out, which="main", conditions=keep, verbose=verbose)
     signatures = load_signatures(out / signatures_name)
+    if keep is not None:
+        allowed = set(keep) | {C.CONTROL}
+        missing = [c for c in keep if c not in signatures and c != C.CONTROL]
+        if missing:
+            raise ValueError(
+                f"{len(missing)} requested conditions have no signature: {missing[:8]}"
+            )
+        signatures = {k: v for k, v in signatures.items() if k in allowed}
     if verbose:
         C.log(f"[signatures] {len(signatures)} conditions x {C.TOP_N} genes "
               f"({signatures_name})")
