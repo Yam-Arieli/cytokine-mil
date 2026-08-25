@@ -2223,9 +2223,14 @@ Jaccard. One extra IG pass over already-saved models; degrades nothing.
   steps-per-epoch = tubes-per-class. Published: 100 tubes/condition × 250 epochs = **25 000
   steps**; here 40 × 250 = **10 000**. Epochs were deliberately not rescaled, so training
   length is a third changed variable alongside encoder width and `top_n`.
-- Three variables move at once (width, `top_n`, training length) — this run cannot attribute
-  a change to any one of them, by design. It establishes what the method does under a
-  leakage-free protocol, not why it differs from the published fit.
+- **Encoder stopping point (added 2026-08-25).** §37 early-stops Stage 1 on val loss and
+  restores the best checkpoint, which landed at **epoch 4** (val_loss 0.245, rising to 0.607
+  by epoch 34 while train_acc hits 1.0). The published anchor and §36 both ran a **fixed 20
+  epochs** with no validation split. This is a fourth changed variable and was missing from
+  the original list.
+- **Four** variables move at once (width, `top_n`, training length, encoder stopping point)
+  — this run cannot attribute a change to any one of them, by design. It establishes what
+  the method does under a leakage-free protocol, not why it differs from the published fit.
 
 ### 37.4 The agnosticism guard (mechanical, not a convention)
 `scripts/_oes90_pure_config.py` is written from scratch and does **not** import
@@ -2284,3 +2289,106 @@ direction,sentinel,watchdog}.slurm` + `submit_oes90_pure_dag.sh`;
 `cascadir/tests/test_train_history.py`.
 **Edited (additive):** `cascadir/src/cascadir/train.py`, `cascadir/MANUAL.md`,
 `cytokine_mil/analysis/full90_tube_io.py`, `tests/test_full90_tube_io.py`.
+
+---
+
+## 38. Why the Oesinghaus-90 fits degrade — the Stage-1 encoder breadth sweep (2026-08)
+
+**The diagnosis.** §37's `cross_asym` collapsed into an additive potential `θ_a − θ_b` (81%
+of ‖cross_asym‖², 88.8% of all 4005 signs from one scalar per cytokine), with θ turning out
+to be response *amplitude*, not direction. Tracing that back gives a clean ladder, measured
+on the **identical 24 cytokines at the identical top-50 cut**:
+
+| fit | conds seen by encoder | enc epochs | width | k | meanJ | distinct/1200 | top-5 pool | worst shared gene |
+|---|---|---|---|---|---|---|---|---|
+| published anchor | 17–18 (+D2/D3) | 20 | 512 | 10 | **0.065** | 504 | 81 | LEF1 4/24 |
+| §36 full90 | 90 | 20 | 512 | 10 | **0.178** | 307 | 54 | ANK3 10/24 |
+| §37 PURE ep250 | 90 | 4 (best-val) | 1024 | 4 | **0.241** | 261 | 40 | SLC8A1 14/24 |
+| §37 PURE ep50 | 90 | 4 (best-val) | 1024 | 4 | **0.301** | 217 | 33 | SLC8A1 20/24 |
+
+Chance meanJ at top-50 is 0.006. **The largest step is published → §36, where the only
+change was the Stage-1 encoder's training set.** All of §37's hyperparameter changes
+together added only the smaller 0.178 → 0.241 step. This is causally tight: a binary model
+trains on `{X tubes, PBS tubes}` alone (`cascadir/src/cascadir/train.py:469-470`), so
+condition count cannot reach a signature except through the encoder.
+
+**Mechanism.** Stage 1 optimises the encoder for **cell-type classification**, for which
+cytokine-induced variation is nuisance variance *within* a cell type. The more conditions it
+sees, the more perturbation diversity it is explicitly trained to be invariant to — so it
+discards exactly the signal the method needs. Downstream, all binary heads sit on that frozen
+representation and find the same few residual directions, and IG returns the same genes for
+every cytokine. Only **557 of 4000 genes** ever enter a §37 top-100; the collapse is worst at
+**ranks 0–4** (`SLC8A1` in the top-5 of 56 of 90), and the shared pool is myeloid/NK identity
+and long-locus genes, not cytokine response. Those same genes sit at the *opposite* end of
+the published ranking (median rank `SLC8A1` 3722/4000) — an attribution sign flip, not a
+re-ordering.
+
+**Ruled out** (each measured, not argued):
+- **`top_n=100`** — truncating §37 to top-25 makes diversity *worse* (meanJ 0.254 vs 0.310).
+- **Condition count as a direct effect** — restricting §37's own output to 24 cytokines still
+  leaves 4.6× collapse vs published's 2.4×.
+- **Over-training** — the epoch-50 re-run (`results/oes90_pure_ep50/`) is worse on every
+  measure. The shared axis is what the model finds *first*; longer training partially dilutes
+  it. A second-order version survives: low final loss predicts a worse signature
+  (ρ(loss_final, frac_up) = +0.53), absent at epoch 50 (ρ = +0.11, p = 0.3).
+- **Cell-level memorisation** — §37's reserve-tube signature stability is median Jaccard
+  **0.942**. Any memorisation is at the well/donor level, where the reserve gives no
+  independence.
+- **An implementation or convention bug** — both paths rank with `np.argsort(-ig_mean)`
+  (`cascadir/src/cascadir/signatures.py:135`, `scripts/run_binary_ig_probe.py:353`), and IG
+  peakedness is identical (median rank0/rank99 13.15 vs 13.25).
+
+### 38.1 The sweep
+Four Stage-1 encoder arms, **nested** (`rand18 ⊂ rand45 ⊂ all90`), with everything else
+pinned at the published values (512-wide, hidden (512,512), Stage-1 **20 epochs, no early
+stopping**, lr 0.005, k=**10** tubes, top_n=**50**, Stage-2 250 @ 3e-5):
+
+| arm | encoder trained on |
+|---|---|
+| `pbs_only` | PBS cells only — zero invariance pressure; precedent in §2.5/§2.7 |
+| `rand18` | seeded-random 18 of 90 — published breadth, no benchmark knowledge |
+| `rand45` | seeded-random 45 of 90 |
+| `all90` | all 90 (= §36's encoder regime) |
+
+**Total Stage-1 cell count is held fixed across arms** (target 36 000, split evenly over the
+groups each arm uses; PBS is present in every arm and counts as a group). Without this,
+breadth would be confounded with gradient exposure. If `pbs_only` cannot supply the target,
+prepare lowers the budget for **all** arms and records it.
+
+**Panel:** one seeded-random 24 of the 90 (`PANEL_SEED`), fixed across arms — never a
+benchmark list. **Readout:** signature diversity only — top-5 gene-pool size and max shared
+top-5 gene (primary; the collapse is worst at the top of the ranking, so this is the sharpest
+measure), mean pairwise Jaccard and distinct-gene count at top-50 (secondary), plus `frac_up`
+and final training loss. **No coupling, no direction, no benchmark scoring** — this decides
+which encoder to fit with, not what the biology is.
+
+**Decision rule.** Diversity rising monotonically as breadth falls confirms breadth is causal,
+and the production re-run adopts the best arm — preferring `pbs_only` if it wins, since it is
+canonical, uses zero cytokine cells, and avoids a random subset's arbitrariness. If all four
+arms look like §37, breadth is not the lever and the remaining suspects are encoder width,
+tube count k, and the published anchor's Stage-1 leakage.
+
+### 38.2 Guards
+`scripts/_encsweep_config.py` is standalone (does **not** import `_full90_config`) and reuses
+only `_oes90_pure_config`'s file/digest plumbing, so `assert_agnostic()` stays meaningful. The
+demo runner additionally enforces a **static AST check** that no stage references a benchmark
+artefact, carrying a positive control so a broken check cannot pass silently. Each arm's
+encoder is sha256-guarded, and a head refuses to be recombined with a different arm's encoder
+(the §27.6 guard, now exercised across arms).
+
+**Honest limits.** Even the published fit is 10× above chance overlap — this recovers a
+known-good operating point, it does not make signatures clean in absolute terms. A `rand18`
+production encoder makes the whole fit depend on which 18 were drawn (hence the `pbs_only`
+preference, or several subset seeds). `pbs_only` risks distribution shift: an encoder that has
+never seen a stimulated cell may extrapolate badly. And this explains the degradation *between
+fits* — it does not establish that the published 88% is correct, since that anchor still has
+Stage-1 leakage. Direction ≠ existence ≠ causation (§26.4) carries over.
+
+**File layout (new).** `scripts/{_encsweep_config,prepare_encsweep,train_encsweep_encoder,
+train_encsweep_chunk,ig_encsweep,analyze_encsweep,run_demo_encsweep}.py`;
+`slurm/encsweep/{prepare,encoder,train,ig,sign,analysis,sentinel,watchdog}.slurm` +
+`submit_encsweep_dag.sh`. **Edited (additive, backward-compatible):**
+`scripts/prepare_oes90_pure.py` (`verify_shards(..., need_indices=)`),
+`scripts/_oes90_pure_estimator.py` (`save_model_head` records the model's actual attention
+width instead of a config constant), `scripts/diagnose_oes90_pure_signature_sign.py`
+(`--conditions`). Reuses the §36 tube shards read-only.

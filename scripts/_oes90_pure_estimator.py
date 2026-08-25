@@ -135,6 +135,11 @@ def save_model_head(model, out_dir, condition: str, encoder_sha: str) -> Path:
     The encoder is already saved and digest-verified, and is frozen throughout, so storing
     it again inside all 90 models would multiply the same 25 MB by 90 for nothing. The
     digest is written alongside so a head can never be recombined with the wrong encoder.
+
+    The attention width is read off the model rather than from a config constant: other
+    runs reuse these loaders with their own config (the encoder-breadth sweep), and a
+    recorded width that disagreed with the saved weights would only surface as a shape
+    error at reload time, after the training was already spent.
     """
     import torch
 
@@ -146,7 +151,7 @@ def save_model_head(model, out_dir, condition: str, encoder_sha: str) -> Path:
             "encoder_sha256": encoder_sha,
             "attention": model.attention.state_dict(),
             "classifier": model.classifier.state_dict(),
-            "attention_hidden_dim": C.ATTENTION_HIDDEN_DIM,
+            "attention_hidden_dim": int(model.attention.V.out_features),
         },
         p,
     )

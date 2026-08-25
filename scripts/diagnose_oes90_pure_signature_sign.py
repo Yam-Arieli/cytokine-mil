@@ -61,13 +61,22 @@ def main() -> None:
     ap.add_argument("--out_dir", default=str(C.OUT_DIR))
     ap.add_argument("--signatures", default="signatures_main.parquet")
     ap.add_argument("--result_name", default="signature_sign_diagnosis.csv")
+    ap.add_argument(
+        "--conditions", nargs="*", default=None,
+        help="Restrict to these conditions (the control is always loaded). Default: all. "
+             "Loading every condition's tubes is ~63 GB at k=10, so a run that only has "
+             "signatures for a subset should name them here.",
+    )
     args = ap.parse_args()
 
     C.assert_agnostic()
     out = Path(args.out_dir)
 
-    tube_set, _ = E.load_tubes(out, which="main")
+    tube_set, _ = E.load_tubes(out, which="main", conditions=args.conditions)
     signatures = E.load_signatures(out / args.signatures)
+    if args.conditions:
+        keep = set(args.conditions) | {C.CONTROL}
+        signatures = {k: v for k, v in signatures.items() if k in keep}
     genes = list(tube_set.gene_names)
 
     cells = cells_by_condition_celltype(tube_set)

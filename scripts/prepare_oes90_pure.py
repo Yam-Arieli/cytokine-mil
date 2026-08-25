@@ -69,8 +69,13 @@ def _read_tube(path: str, gene_names: list) -> tuple:
     )
 
 
-def verify_shards(shard_dir: str, exclude_donors=None) -> dict:
-    """Read the reused shard meta and report what it contains."""
+def verify_shards(shard_dir: str, exclude_donors=None, need_indices=None) -> dict:
+    """Read the reused shard meta and report what it contains.
+
+    `need_indices` is the set of tube_idx values the caller's split requires; it defaults
+    to this run's main+reserve split. Other runs reuse the same shards with a different
+    tube budget (the encoder-breadth sweep uses k=10), so they pass their own.
+    """
     exclude_donors = list(C.VAL_DONORS if exclude_donors is None else exclude_donors)
     meta = read_meta(shard_dir)
     idx = sorted({int(t["tube_idx"]) for s in meta["shards"] for t in s["tubes"]})
@@ -86,7 +91,8 @@ def verify_shards(shard_dir: str, exclude_donors=None) -> dict:
             f"held-out donors {bad} are present in the shard set — CLAUDE.md §16 requires "
             "them excluded everywhere, Stage-1 included."
         )
-    need = set(C.MAIN_TUBE_INDICES) | set(C.RESERVE_TUBE_INDICES)
+    need = (set(C.MAIN_TUBE_INDICES) | set(C.RESERVE_TUBE_INDICES)
+            if need_indices is None else set(need_indices))
     if not need.issubset(set(idx)):
         raise AssertionError(
             f"shards only carry tube_idx {idx}; the split needs {sorted(need)}."
