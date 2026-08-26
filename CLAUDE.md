@@ -2573,3 +2573,82 @@ If the paths genuinely diverge on signature specificity, that touches everything
 through `cascadir` — §30 (COVID), §31's coupling panel, §32 (vaccination), §36, §37, §38 —
 and the packaged method itself. It does **not** touch the published Oesinghaus/Sheu/ID
 direction numbers, which were produced on the research path.
+
+---
+
+## 39. Encoder gene-space geometry — is Stage 1 the bottleneck? (2026-08)
+
+**Motivation.** §38 eliminated fourteen candidate explanations for the Oesinghaus-90
+signature collapse and left the *code path* as the only variable that separates the fits.
+This section tests a different kind of hypothesis, orthogonal to all of them: not *which
+cells Stage 1 saw*, but **what the trained encoder does to the gene space**. If the encoder
+maps many genes onto a few shared directions, every binary head sits on the same
+impoverished representation and IG must return overlapping genes for every cytokine
+regardless of what the head learned. IG attributions factor as `dy/dx_g = (dy/dh)·(dh/dx_g)`,
+so a low-rank `{dh/dx_g}` confines **all** heads to one low-dimensional gene subspace —
+a complete mechanism for the collapse, if it holds.
+
+Two constraints, stated so they are not dropped later: the compression is at the **input**
+(`input_proj` is `Linear(4000→512)`, 7.8×; `down2` is 512→512 and compresses nothing), and
+**all fits share the identical architecture**, so a bottleneck alone cannot explain the
+differences between them — the claim under test is that *training* collapsed the effective
+rank, by different amounts.
+
+### 39.1 The three probes
+Read-only over encoders that already exist; no training, no GPU.
+
+| probe | definition | role |
+|---|---|---|
+| `onehot` | `Z[g] = E(e_g) − E(0)` | primary as specified; `E(0)` subtracted because `input_proj` is `LN(W1[:,g]+b1)` and the shared bias would otherwise fake a collapse. **Off-distribution**, and LayerNorm makes the map non-additive: `E(x) ≠ Σ_g x_g Z[g] + E(0)` |
+| `jacobian` | `Z[g] = ∂E(x)/∂x_g` at 16 real cells (8 control, 8 stimulated; seed 42, Donor1, tube_idx 0) | **primary for the verdict** — the only probe with the chain to IG above |
+| `w1` | `Z[g] = W1[:, g]` | free linear reference, zero modelling assumptions |
+
+Statistics (identical per probe): participation ratio `PR=(Σσ²)²/Σσ⁴` and `PR/d`, effective
+rank, variance in the top-1/5/10 singular directions, mean pairwise `|cos|`, per-gene norm
+and its Gini. Plus the gene-level link — `Spearman(signature frequency, gene response norm)`
+using each fit's **own** signature table.
+
+**Controls.** (a) A matched-dimension **untrained** encoder per fit — this, not the embedding
+dimension, is the ceiling: an untrained encoder is a product of random matrices whose spectrum
+already concentrates, so a full-rank map reads well below its rank. (b) The statistic carries
+its own positive control (`tests/test_encoder_geometry.py`): a planted rank-3 input projection
+must read PR≈3, rank-8 must read PR≈8, and the metric must order them — so a flat result
+cannot be a broken metric.
+
+### 39.2 Scope — 15 encoders, each paired with a measured outcome
+`scripts/_encoder_geometry_fits.py` (data, not logic). `cytokine_mil` path: published run B
+(meanJ 0.079), §31 recurrent-IG ×3 (0.073–0.077). `cascadir` path: §36 (0.178), §37 PURE
+(0.241) + ep50 (0.301), the four §38.3 breadth arms (0.180–0.257), the four §38.4
+construction arms (0.180–0.394). Two registry fields are load-bearing and must not be worked
+around: **`panel`** (meanJ is comparable only within a panel — `sweep24` / `published24` /
+`recurrent45` scored separately) and **`embed_dim`** (12 fits are 512-wide, the two §37 fits
+1024-wide ⇒ cross-width comparison goes through `PR/d`). `published_runA` is excluded (three
+candidate run dirs, no unambiguous encoder↔outcome pairing); `s1sweep_pub_replica` is
+labelled diagnostic-only (violates §16 by design).
+
+### 39.3 Pre-registration + verdict
+`reports/encoder_geometry/PRE_REGISTRATION.md`, locked before the job (§25.1): **B1** the two
+code paths' `PR/d` do not overlap; **B2** `Spearman(PR/d, meanJ) ≤ −0.7` within the eight
+sweep arms; **B3** signature frequency tracks gene response norm in collapsed fits but not
+healthy ones; **B4** the honest null — `PR/d` spans <1.5× and neither B1 nor B2 holds, which
+would move the search downstream of the encoder (attention/classifier head, or the IG path).
+Verdict rule: B1 **and** B2 ⇒ supported; exactly one ⇒ suggestive; neither ⇒ downstream.
+Results → `reports/encoder_geometry/ENCODER_GEOMETRY.md`.
+
+### 39.4 Hard-rule note
+This computes SVDs, cosines and gradient norms **on encoder outputs** — neural-net
+diagnostics, not the method's math. No engagement scores, no PBS-normalised values, no
+`cross_asym`, no coupling, no direction; signatures are read as an existing table only to
+count gene occurrences. `cascadir` exposes no API for encoder geometry.
+
+**Honest limits.** Correlation across fits, not causation. Where the one-hot and Jacobian
+probes disagree, the Jacobian is the one with a mechanistic chain to IG. A flat result (B4)
+is live — three of the last four sweeps returned flat. Nothing here validates the published
+88%. Direction ≠ existence ≠ causation (§26.4) carries over.
+
+**File layout (new).** `scripts/{_encoder_geometry_fits,probe_encoder_gene_geometry,
+analyze_encoder_geometry,run_demo_encoder_geometry}.py`; `tests/test_encoder_geometry.py`;
+`slurm/encoder_geometry/{probe,analysis,sentinel}.slurm` +
+`submit_encoder_geometry.sh`; `reports/encoder_geometry/{PRE_REGISTRATION,
+ENCODER_GEOMETRY}.md`. Reuses `cytokine_mil/analysis/full90_tube_io.py`,
+`scripts/analyze_encsweep.py:diversity` and `cascadir.models.InstanceEncoder` unchanged.
