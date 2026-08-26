@@ -2392,3 +2392,68 @@ train_encsweep_chunk,ig_encsweep,analyze_encsweep,run_demo_encsweep}.py`;
 `scripts/_oes90_pure_estimator.py` (`save_model_head` records the model's actual attention
 width instead of a config constant), `scripts/diagnose_oes90_pure_signature_sign.py`
 (`--conditions`). Reuses the §36 tube shards read-only.
+
+### 38.3 Results (2026-08-26) — breadth FALSIFIED; the lever is Stage-1 *volume*, not breadth
+
+Ran end-to-end (jobs 31378970–31378983). `prepare` confirmed the budget holds: 38,784
+unique PBS cells available against a 36,000 target, so all four arms got 35,490–35,910
+cells (within 1.2% of each other) over the same 18 cell types. The secondary `sign` stage
+failed; `analysis` was wired `afterok:$IG,afterany:$SIGN` precisely so that could not cost
+the primary readout, and it did not.
+
+**The ladder is flat. There is no breadth effect.**
+
+| arm | encoder conds | top-5 pool | worst top-5 gene | meanJ | collapse |
+|---|---:|---:|---|---:|---:|
+| `pbs_only` | 1 | 40 | DOCK4 13/24 | 0.257 | 4.3× |
+| `rand18` | 19 | 39 | ZEB2 16/24 | 0.203 | 4.0× |
+| `rand45` | 46 | 44 | ANK3 17/24 | 0.237 | 4.0× |
+| `all90` | 91 | 44 | LRMDA 10/24 | 0.180 | 4.0× |
+
+Not merely non-monotone — **inverted**: `all90` (the supposedly-broken regime) is the *most*
+diverse by meanJ, and `pbs_only` (the candidate fix) the *least*. The §38.1 decision rule's
+third branch fires: all four arms look like §37 (4.0–4.3× vs §37's 4.6×), none approaches
+published's 2.4×. The `seen`/`unseen` contrast is contradictory across arms (rand18 seen
+0.148 vs unseen 0.218; rand45 seen 0.264 vs unseen 0.216), so there is no familiarity
+effect either.
+
+**The gap to published is real, not a panel artifact.** The sweep's seeded-random 24 is
+enriched for weak PBMC responders (GDNF, PRL, VEGF, IL-31, IL-17E …), which could inflate
+overlap on its own. Restricting both sides to the **6 cytokines the two panels share**
+(CD30L, GM-CSF, IL-10, IL-13, IL-6, VEGF) removes that confound and the gap survives:
+published meanJ **0.058** (232 distinct genes, collapse 1.29×) against 0.123–0.285 for the
+arms (139–197 genes, 1.52–2.16×). Computed with `analyze_encsweep.diversity`, same function
+both sides.
+
+**What this rules out.** The arms pinned embed 512, hidden (512,512), Stage-1 20 epochs with
+no early stopping, k=10, top_n=50, Stage-2 250 @ 3e-5 — all at published values. So encoder
+**width**, **tube count k**, **epochs**, **top_n**, and **condition breadth** are now all
+controlled and none of them explains the collapse. Combined with §38's earlier eliminations
+(over-training, cell-level memorisation, ranking-convention bugs), the surviving suspects
+are few.
+
+**What remains, largest first.** Published Stage-1 does not resemble any sweep arm in
+*volume* or *donor structure*: `build_stage1_manifest` (`cytokine_mil/experiment_setup.py`)
+takes **one tube per cytokine** at `tube_idx == 0`, rotating donors. For the missing16 run
+that is 16 cytokines + PBS = **17 tubes ≈ 7.5K cells**, each cytokine contributed by exactly
+**one** donor — against the sweep's 36K cells balanced over all 10 donors. Three uncontrolled
+variables, in order of size:
+1. **Stage-1 cell volume** — ~7.5K vs 36K, a 5× difference. The sweep pinned this at 36K
+   deliberately (so breadth would not be confounded with gradient exposure) and in doing so
+   pinned it far from the published value.
+2. **Stage-1 donor confounding** — published entangles condition with donor by construction;
+   the sweep balances them. A donor-balanced encoder can learn cell type *invariantly to
+   donor*, which is a cleaner cell-type detector.
+3. **D2/D3 in Stage-1** — published includes them (`train_oesinghaus_binary_missing16.py:150`
+   applies `VAL_DONORS` only to the Stage-2 split); every sweep arm excludes them per §16.
+
+(1) and (2) both point the same way as the already-measured second-order result
+**ρ(loss_final, frac_up) = +0.53**: the *better* Stage 1 fits the cell-type task, the *worse*
+the signature. A less-fit encoder retains more within-cell-type nuisance variance — which is
+exactly the cytokine signal. That reframes the mechanism from "how many conditions the
+encoder sees" to "how completely the encoder solves cell-type classification", and it is
+still a settings knob, not a method change.
+
+**Honest status.** This does not rescue the method and does not validate the published 88%
+(that anchor still has Stage-1 D2/D3 leakage). It removes five candidate explanations and
+leaves a sharper, cheaper one. Direction ≠ existence ≠ causation (§26.4) carries over.
