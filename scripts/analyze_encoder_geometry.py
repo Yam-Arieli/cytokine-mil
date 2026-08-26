@@ -36,6 +36,19 @@ from probe_encoder_gene_geometry import spearman  # noqa: E402
 PRIMARY = "jacobian"   # the probe with the mechanistic chain to IG
 
 
+def md(df: pd.DataFrame, index: bool = False) -> str:
+    """Markdown table, falling back to plain text where `tabulate` is unavailable.
+
+    The cluster venv is not guaranteed to have it, and a missing formatting dependency
+    must never cost the verdict.
+    """
+    try:
+        return df.to_markdown(index=index, floatfmt=".3f")
+    except ImportError:
+        return "```\n" + df.to_string(index=index,
+                                       float_format=lambda x: f"{x:.3f}") + "\n```"
+
+
 def measured_diversity(fit: dict, top_n: int) -> dict | None:
     """meanJ for one fit, from its own signature table, on the §38 footing."""
     if not fit.get("signatures"):
@@ -170,7 +183,10 @@ def main() -> int:
                              "collapse_x": d["collapse_x"], "n_cytokines": d["n_cytokines"]})
     div = pd.DataFrame(div_rows)
     if len(div):
-        geo = geo.merge(div, on="fit", how="left", suffixes=("", "_sig"))
+        # drop any diversity columns a previous analyze run already merged in, so re-running
+        # refreshes them instead of appending a second suffixed copy
+        geo = geo.drop(columns=[c for c in div.columns if c != "fit" and c in geo.columns])
+        geo = geo.merge(div, on="fit", how="left")
         div.to_csv(out / "measured_diversity.csv", index=False)
     geo.to_csv(out / "gene_geometry.csv", index=False)
 
@@ -186,12 +202,12 @@ def main() -> int:
                         "raw_var_top1", "mean_cos_u1", "norm_gini", "rho_freq_norm",
                         "mean_jaccard"] if c in real.columns]
     A("## Per-fit geometry\n")
-    A(real[cols].sort_values("raw_pr_frac").to_markdown(index=False, floatfmt=".3f") + "\n")
+    A(md(real[cols].sort_values("raw_pr_frac")) + "\n")
 
     # ---- B1 -----------------------------------------------------------------
     A("## B1 — do collapsed fits have a lower-rank gene map?\n")
     grp = real.groupby("code_path").raw_pr_frac.agg(["mean", "min", "max", "count"])
-    A(grp.to_markdown(floatfmt=".3f") + "\n")
+    A(md(grp, index=True) + "\n")
     cm = real[real.code_path == "cytokine_mil"].raw_pr_frac
     cd = real[real.code_path == "cascadir"].raw_pr_frac
     b1 = bool(len(cm) and len(cd) and cm.mean() > cd.mean() and cm.min() > cd.max())
@@ -214,7 +230,7 @@ def main() -> int:
     if "rho_freq_norm" in real.columns:
         b3t = real[["fit", "code_path", "rho_freq_norm", "rho_freq_cos_u1",
                     "sig_gene_norm_ratio"]].copy()
-        A(b3t.to_markdown(index=False, floatfmt=".3f") + "\n")
+        A(md(b3t) + "\n")
         hm = real[real.code_path == "cytokine_mil"].rho_freq_norm.mean()
         hc = real[real.code_path == "cascadir"].rho_freq_norm.mean()
         b3 = bool(np.isfinite(hc) and np.isfinite(hm) and hc > 0.2 and hc > hm + 0.15)
