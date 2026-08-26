@@ -2652,3 +2652,47 @@ analyze_encoder_geometry,run_demo_encoder_geometry}.py`; `tests/test_encoder_geo
 `submit_encoder_geometry.sh`; `reports/encoder_geometry/{PRE_REGISTRATION,
 ENCODER_GEOMETRY}.md`. Reuses `cytokine_mil/analysis/full90_tube_io.py`,
 `scripts/analyze_encsweep.py:diversity` and `cascadir.models.InstanceEncoder` unchanged.
+
+### 39.5 Results (2026-08-26) — the bottleneck is REAL and severe, and it explains nothing
+
+Ran end-to-end (jobs 31383695–31383698, no sentinel fired). The pre-registered verdict and
+the answer to the question actually posed point in opposite directions, so both are stated.
+
+**The bottleneck exists, and it is severe.** This had never been measured. Against its own
+matched untrained control, every trained encoder collapses the one-hot gene map by
+**2.4×–6.9×**, to an effective **2.6–8.4 dimensions out of 512–1024**. A **single direction
+carries 34–62%** of all gene-response variance, and the average gene *pair* sits at
+`|cos| = 0.34–0.61`. On the Jacobian at real cells it is less extreme but still large —
+4000 genes → ~85–108 effective dimensions. Genes really do unite; the intuition was right.
+
+**And it is not in the layer one would expect.** The first-layer *weights* stay near full
+rank — PR **453.7–453.9 of 512**, a spread of 0.23 across every 512-wide fit, i.e.
+indistinguishable. The linear 4000→512 squeeze is not where genes merge; the collapse
+emerges through the LayerNorm and the downstream blocks.
+
+**But it does not explain the signature collapse.** B1, B2, B3 all fail; **B4 fires**.
+
+| | |
+|---|---|
+| B1 no-overlap by code path (`jacobian`) | **NOT SUPPORTED** — cytokine_mil PR/d 0.186–0.210 vs cascadir 0.166–0.223, overlapping |
+| B2 `Spearman(PR/d, meanJ)` over the 8 sweep arms | **NOT SUPPORTED** — +0.084 (pre-registered ≤ −0.7) |
+| B3 shared genes are the high-response ones | **NOT SUPPORTED** — ρ 0.035–0.141, and *higher* in the healthy fits (0.130) than the collapsed ones (0.085) |
+
+**What the geometry actually tracks is Stage-1 volume.** On the 13 dimensionally identical
+512-wide fits, `Spearman(PR, stage1_cells) = −0.894` on **both** probes. Every fit lands
+where its Stage-1 cell count says it should: ~7.3–7.5K cells → PR 5.8–7.1; ~20K → 4.9–5.4;
+~35–40K → 2.6–3.2. The apparent sort by code path is that, not the path — the
+`cytokine_mil` fits all use `build_stage1_manifest` (one tube per condition, low volume).
+Collected by `scripts/collect_stage1_volume.py` from each run's own recorded metadata.
+
+**The decisive contrast** settles it at matched volume: `published_runB` (7,526 Stage-1
+cells, PR 5.83, meanJ **0.079**) vs `s1sweep_vol_small` (7,280 cells, PR 7.11, meanJ
+**0.365**). The fit with the **better-preserved** gene geometry has signatures **4.6×
+worse**. Gene-space geometry cannot be what determines signature specificity. This is a
+falsification, not a flat null — the geometry varies 2.7× and simply points elsewhere.
+
+**Status.** §38's list of eliminated explanations grows by one, and the search moves
+**downstream of the encoder** — to the attention/classifier head or the IG path, which is
+where §38.5's code-path hypothesis would also have to act. The statistic carries its own
+positive control (planted rank-3 reads PR≈3, rank-8 reads PR≈8), so the null is not a broken
+metric. Full writeup + 5 figures: `reports/encoder_geometry/ENCODER_GEOMETRY.md`.
