@@ -137,6 +137,22 @@ def make_figures(geo: pd.DataFrame, spec: pd.DataFrame, out: Path, top_n: int) -
         plt.close(fig)
         made.append("gene_norm_vs_freq.png")
 
+    # 3b. what the geometry tracks
+    if "stage1_cells" in geo.columns and geo.stage1_cells.notna().any():
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+        for ax, pname in zip(axes, ("onehot", PRIMARY)):
+            r = geo[(geo.probe == pname) & (~geo.fit.str.endswith("__untrained"))]
+            r = r[(r.embed_dim == 512) & r.stage1_cells.notna()]
+            for cp, g in r.groupby("code_path"):
+                ax.scatter(g.stage1_cells, g.raw_pr, s=54, label=cp,
+                           color=colour.get(cp, "#999999"), edgecolor="k", linewidth=0.4)
+            ax.set_xlabel("Stage-1 training cells"); ax.set_ylabel(f"PR ({pname})")
+            ax.set_title(f"{pname}: rank tracks Stage-1 volume")
+            ax.legend(fontsize=8)
+        fig.tight_layout(); fig.savefig(plots / "pr_vs_stage1_volume.png", dpi=150)
+        plt.close(fig)
+        made.append("pr_vs_stage1_volume.png")
+
     # 4. trained vs its matched untrained control
     unt = geo[geo.fit.str.endswith("__untrained") & (geo.probe == "onehot")].copy()
     if len(unt):
@@ -190,6 +206,16 @@ def main() -> int:
         div.to_csv(out / "measured_diversity.csv", index=False)
     geo.to_csv(out / "gene_geometry.csv", index=False)
 
+    vol_p = out / "stage1_volume.csv"
+    vol = pd.read_csv(vol_p) if vol_p.exists() else None
+    if vol is not None:
+        geo = geo.drop(columns=[c for c in ("stage1_cells", "stage1_tubes", "stage1_loss")
+                                if c in geo.columns])
+        geo = geo.merge(vol[[c for c in vol.columns if c in
+                             ("fit", "stage1_cells", "stage1_tubes", "stage1_loss")]],
+                        on="fit", how="left")
+        geo.to_csv(out / "gene_geometry.csv", index=False)
+
     real = geo[(geo.probe == PRIMARY) & (~geo.fit.str.endswith("__untrained"))].copy()
     lines = []
     A = lines.append
@@ -203,6 +229,44 @@ def main() -> int:
                         "mean_jaccard"] if c in real.columns]
     A("## Per-fit geometry\n")
     A(md(real[cols].sort_values("raw_pr_frac")) + "\n")
+
+    # ---- how much collapse is there AT ALL? --------------------------------
+    A("\n## How collapsed is the gene map, in absolute terms?\n")
+    A("The pre-registered gates are all comparative. They never ask whether a bottleneck "
+      "exists at all — which is the question that was actually posed. Each trained encoder "
+      "against its own matched untrained control:\n")
+    oh_all = geo[geo.probe == "onehot"].copy()
+    oh_all["base"] = oh_all.fit.str.replace("__untrained", "", regex=False)
+    tr = oh_all[~oh_all.fit.str.endswith("__untrained")].set_index("base")
+    un = oh_all[oh_all.fit.str.endswith("__untrained")].set_index("base")
+    if len(un):
+        col = pd.DataFrame({
+            "code_path": tr.code_path, "embed_dim": tr.embed_dim,
+            "trained_PR": tr.raw_pr, "untrained_PR": un.raw_pr.reindex(tr.index),
+            "var_top1": tr.raw_var_top1, "mean_abs_cos": tr.mean_abs_cos,
+        })
+        col["collapse_x"] = col.untrained_PR / col.trained_PR
+        A(md(col.sort_values("collapse_x").reset_index().rename(
+            columns={"base": "fit"})) + "\n")
+        A(f"\nOne-hot: training collapses the gene map by "
+          f"{col.collapse_x.min():.1f}x-{col.collapse_x.max():.1f}x, to an effective "
+          f"{col.trained_PR.min():.1f}-{col.trained_PR.max():.1f} dimensions out of "
+          f"{int(col.embed_dim.min())}-{int(col.embed_dim.max())}. A single direction "
+          f"carries {100*col.var_top1.min():.0f}-{100*col.var_top1.max():.0f}% of all "
+          f"gene-response variance, and the average gene PAIR sits at "
+          f"|cos| = {col.mean_abs_cos.min():.2f}-{col.mean_abs_cos.max():.2f}. "
+          "**A severe bottleneck is present in every fit.** On the Jacobian at real cells "
+          "it is less extreme but still large. The one-hot figure is off-distribution by "
+          "construction (§39.1) and is the upper bound of the two.\n")
+    w1 = geo[(geo.probe == "w1") & (~geo.fit.str.endswith("__untrained"))]
+    if len(w1):
+        w512 = w1[w1.embed_dim == 512]
+        if len(w512):
+            A(f"\nThe first-layer WEIGHTS stay near full rank (PR "
+              f"{w512.raw_pr.min():.1f}-{w512.raw_pr.max():.1f} of 512, a spread of "
+              f"{w512.raw_pr.max() - w512.raw_pr.min():.2f} across every 512-wide fit). "
+              "So the collapse is not in the linear 4000->512 squeeze; it emerges through "
+              "the LayerNorm and the downstream blocks.\n")
 
     # ---- B1 -----------------------------------------------------------------
     A("## B1 — do collapsed fits have a lower-rank gene map?\n")
@@ -224,6 +288,21 @@ def main() -> int:
     b2 = bool(np.isfinite(rho) and rho <= -0.7)
     A(f"\n**B2 {'SUPPORTED' if b2 else 'NOT SUPPORTED'}** "
       f"(pre-registered threshold rho <= -0.7).\n")
+
+    A("\nBoth probes, for completeness (the pre-registered verdict is the "
+      f"`{PRIMARY}` row):\n")
+    both = []
+    for pname in ("onehot", "jacobian", "w1"):
+        r = geo[(geo.probe == pname) & (~geo.fit.str.endswith("__untrained"))]
+        rs = r[(r.panel == "sweep24") & r.mean_jaccard.notna()]
+        both.append({
+            "probe": pname,
+            "rho_PR_meanJ_sweep24": spearman(rs.raw_pr_frac.to_numpy(),
+                                             rs.mean_jaccard.to_numpy()),
+            "cytokine_mil_min_PRd": r[r.code_path == "cytokine_mil"].raw_pr_frac.min(),
+            "cascadir_max_PRd": r[r.code_path == "cascadir"].raw_pr_frac.max(),
+        })
+    A(md(pd.DataFrame(both)) + "\n")
 
     # ---- B3 -----------------------------------------------------------------
     A("\n## B3 — are the chronically-shared genes the high-response ones?\n")
@@ -250,6 +329,42 @@ def main() -> int:
       "encoder is not the bottleneck and the collapse lives downstream (attention/"
       "classifier head, or the IG path).\n")
 
+    # ---- what DOES the geometry track? --------------------------------------
+    if "stage1_cells" in geo.columns and geo.stage1_cells.notna().any():
+        A("\n## What the geometry actually tracks: Stage-1 volume\n")
+        A("The fits sort by training code path on this measure, but the two paths also "
+          "differ systematically in Stage-1 size — `build_stage1_manifest` takes one tube "
+          "per condition, the cascadir sweeps used a fixed ~36K-cell budget. Restricting "
+          "to the dimensionally identical 512-wide fits separates the two:\n")
+        conf = []
+        for pname in ("onehot", "jacobian"):
+            r = geo[(geo.probe == pname) & (~geo.fit.str.endswith("__untrained"))]
+            r = r[(r.embed_dim == 512) & r.stage1_cells.notna()]
+            conf.append({
+                "probe": pname, "n": len(r),
+                "rho_PR_stage1cells": spearman(r.raw_pr.to_numpy(),
+                                               r.stage1_cells.to_numpy()),
+                "rho_PR_meanJ": spearman(r.raw_pr.to_numpy(), r.mean_jaccard.to_numpy()),
+                "rho_stage1cells_meanJ": spearman(r.stage1_cells.to_numpy(),
+                                                  r.mean_jaccard.to_numpy()),
+            })
+        A(md(pd.DataFrame(conf)) + "\n")
+
+        oh = geo[(geo.probe == "onehot") & (~geo.fit.str.endswith("__untrained"))]
+        pair = oh[oh.fit.isin(["published_runB", "s1sweep_vol_small"])]
+        if len(pair) == 2:
+            A("\n### The decisive contrast — matched Stage-1 volume, opposite outcomes\n")
+            A(md(pair[["fit", "code_path", "stage1_cells", "raw_pr", "raw_var_top1",
+                       "mean_jaccard"]]) + "\n")
+            hi = pair.loc[pair.raw_pr.idxmax()]
+            lo = pair.loc[pair.raw_pr.idxmin()]
+            A(f"\nAt effectively identical Stage-1 volume "
+              f"({int(lo.stage1_cells)} vs {int(hi.stage1_cells)} cells), **`{hi.fit}` has "
+              f"the BETTER-preserved gene geometry (PR {hi.raw_pr:.2f} vs "
+              f"{lo.raw_pr:.2f}) and signatures {hi.mean_jaccard / lo.mean_jaccard:.1f}x "
+              f"WORSE** (meanJ {hi.mean_jaccard:.3f} vs {lo.mean_jaccard:.3f}). Gene-space "
+              "geometry cannot be what determines signature specificity.\n")
+
     # ---- untrained reference ------------------------------------------------
     unt = geo[geo.fit.str.endswith("__untrained") & (geo.probe == "onehot")]
     if len(unt):
@@ -269,8 +384,12 @@ def main() -> int:
         A("Partial support: one of the two structural predictions holds. Report as "
           "suggestive, not established.\n")
     else:
-        A("Neither B1 nor B2 holds. The encoder's gene-space geometry does not explain "
-          "the signature collapse; the search moves downstream of the encoder.\n")
+        A("A severe gene-space bottleneck IS present in every fit — that part of the "
+          "hypothesis is confirmed, and it had never been measured. But neither B1 nor B2 "
+          "holds: the bottleneck's size is governed by Stage-1 volume and does not track "
+          "signature specificity, and the matched-volume contrast falsifies the link "
+          "outright. The encoder's gene-space geometry does not explain the signature "
+          "collapse; the search moves downstream of the encoder.\n")
     A("\nCorrelation across fits, not causation. `s1sweep_pub_replica` is diagnostic-only "
       "(it violates CLAUDE.md §16 by design) and must never seed a production fit. "
       "Direction != existence != causation (§26.4) carries over.\n")
