@@ -2511,3 +2511,65 @@ directory rather than against a fixed set, and the analyzer reads its arm list a
 header from the meta the prepare stage wrote. `sign.slurm` also gained the chunk-merge that
 was missing in §38.3 (it ran before `analysis` had written `signatures.parquet`, which is
 why that stage failed there).
+
+### 38.5 Results (2026-08-26) — all three contrasts falsified; the separating variable is the CODE PATH
+
+The construction sweep ran clean (jobs 31383084–31383096, no sentinel fired). `vol_large`
+reproduced §38.3's `all90` **exactly** (44 / LRMDA 10-of-24 / 0.180 / 298 / 4.0×), which
+also confirms the harness is deterministic across DAG runs.
+
+| arm | top-5 pool | worst top-5 gene | meanJ | distinct/1200 | collapse |
+|---|---:|---|---:|---:|---:|
+| `pub_replica` (D2/D3 IN) | 33 | MS4A6A 21/24 | 0.394 | 227 | 5.3× |
+| `pub_replica_clean` | 51 | CTSB 12/24 | 0.197 | 310 | 3.9× |
+| `vol_large` (36K balanced) | 44 | LRMDA 10/24 | 0.180 | 298 | 4.0× |
+| `vol_small` (7.5K balanced) | 29 | ANK3 20/24 | 0.365 | 249 | 4.8× |
+
+- **D2/D3 leakage — the opposite of feared.** Including the held-out donors makes signatures
+  *worse* (0.197 → 0.394). The published anchor's specificity is **not** bought by its
+  Stage-1 leakage; if anything the leakage worked against it. This is the one clearly good
+  piece of news for the 88%.
+- **Donor structure — no effect.** 0.197 vs 0.180 at comparable volume, mixed in sign across
+  the four measures.
+- **Stage-1 volume — backwards.** Less data is *worse* (7.5K 0.365 vs 36K 0.180), falsifying
+  §38.4's hypothesis and the ρ(loss_final, frac_up) reading that motivated it.
+
+**Also eliminated, at no compute cost:**
+- *Merge artifact.* The published parquet merges two runs with different encoders, which
+  could mechanically depress cross-cytokine overlap. Between-run meanJ 0.053 vs within-run
+  0.062 (run A, 8 cyt) and 0.079 (run B, 16 cyt) — a small effect, not the gap.
+- *Panel composition.* Run B alone (single encoder, and it contains Decorin, CD30L, VEGF,
+  IL-35, IL-9 — weak PBMC responders) still sits at **0.079**.
+- *Cell-type stratification.* `pub_replica_clean` reads **whole pseudo-tubes**, which are
+  stratified 30-per-cell-type by construction, and still lands at 0.197.
+
+**What separates every fit measured so far is which training code ran.**
+
+| path | fits | meanJ |
+|---|---|---|
+| `cytokine_mil` | published anchor (24 cyt), §31 recurrent-IG seeds 42 and 123 (45 cyt) | **0.065, 0.077, 0.073** |
+| `cascadir` | §36 full90, §37 PURE (×2), all four §38.3 arms, all four §38.4 arms | **0.178 – 0.394** |
+
+Fourteen fits, zero overlap, across wildly varying settings and two seeds. Scored with
+`scripts/compare_fit_diversity.py`, which reuses `analyze_encsweep.diversity` unchanged.
+
+**What is NOT the difference** (each diffed line by line): `InstanceEncoder`,
+`AttentionModule`, `BagClassifier`, the MIL forward, `generate_epoch_megabatches` /
+`_epoch_megabatches`, the accumulate-and-step function, `train_encoder`'s schedule, the IG
+routine, the PBS baseline, `target_class=0`, `BinaryLabel(positive→0)`, and
+`np.argsort(-ig_mean)`. All are faithful copies.
+
+**Honest caveat on the claim.** The two `cytokine_mil` fits both build Stage 1 with
+`build_stage1_manifest` over a condition *subset* and are evaluated on their own panels, so
+path is not perfectly orthogonal to breadth and panel. Both of those were separately
+falsified (§38.3 flat across 1/19/46/91; run-B-only at 0.079 on weak responders), and the
+sharpest single pair is **§31 recurrent-IG at 45 conditions = 0.077 vs `rand45` at 46
+conditions = 0.237**. But this is a strong *hypothesis*, not yet a controlled result: the
+decisive test is running the same Stage-1 cells and the same tubes through both paths and
+comparing, which is also the reproducer needed to bisect the cause.
+
+**Why this matters beyond §38.** CLAUDE.md §29 states `cascadir` "mirrors the research code".
+If the paths genuinely diverge on signature specificity, that touches everything fitted
+through `cascadir` — §30 (COVID), §31's coupling panel, §32 (vaccination), §36, §37, §38 —
+and the packaged method itself. It does **not** touch the published Oesinghaus/Sheu/ID
+direction numbers, which were produced on the research path.
