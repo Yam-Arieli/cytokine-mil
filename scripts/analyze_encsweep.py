@@ -115,8 +115,11 @@ def main() -> int:
     out = Path(args.out_dir)
     meta = C.read_json(out / "encsweep_meta.json")
 
+    # Arms come from the meta the prepare stage wrote, not from C.ARMS, so this same
+    # analyzer serves both sweeps (§38.1 breadth, §38.4 Stage-1 construction).
+    arms = list(meta["arms"].keys()) or list(C.ARMS)
     rows, sign_rows, loss_rows = [], [], []
-    for arm in C.ARMS:
+    for arm in arms:
         adir = C.arm_dir(out, arm)
         df = merge_chunks(adir)
         if df is None:
@@ -149,23 +152,46 @@ def main() -> int:
         C.log("[abort] no arm produced signatures")
         return 1
 
-    div = pd.DataFrame(rows).sort_values("n_encoder_conditions")
+    # The construction sweep gives every arm all 91 conditions, so sorting by breadth
+    # would be arbitrary there; fall back to the meta's arm order (the design order).
+    div = pd.DataFrame(rows)
+    div = (div.sort_values("n_encoder_conditions")
+           if div.n_encoder_conditions.nunique() > 1 else div)
     div.to_csv(out / "arm_diversity.csv", index=False)
     sign = pd.DataFrame(sign_rows) if sign_rows else None
     loss = pd.DataFrame(loss_rows) if loss_rows else None
 
+    # Two sweeps share this analyzer and describe their arms differently: the breadth
+    # sweep pins one cell budget for every arm, the construction sweep varies volume and
+    # donor structure on purpose. Report whichever the prepare stage actually recorded.
+    is_construction = meta.get("sweep") == "stage1_construction"
+    if is_construction:
+        budget_line = (
+            "Stage-1 sets differ BY DESIGN: `pub_replica*` are one tube per condition "
+            "(one donor each, `build_stage1_manifest`'s rule); `vol_*` are donor-balanced "
+            f"at {meta.get('vol_small_cells')} and {meta.get('vol_large_cells')} cells.  "
+        )
+    else:
+        budget_line = (f"Stage-1 budget: {meta['stage1_budget']} cells per arm "
+                       f"(target {meta['stage1_budget_target']}).  ")
+
     lines = [
-        "# Encoder condition-breadth sweep — arm comparison",
+        "# Stage-1 construction sweep — arm comparison" if is_construction
+        else "# Encoder condition-breadth sweep — arm comparison",
         "",
         f"Panel: seeded-random {len(meta['panel'])} of 90 (seed {meta['panel_seed']}).  ",
-        f"Stage-1 budget: {meta['stage1_budget']} cells per arm "
-        f"(target {meta['stage1_budget_target']}).  ",
+        budget_line,
         f"Pinned: embed {meta['pinned']['embed_dim']}, hidden "
         f"{tuple(meta['pinned']['hidden_dims'])}, Stage-1 "
         f"{meta['pinned']['stage1_epochs']} epochs (no early stopping), "
         f"k={len(meta['main_tube_indices'])} tubes, top_n={meta['pinned']['top_n']}.",
         "",
-        "Encoder arms are nested: rand18 ⊂ rand45 ⊂ all90.",
+        ("Contrasts — each pair differs in ONE variable: "
+         "`pub_replica` vs `pub_replica_clean` = D2/D3 leakage; "
+         "`pub_replica_clean` vs `vol_large` = donor structure; "
+         "`vol_small` vs `vol_large` = Stage-1 volume. "
+         "`pub_replica` deliberately breaks §16 to size the leakage — diagnostic only.")
+        if is_construction else "Encoder arms are nested: rand18 ⊂ rand45 ⊂ all90.",
         "",
         "## Signature diversity (the readout)",
         "",
@@ -186,7 +212,8 @@ def main() -> int:
         "(2.4x); §37 PURE 40, 14/24, 0.241, 261/1200 (4.6x).",
         "",
     ]
-    mixed = div[(div.n_seen > 1) & (div.n_unseen > 1)]
+    mixed = (div[(div.n_seen > 1) & (div.n_unseen > 1)]
+             if {"n_seen", "n_unseen"}.issubset(div.columns) else div.iloc[0:0])
     if len(mixed):
         lines += [
             "## Within-arm contrast: panel cytokines the encoder saw vs did not",

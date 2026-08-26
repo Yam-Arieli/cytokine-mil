@@ -2457,3 +2457,57 @@ still a settings knob, not a method change.
 **Honest status.** This does not rescue the method and does not validate the published 88%
 (that anchor still has Stage-1 D2/D3 leakage). It removes five candidate explanations and
 leaves a sharper, cheaper one. Direction ≠ existence ≠ causation (§26.4) carries over.
+
+### 38.4 The Stage-1 CONSTRUCTION sweep (2026-08-26) — volume, donor structure, leakage
+
+§38.3 falsified breadth while holding Stage-1 cell count at 36K. What it never varied is
+what the published anchor actually does differently: `build_stage1_manifest`
+(`cytokine_mil/experiment_setup.py`) takes **one tube per condition** at `tube_idx == 0`,
+rotating donors, so each condition is contributed by exactly **one** donor and the total is
+~17 tubes (~7.5K cells) — not 36K balanced over ten donors. Three variables were riding on
+that, and this sweep separates them. Everything else stays pinned at the published values
+and the readout panel is the **same seeded-random 24** as §38.3, so the arms are directly
+comparable to that table.
+
+| arm | Stage-1 construction |
+|---|---|
+| `pub_replica` | one tube per condition, rotating donors, **D2/D3 INCLUDED** |
+| `pub_replica_clean` | one tube per condition, rotating donors, D2/D3 excluded |
+| `vol_small` | donor-balanced, ~7.5K cells (the published Stage-1 magnitude) |
+| `vol_large` | donor-balanced, 36K cells (= §38.3's `all90` regime) |
+
+Each pair moves exactly one variable:
+
+| contrast | isolates |
+|---|---|
+| `pub_replica` vs `pub_replica_clean` | **D2/D3 leakage** — how much of the published anchor's advantage is held-out donors in Stage 1 |
+| `pub_replica_clean` vs `vol_large` | **donor structure** — condition⊗donor entangled vs balanced, at comparable volume |
+| `vol_small` vs `vol_large` | **Stage-1 volume** — 7.5K vs 36K, at matched structure |
+
+The replica arms use **all 91 conditions**, not the published 16: breadth is settled
+(§38.3), so spanning every condition keeps the run agnostic *and* decouples structure from
+volume, which a 17-condition replica would confound.
+
+**`pub_replica` deliberately violates §16** by putting the held-out donors into Stage 1.
+That is the measurement, not an oversight — it is the only way to size the leakage in the
+88% anchor. Its artefacts are diagnostic and **must never seed a production fit**; the
+arm records `includes_val_donors: true` in the meta, and Stage-2 tubes still exclude D2/D3
+in every arm.
+
+**Hypothesis under test.** Volume and donor structure both act through the same mechanism
+as the already-measured ρ(loss_final, frac_up) = +0.53: the *better* Stage 1 solves
+cell-type classification, the *worse* the signature, because cytokine response is
+within-cell-type nuisance variance to that objective. Less data, or donor-confounded data,
+leaves a less complete cell-type detector and more residual perturbation signal. If the
+volume and structure contrasts are both flat and only the leakage contrast moves, then the
+published anchor's specificity was substantially leakage — a far more serious finding, and
+one that bears directly on the 88%.
+
+**Implementation.** New: `scripts/prepare_s1sweep.py`, `scripts/run_demo_s1sweep.py`,
+`slurm/s1sweep/*` + `submit_s1sweep_dag.sh`. The encoder / train / IG / analysis stages and
+`_encsweep_config.py` are **reused unchanged in substance** — three edits make them serve
+both sweeps: `--arm` drops its `choices=` list, `arm_dir` validates the name as a safe
+directory rather than against a fixed set, and the analyzer reads its arm list and its
+header from the meta the prepare stage wrote. `sign.slurm` also gained the chunk-merge that
+was missing in §38.3 (it ran before `analysis` had written `signatures.parquet`, which is
+why that stage failed there).

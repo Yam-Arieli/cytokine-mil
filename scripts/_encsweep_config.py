@@ -35,6 +35,7 @@ This module holds no method math. Every statistic comes from `cascadir`.
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -122,8 +123,17 @@ N_CHUNKS = 4  # 24 panel cytokines / 4 tasks = 6 per task
 
 
 def arm_dir(out_dir, arm: str) -> Path:
-    if arm not in ARMS:
-        raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+    """Directory for one arm's artefacts.
+
+    Deliberately NOT validated against `ARMS`: this module is shared by the breadth sweep
+    (CLAUDE.md §38.1) and the Stage-1-construction sweep (§38.4), whose arm names differ.
+    What must still be rejected is a name that would escape `out_dir` or collide with the
+    run-level files sitting beside the arm directories.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_]+", arm or ""):
+        raise ValueError(
+            f"unsafe arm name {arm!r}; expected [A-Za-z0-9_]+ (it becomes a directory)"
+        )
     return Path(out_dir) / arm
 
 

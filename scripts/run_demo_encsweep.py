@@ -96,8 +96,9 @@ def assert_no_benchmark_references() -> None:
     scripts = REPO_ROOT / "scripts"
     # This file is the checker, not a stage: it necessarily contains the banned strings
     # in `banned` above, so scanning it would always self-trip.
-    stages = ["_encsweep_config", "prepare_encsweep", "train_encsweep_encoder",
-              "train_encsweep_chunk", "ig_encsweep", "analyze_encsweep"]
+    stages = ["_encsweep_config", "prepare_encsweep", "prepare_s1sweep",
+              "train_encsweep_encoder", "train_encsweep_chunk", "ig_encsweep",
+              "analyze_encsweep"]
     offenders = {n: h for n in stages if (h := scan(scripts / f"{n}.py"))}
     if offenders:
         raise AssertionError(f"sweep stages reference benchmark artefacts: {offenders}")

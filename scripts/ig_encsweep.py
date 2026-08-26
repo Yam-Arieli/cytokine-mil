@@ -26,7 +26,10 @@ import _oes90_pure_estimator as E  # noqa: E402
 def main() -> int:
     C.assert_agnostic()
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arm", required=True, choices=list(C.ARMS))
+    # No `choices=`: these same stages drive both the breadth sweep (CLAUDE.md §38.1)
+    # and the Stage-1-construction sweep (§38.4), whose arm names differ. The arm is
+    # validated by its directory existing, a few lines below.
+    ap.add_argument("--arm", required=True)
     ap.add_argument("--chunk_id", type=int, required=True)
     ap.add_argument("--n_chunks", type=int, default=C.N_CHUNKS)
     ap.add_argument("--out_dir", default=str(C.OUT_DIR))

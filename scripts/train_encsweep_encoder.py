@@ -27,7 +27,10 @@ import _encsweep_config as C  # noqa: E402
 def main() -> int:
     C.assert_agnostic()
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arm", required=True, choices=list(C.ARMS))
+    # No `choices=`: these same stages drive both the breadth sweep (CLAUDE.md §38.1)
+    # and the Stage-1-construction sweep (§38.4), whose arm names differ. The arm is
+    # validated by its directory existing, a few lines below.
+    ap.add_argument("--arm", required=True)
     ap.add_argument("--out_dir", default=str(C.OUT_DIR))
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--seed", type=int, default=C.SEED)
