@@ -169,3 +169,96 @@ def test_pipeline_end_to_end_equivalence(synthetic_adata):
         tbl_off["cross_asym_median"].to_numpy(),
         equal_nan=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# The invariant with a STOCHASTIC encoder configured.
+#
+# model.train() propagates into AbMil's encoder submodule, so an encoder built with
+# dropout would be stochastic during Stage 2 — while build_frozen_embedding_cache
+# builds under eval(). Without the frozen-encoder eval gate the two paths diverge and
+# the bit-identity guaranteed above silently stops holding. These lock the gate.
+# ---------------------------------------------------------------------------
+
+
+def _build_dropout_encoder(synthetic_adata, p: float):
+    proc = preprocess(synthetic_adata, assume="raw")
+    ts = build_pseudotubes(
+        proc,
+        condition_col="cytokine",
+        donor_col="donor",
+        celltype_col="cell_type",
+        control_label="PBS",
+        n_per_cell_type=15,
+        min_cells=8,
+        n_tubes=2,
+        seed=0,
+    )
+    enc = train_encoder(
+        proc,
+        celltype_col="cell_type",
+        embed_dim=16,
+        hidden_dims=(16, 16),
+        epochs=2,
+        device="cpu",
+        seed=0,
+        dropout=p,
+    )
+    return proc, ts, enc
+
+
+def test_dropout_encoder_still_trains_bit_identically_cached_vs_uncached(synthetic_adata):
+    _proc, ts, enc = _build_dropout_encoder(synthetic_adata, 0.5)
+    assert enc.dropout == 0.5
+    cond = ts.stimulus_conditions[0]
+
+    cached = train_binary_mil(
+        ts, cond, enc, epochs=3, device="cpu", seed=0, use_embedding_cache=True
+    )
+    uncached = train_binary_mil(
+        ts, cond, enc, epochs=3, device="cpu", seed=0, use_embedding_cache=False
+    )
+    assert _heads_equal(cached, uncached)
+
+
+def test_frozen_encoder_stays_in_eval_mode_during_stage2(synthetic_adata):
+    """The gate itself: training the head must not put the frozen encoder in train mode."""
+    _proc, ts, enc = _build_dropout_encoder(synthetic_adata, 0.5)
+    cond = ts.stimulus_conditions[0]
+    model = train_binary_mil(ts, cond, enc, epochs=2, device="cpu", seed=0)
+    assert model.encoder.training is False
+
+
+def test_dropout_encoder_is_deterministic_in_eval(synthetic_adata):
+    """Signatures must be reproducible: IG runs under eval(), so dropout is inert there."""
+    _proc, ts, enc = _build_dropout_encoder(synthetic_adata, 0.5)
+    enc.eval()
+    x = torch.from_numpy(np.ascontiguousarray(ts.tubes[0].X, dtype=np.float32))
+    with torch.no_grad():
+        a, b = enc(x), enc(x)
+    assert torch.equal(a, b)
+
+
+def test_dropout_zero_encoder_matches_an_encoder_built_without_the_argument(synthetic_adata):
+    """The default is not merely 'small' — it is the same weights, bit for bit."""
+    proc = preprocess(synthetic_adata, assume="raw")
+    kw = dict(celltype_col="cell_type", embed_dim=16, hidden_dims=(16, 16), epochs=2,
+              device="cpu", seed=0)
+    a = train_encoder(proc, **kw)
+    b = train_encoder(proc, **kw, dropout=0.0)
+    sd_a, sd_b = a.state_dict(), b.state_dict()
+    assert sd_a.keys() == sd_b.keys()
+    assert all(torch.equal(sd_a[k], sd_b[k]) for k in sd_a)
+
+
+def test_dropout_module_adds_nothing_to_the_state_dict(synthetic_adata):
+    """So existing checkpoints load, and any digest over state_dict is unaffected."""
+    proc = preprocess(synthetic_adata, assume="raw")
+    kw = dict(celltype_col="cell_type", embed_dim=16, hidden_dims=(16, 16), epochs=1,
+              device="cpu", seed=0)
+    plain = train_encoder(proc, **kw)
+    dropped = train_encoder(proc, **kw, dropout=0.5)
+    assert plain.state_dict().keys() == dropped.state_dict().keys()
+    # An encoder rebuilt WITHOUT the dropout argument can still load a dropout encoder's
+    # weights — which is what the §37 artifact loaders do.
+    plain.load_state_dict(dropped.state_dict())

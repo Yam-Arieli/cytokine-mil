@@ -95,8 +95,12 @@ from cascadir.pseudotubes import InMemoryTubeDataset, build_pseudotubes
 # Signatures
 from cascadir.signatures import (
     derive_signature,
+    curate_signatures,
     derive_signatures,
     integrated_gradients,
+    null_calibrated_max_occurrences,
+    null_expected_removal,
+    signature_gene_occurrences,
 )
 
 # Recurrent IG (opt-in signature trajectories — see cascadir.dynamics)
@@ -169,6 +173,10 @@ __all__ = [
     "integrated_gradients",
     "derive_signature",
     "derive_signatures",
+    "curate_signatures",
+    "signature_gene_occurrences",
+    "null_expected_removal",
+    "null_calibrated_max_occurrences",
     # recurrent IG (opt-in)
     "derive_signature_trajectory",
     "signature_trajectory_collector",

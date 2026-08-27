@@ -11,8 +11,11 @@ the cross_asym statistic cross-engages.
 from __future__ import annotations
 
 import logging
+from collections import Counter
+from math import comb
 
 import numpy as np
+import pandas as pd
 import torch
 
 from cascadir.exceptions import SignatureError
@@ -155,3 +158,151 @@ def derive_signatures(
             model, tube_set, cond, top_n=top_n, n_steps=n_steps, device=device
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Promiscuous-gene curation (OPT-IN)
+#
+# A gene that turns up in many conditions' signatures is, by construction, not
+# condition-specific: it is part of the shared activation program every stimulus
+# induces. Removing such genes from ALL signatures sharpens what remains. The one
+# thing you must not do is pick the cap by hand — see
+# `null_calibrated_max_occurrences` for why.
+# ---------------------------------------------------------------------------
+
+
+def signature_gene_occurrences(signatures: dict[str, Signature]) -> dict[str, int]:
+    """How many signatures each gene appears in. ``{gene: count}``, unsorted."""
+    return dict(Counter(g for sig in signatures.values() for g in sig.genes))
+
+
+def null_expected_removal(n_conditions: int, top_n: int, n_genes: int, cap: int) -> float:
+    """Expected fraction of ONE signature removed by ``cap`` under a uniform-random null.
+
+    Under the null every signature is ``top_n`` genes drawn uniformly from ``n_genes``.
+    A gene already in this signature is removed iff at least ``cap`` of the OTHER
+    ``n_conditions - 1`` signatures also contain it, so the fraction removed is
+    ``P(Binom(n_conditions - 1, top_n / n_genes) >= cap)``.
+    """
+    if n_conditions < 1 or top_n < 1 or n_genes < 1:
+        raise ValueError("null_expected_removal: n_conditions, top_n, n_genes must be >= 1.")
+    if cap < 1:
+        raise ValueError(f"null_expected_removal: cap must be >= 1; got {cap}.")
+    k_other = n_conditions - 1
+    if cap > k_other:
+        return 0.0
+    p = min(top_n / n_genes, 1.0)
+    below = sum(comb(k_other, k) * p**k * (1.0 - p) ** (k_other - k) for k in range(cap))
+    return max(0.0, min(1.0, 1.0 - below))
+
+
+def null_calibrated_max_occurrences(
+    n_conditions: int,
+    top_n: int,
+    n_genes: int,
+    *,
+    target_null_removal: float = 0.1052,
+) -> int:
+    """Smallest occurrence cap whose *expected null damage* stays within a budget.
+
+    A fixed cap means wildly different things at different scales, which makes
+    hand-picked caps dangerous. With K signatures of n genes drawn from G, a gene's
+    expected occurrence count under a uniform-random null is ``K * n / G`` — for
+    K=90, n=200, G=4000 that is **4.5**, so a cap of 3 would delete ~83% of every
+    signature even if the signatures were perfectly random. This function instead fixes
+    the *stringency*: it returns the smallest cap for which
+    :func:`null_expected_removal` does not exceed ``target_null_removal``.
+
+    The default target is ``null_expected_removal(24, 200, 4000, cap=3) = 0.1052`` —
+    i.e. "as stringent at your scale as a cap of 3 is on a 24-condition panel at
+    top-200". Removal observed **in excess** of the returned cap's null expectation is
+    a measure of how far the real signatures are from independent.
+
+    Returns:
+        The calibrated cap, in ``[1, n_conditions]``.
+    """
+    if not 0.0 < target_null_removal < 1.0:
+        raise ValueError(
+            "null_calibrated_max_occurrences: target_null_removal must be in (0, 1); "
+            f"got {target_null_removal}."
+        )
+    for cap in range(1, n_conditions + 1):
+        if null_expected_removal(n_conditions, top_n, n_genes, cap) <= target_null_removal:
+            return cap
+    return n_conditions
+
+
+def curate_signatures(
+    signatures: dict[str, Signature],
+    *,
+    max_occurrences: int,
+    min_genes: int = 1,
+) -> tuple[dict[str, Signature], pd.DataFrame]:
+    """Remove genes occurring in more than ``max_occurrences`` signatures, from ALL of them.
+
+    The removal is global and symmetric: a gene over the cap is dropped from every
+    signature that contains it, including the one where it ranked first. ``genes`` and
+    ``ig_scores`` are filtered with the same mask so they stay index-aligned, and the
+    original ``top_n`` is preserved on the rebuilt :class:`Signature` (it records the
+    size that was *requested*; ``len(genes)`` is what survived).
+
+    Conditions left with fewer than ``min_genes`` genes are **dropped from the returned
+    dict** — :class:`Signature` rejects an empty gene tuple, and a one-gene signature is
+    not a signature. Dropped conditions simply disappear from downstream pair tables
+    rather than producing NaNs, so compare a curated run against an uncurated one on the
+    intersection of their conditions.
+
+    Args:
+        signatures: ``{condition: Signature}``, e.g. from :func:`derive_signatures`.
+        max_occurrences: Cap on how many signatures a gene may appear in. Choose it with
+            :func:`null_calibrated_max_occurrences`, not by hand.
+        min_genes: Minimum surviving genes for a condition to be kept (default 1).
+
+    Returns:
+        ``(curated, report)``. ``report`` has one row per input condition with columns
+        ``condition, n_before, n_after, n_removed, frac_removed, dropped``.
+
+    Raises:
+        ValueError: if ``max_occurrences`` or ``min_genes`` is < 1.
+    """
+    if max_occurrences < 1:
+        raise ValueError(
+            f"curate_signatures: max_occurrences must be >= 1; got {max_occurrences}."
+        )
+    if min_genes < 1:
+        raise ValueError(f"curate_signatures: min_genes must be >= 1; got {min_genes}.")
+
+    counts = signature_gene_occurrences(signatures)
+    over_cap = {g for g, n in counts.items() if n > max_occurrences}
+
+    curated: dict[str, Signature] = {}
+    rows: list[dict] = []
+    for condition, sig in signatures.items():
+        keep = [i for i, g in enumerate(sig.genes) if g not in over_cap]
+        n_after = len(keep)
+        dropped = n_after < min_genes
+        if not dropped:
+            curated[condition] = Signature(
+                condition=sig.condition,
+                genes=tuple(sig.genes[i] for i in keep),
+                ig_scores=tuple(sig.ig_scores[i] for i in keep),
+                top_n=sig.top_n,
+            )
+        rows.append({
+            "condition": condition,
+            "n_before": len(sig.genes),
+            "n_after": n_after,
+            "n_removed": len(sig.genes) - n_after,
+            "frac_removed": (len(sig.genes) - n_after) / max(len(sig.genes), 1),
+            "dropped": dropped,
+        })
+
+    report = pd.DataFrame(rows).sort_values("condition").reset_index(drop=True)
+    logger.info(
+        "curate_signatures: cap=%d removed %d of %d distinct genes; "
+        "signature size %d -> %d (median); dropped %d of %d conditions.",
+        max_occurrences, len(over_cap), len(counts),
+        int(report["n_before"].median()), int(report["n_after"].median()),
+        int(report["dropped"].sum()), len(report),
+    )
+    return curated, report

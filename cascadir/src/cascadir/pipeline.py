@@ -40,7 +40,7 @@ from cascadir.signature_coupling import signature_coupling as _signature_couplin
 from cascadir.exceptions import DataValidationError, NotFittedError
 from cascadir.preprocess import preprocess
 from cascadir.pseudotubes import build_pseudotubes
-from cascadir.signatures import derive_signatures
+from cascadir.signatures import curate_signatures, derive_signatures
 from cascadir.train import train_all_binary, train_encoder
 from cascadir.types import (
     AxisResult,
@@ -99,6 +99,7 @@ class CascadeDirection:
         self.encoder = None
         self.models: dict = {}
         self.signatures: dict[str, Signature] = {}
+        self.signature_curation = None  # report DataFrame when curation is enabled
         self.signature_trajectories: dict[str, SignatureTrajectory] = {}
         self._cells_by_pair: dict | None = None
         self._fitted = False
@@ -295,6 +296,7 @@ class CascadeDirection:
             epochs=trc.encoder_epochs,
             lr=trc.encoder_lr,
             momentum=trc.momentum,
+            dropout=trc.encoder_dropout,
             device=self.device,
             seed=self.seed,
         )
@@ -355,6 +357,16 @@ class CascadeDirection:
             n_steps=cac.n_ig_steps,
             device=self.device,
         )
+        if cac.max_signature_occurrences is not None:
+            self.signatures, self.signature_curation = curate_signatures(
+                self.signatures, max_occurrences=cac.max_signature_occurrences
+            )
+            if not self.signatures:
+                raise DataValidationError(
+                    "CascadeDirection.fit: curation with max_signature_occurrences="
+                    f"{cac.max_signature_occurrences} emptied every signature. Pick the "
+                    "cap with cascadir.signatures.null_calibrated_max_occurrences."
+                )
         self._cells_by_pair = self.tube_set.cells_by_pair()
         self._fitted = True
         return self

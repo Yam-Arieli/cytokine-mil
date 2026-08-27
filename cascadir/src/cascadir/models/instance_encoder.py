@@ -57,6 +57,16 @@ class InstanceEncoder(nn.Module):
     Input:  ``x_i`` in R^G  (G = number of genes / HVGs)
     Output: ``h_i`` in R^embed_dim  (default 128)
 
+    ``dropout`` (default ``0.0``) inserts an OPT-IN dropout on the input of the final
+    ``down2`` block — i.e. immediately before the embedding is produced, so both
+    ``down2``'s main path and its linear skip see the same dropped input. It is a
+    Stage-1 regulariser: ``nn.Dropout`` is an identity in ``eval()`` mode, and the
+    frozen encoder is always run in ``eval()`` downstream (embedding cache, Stage-2
+    MIL training, and Integrated Gradients alike). At the ``0.0`` default the module is
+    an exact identity in BOTH modes, so every pre-existing fit is bit-identical; it also
+    carries no parameters or buffers, so ``state_dict`` (and any digest taken over it)
+    is unchanged whether or not dropout is configured.
+
     The ``cell_type_head`` (if ``n_cell_types`` is given) is used only during
     Stage-1 pre-training and is never passed to the MIL model.
     """
@@ -67,11 +77,15 @@ class InstanceEncoder(nn.Module):
         embed_dim: int = 128,
         n_cell_types: int | None = None,
         hidden_dims: tuple[int, int] = (512, 256),
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError(f"InstanceEncoder: dropout must be in [0, 1); got {dropout}.")
         self.input_dim = input_dim
         self.embed_dim = embed_dim
         self.hidden_dims = hidden_dims
+        self.dropout = dropout
         self._build_layers(input_dim, embed_dim)
         if n_cell_types is not None:
             self.cell_type_head: nn.Linear | None = nn.Linear(embed_dim, n_cell_types)
@@ -89,6 +103,9 @@ class InstanceEncoder(nn.Module):
         self.res1 = _ResBlock(h0)
         self.down1 = _DownBlock(h0, h1)
         self.res2 = _ResBlock(h1)
+        # Opt-in regularisation on the input of the final (embedding-producing) block.
+        # nn.Dropout(0.0) is an exact identity in train and eval mode alike.
+        self.pre_embed_drop = nn.Dropout(self.dropout)
         self.down2 = _DownBlock(h1, embed_dim)
 
     def _init_weights(self) -> None:
@@ -112,5 +129,6 @@ class InstanceEncoder(nn.Module):
         h = self.res1(h)
         h = self.down1(h)
         h = self.res2(h)
+        h = self.pre_embed_drop(h)
         h = self.down2(h)
         return h

@@ -89,6 +89,11 @@ class TrainConfig:
             effect when ``encoder_frozen`` is True (the default and only validated
             regime); with an unfrozen encoder the cache would be stale and is bypassed.
             Set False to force the full per-step encoder forward (e.g. to A/B verify).
+        encoder_dropout: OPT-IN dropout probability on the input of the encoder's final
+            (embedding-producing) block. ``0.0`` (default) = no dropout, bit-identical
+            to before. Active only while Stage 1 trains: the frozen encoder is run in
+            ``eval()`` mode everywhere downstream, so the embedding cache, Stage-2 MIL
+            training and Integrated Gradients all stay deterministic.
     """
 
     embed_dim: int = 128
@@ -103,6 +108,7 @@ class TrainConfig:
     checkpoint_ig_every_n_epochs: int | None = None
     checkpoint_ig_top_n: int | None = None
     cache_frozen_embeddings: bool = True
+    encoder_dropout: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -121,6 +127,13 @@ class CrossAsymConfig:
         weak_consensus: Minimum sign-consensus for a WEAK call (0.50).
         n_null_perms: Random-gene-set null permutations per pair (100). Set 0 to skip.
         null_seed: RNG seed for the null.
+        max_signature_occurrences: OPT-IN promiscuous-gene curation. ``None`` (default)
+            = no curation, bit-identical to before. If an int, every gene occurring in
+            MORE than this many signatures is removed from **all** of them after
+            derivation (see :func:`cascadir.signatures.curate_signatures`). Pick the cap
+            with :func:`cascadir.signatures.null_calibrated_max_occurrences` rather than
+            by hand — a fixed cap means very different things at different condition
+            counts and signature sizes.
     """
 
     top_n: int = 50
@@ -131,3 +144,4 @@ class CrossAsymConfig:
     weak_consensus: float = 0.50
     n_null_perms: int = 100
     null_seed: int = 42
+    max_signature_occurrences: int | None = None

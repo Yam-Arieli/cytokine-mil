@@ -312,9 +312,10 @@ symmetric, it changes only coupling (existence), never `cross_asym` (direction).
 - `TubeConfig(n_per_cell_type=30, min_cells=10, n_tubes=10, seed=0)`
 - `TrainConfig(embed_dim=128, hidden_dims=(512,256), attention_hidden_dim=64,
   encoder_epochs=50, binary_epochs=250, encoder_lr=0.01, binary_lr=3e-5, momentum=0.9,
-  encoder_frozen=True, cache_frozen_embeddings=True)`
+  encoder_frozen=True, cache_frozen_embeddings=True, encoder_dropout=0.0)`
 - `CrossAsymConfig(top_n=50, n_ig_steps=20, min_cells=10, magnitude_threshold=0.01,
-  strong_consensus=0.75, weak_consensus=0.50, n_null_perms=100, null_seed=42)`
+  strong_consensus=0.75, weak_consensus=0.50, n_null_perms=100, null_seed=42,
+  max_signature_occurrences=None)`
 
 Pass e.g. `CascadeDirection(..., train_config=cd.TrainConfig(binary_epochs=150))`. The
 defaults match the validated runs; change `top_n` (signature size) and `binary_epochs`
@@ -329,6 +330,51 @@ models and discovered signatures are **bit-identical** to the un-cached path —
 less compute (the encoder MLP dominates the FLOPs). Integrated Gradients is unaffected: it
 still runs the full reconnected model from gene inputs. Set `False` only to A/B verify.
 Automatically bypassed when `encoder_frozen=False`.
+
+**`encoder_dropout` (OPT-IN, default `0.0`).** Dropout on the input of the encoder's final
+(embedding-producing) block. It is a **Stage-1 regulariser only**: a frozen encoder is a
+fixed feature extractor and is kept in `eval()` mode everywhere downstream — the embedding
+cache, Stage-2 MIL training, and Integrated Gradients alike — so signatures stay
+deterministic and the `cache_frozen_embeddings` bit-identity above still holds. At `0.0`
+the module is an exact identity in both modes, carries no parameters or buffers, and
+leaves `state_dict` (and any digest over it) unchanged.
+
+---
+
+## 7.1 Promiscuous-gene curation (OPT-IN) — and why you must NOT pick the cap by hand
+
+A gene appearing in many conditions' signatures is, by construction, part of the shared
+activation program rather than any one condition's biology. `curate_signatures` removes
+every such gene from **all** signatures:
+
+```python
+from cascadir import curate_signatures, null_calibrated_max_occurrences
+
+cap = null_calibrated_max_occurrences(n_conditions=90, top_n=200, n_genes=4000)   # -> 8
+curated, report = curate_signatures(sigs, max_occurrences=cap)
+```
+
+Or declaratively: `CrossAsymConfig(max_signature_occurrences=cap)`, which makes `fit()`
+curate right after signature derivation and store the report on
+`est.signature_curation`. `None` (the default) is a no-op.
+
+**The trap.** A fixed cap means wildly different things at different scales. With `K`
+signatures of `n` genes drawn from `G`, a gene's expected occurrence count under a
+*uniform-random* null is `K*n/G`. For K=90, n=200, G=4000 that is **4.5** — so a cap of 3
+would delete ~83% of every signature *even if the signatures were perfectly random*. The
+same cap of 3 on a 24-condition panel at top-200 is mild (~10%). Always derive the cap
+from `null_calibrated_max_occurrences`, which returns the smallest cap whose
+`null_expected_removal` stays inside a stringency budget.
+
+**Read the excess, not the raw number.** Because the null expectation is closed-form,
+removal *in excess* of `null_expected_removal(K, n, G, cap)` is a quantitative measure of
+how far the real signatures are from independent — comparable across fits.
+
+**Two consequences to expect.** Curated-out genes become eligible for `direction_call`'s
+random-gene-set null (they are generic, so this is arguably right) which shifts `null_p`;
+and a condition curated down below `min_genes` is **dropped** from the returned dict, so
+it disappears from `direction_table`'s default pair list rather than producing NaNs —
+compare a curated fit against an uncurated one on the **intersection** of their conditions.
 
 ---
 

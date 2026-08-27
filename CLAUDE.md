@@ -2696,3 +2696,169 @@ falsification, not a flat null — the geometry varies 2.7× and simply points e
 where §38.5's code-path hypothesis would also have to act. The statistic carries its own
 positive control (planted rank-3 reads PR≈3, rank-8 reads PR≈8), so the null is not a broken
 metric. Full writeup + 5 figures: `reports/encoder_geometry/ENCODER_GEOMETRY.md`.
+
+---
+
+## 40. Oesinghaus-90 with a dropout encoder, top-200 signatures, and null-calibrated curation (2026-08)
+
+**Motivation.** §38 and §39 eliminated fifteen candidate explanations for the
+Oesinghaus-90 signature collapse (breadth, Stage-1 volume, donor structure, D2/D3
+leakage, encoder width, tube count k, epochs, `top_n`, over-training, cell-level
+memorisation, ranking conventions, merge artifacts, panel composition, cell-type
+stratification, and encoder gene-space geometry). §39.5 did establish that the trained
+encoder collapses the gene map hard — 4000 genes into ~85–108 effective Jacobian
+dimensions, a single direction carrying 34–62% of all gene-response variance — but that
+this collapse tracks Stage-1 cell **volume** and does **not** predict signature
+specificity. §40 stops diagnosing and intervenes, on three axes plus one protocol cleanup:
+
+1. **50% dropout immediately before the embedding layer** (`down2`'s input) — forces the
+   encoder to spread information across dimensions instead of routing it through a few.
+   A direct intervention on the §39.5 bottleneck.
+2. **Wider encoder** — `embed_dim` 512 → **1024**, `hidden_dims` (512,512) →
+   **(1024,1024)**, i.e. 2× the published "wide" config, giving dropout room to work.
+3. **top-200 signatures** instead of top-50/100.
+4. **Null-calibrated promiscuous-gene curation** — a gene appearing in more than `cap`
+   signatures is removed from **all** of them (§40.2).
+
+Coupling and direction are computed **twice** — on curated and uncurated signatures — so
+the curation carries a within-run A/B control.
+
+**This is a SEPARATE fit.** 66 of the 90 cytokines have no published signature. Never
+average or quote its numbers alongside the published 24/45-cytokine results, §36
+(`results/oes_full90/`), or §37 (`results/oes90_pure/`) — the §26.3 mixed-provenance rule.
+Path A's 121 axes, §26's 88%, and §28.2's gate validation are all unaffected.
+
+### 40.1 Locked decisions (taken with the user before the run)
+| | |
+|---|---|
+| Encoder width | `embed_dim=1024`, `hidden_dims=(1024,1024)` — 2× the published wide config |
+| Encoder dropout | **0.5**, on the input of `down2` (the final embedding block) |
+| Attention width | 128 (unchanged from §36/§37) |
+| Signature size | **`top_n=200`** |
+| Curation | **null-calibrated cap**, not the literal `>3` (§40.2) |
+| Condition set | all 90 cytokines + PBS; the **§36 shards reused read-only**, k=4 (`tube_idx 0–3` main, `4–7` reserve) |
+| Stage-1 stopping | **fixed 20 epochs**, 10% cell-type-stratified val split **recorded**, no early stopping, **no best-val restore** |
+| Stage-2 | 250 epochs @ 3e-5, encoder frozen (unchanged) |
+| Control arm | coupling + direction run on **both** curated and uncurated signatures |
+| Held-out donors | D2/D3 excluded **everywhere**, Stage-1 included (§16) |
+
+### 40.2 Why the curation cap is not literally `>3`
+The rule as originally posed — "a gene in more than 3 signatures is removed from all of
+them" — is destructive at 90 conditions for a **structural** reason, not because of these
+particular signatures. With K=90 signatures of n=200 genes drawn from G=4000 HVGs, a
+gene's expected occurrence count **under a pure random null is Kn/G = 4.5** — already
+above 3 — so the rule would delete ~83% of every signature even with zero collapse.
+Measured on the real §37 signatures (90 cytokines, top-100) it keeps **3.7%** of signature
+slots and leaves **34 of 90 cytokines empty**, which `Signature.__post_init__` rejects
+outright. At the 24-cytokine published panel the same rule is well-behaved (top-200 → 23%
+kept, mean 46 genes, min 30, no empties).
+
+The cap is therefore **calibrated to the random null**, so it carries the same stringency
+at K=90 that `>3` carries at K=24:
+```
+null_removed(K, n, cap) = P(Binom(K-1, n/G) >= cap)   # E[fraction of one signature removed]
+target                  = null_removed(24, 200, cap=3) = 0.1052
+cap*(K, n, G)           = min{ cap : null_removed(K, n, cap) <= target }
+```
+For this run (K=90, n=200, G=4000) that is **cap = 8** — drop any gene occurring in more
+than 8 of the 90 signatures; the null then removes 7.7%, leaving ~185 of 200. The cap is
+**computed at run time from (K, n, G) and recorded in `curation_meta.json`**, never
+hardcoded.
+
+Because the null expectation is known in closed form, **removal in excess of 7.7% is
+itself a quantitative collapse statistic** (`excess_removal`), comparable across fits. On
+§37's collapsed signatures the equivalent cap (5 at top-100) leaves only 6.1% and empties
+26/90 — so heavy removal is a live possibility here. It is a readout, not a failure.
+
+### 40.3 Recorded deviations (state these wherever the run is reported)
+- **Width is NOT a new variable vs §37.** 1024/(1024,1024) is exactly §37 PURE's width.
+  What moves vs §37 is: `top_n` 100→200, the curation step, the 50% dropout, and the
+  Stage-1 stopping protocol (fixed 20 epochs, no best-val restore, vs §37's
+  early-stop-at-epoch-4). **Four variables move at once**, as in §37.3 — this run
+  establishes what the method does under these settings, not which change caused what.
+- **Gradient steps unchanged from §37** — k=4 tubes ⇒ 40 mega-batches/epoch × 250 =
+  10,000 steps (the published anchor's is 25,000; §37.3).
+- **Stage 0 is byte-for-byte §37's.** `prepare_oes90_pure.py` is run verbatim with
+  `--out_dir results/oes90_dc`, so the tube split and Stage-1 cell set are provably
+  identical to §37's.
+
+### 40.4 cascadir changes (additive, opt-in, defaults bit-identical)
+- `models/instance_encoder.py`: `InstanceEncoder(..., dropout=0.0)` → `pre_embed_drop`
+  applied between `res2` and `down2`. `nn.Dropout(0.0)` is an exact identity in both
+  modes and carries no parameters or buffers, so `state_dict`, existing checkpoints and
+  `state_dict_sha256` digests are all unaffected.
+- `config.py`: `TrainConfig.encoder_dropout: float = 0.0`.
+- `train.py`: `train_encoder(..., dropout=0.0, restore_best=True)`. `restore_best=False`
+  is **required** for §40 — today `val_fraction > 0` *always* restores the best-val
+  checkpoint regardless of `patience`, so "fixed 20 epochs + a recorded val curve" would
+  silently return best-val weights and reintroduce the very variable §40 pins down.
+- `train.py` **correctness fix**: `train_binary_mil` / `train_multiclass_mil` call
+  `model.train()`, and `AbMil` holds the encoder as a submodule — so with dropout > 0 the
+  frozen encoder would be stochastic during Stage 2, while
+  `build_frozen_embedding_cache` builds under `enc.eval()`. The two paths would silently
+  diverge, breaking the §29 bit-identity guarantee. Fix: re-assert
+  `model.encoder.eval()` after every `model.train()` when `encoder_frozen`. A strict
+  no-op at `dropout=0` (nothing else in the encoder is mode-dependent; no BatchNorm).
+- `signatures.py`: three new pure functions — `signature_gene_occurrences`,
+  `null_calibrated_max_occurrences` (closed form via `math.comb`, no new dependency), and
+  `curate_signatures(...) -> (dict[str, Signature], report_df)`. Curation masks `genes`
+  and `ig_scores` with the same mask and rebuilds frozen `Signature` objects; conditions
+  falling below `min_genes` are **dropped** from the returned dict.
+- `pipeline.py`: `CrossAsymConfig.max_signature_occurrences: int | None = None`; when
+  set, `fit()` curates right after `derive_signatures` and stores
+  `self.signature_curation`. `None` → no-op. `from_artifacts` unchanged.
+- Two downstream consequences of curation, both correct and both recorded: curated-out
+  genes become eligible for `direction_call`'s random null (`cross_asym.py:297`), which
+  shifts `null_p`; and a dropped condition disappears from `direction_table`'s default
+  pair list (`pipeline.py:396-401`) rather than producing NaNs — **compare the two arms on
+  the intersection**.
+
+Curation is applied **after** all nine IG chunks merge; the occurrence count is global
+across the 90 conditions and cannot be computed per chunk.
+
+### 40.5 Hard-rule note
+Coupling and direction go only through the orchestrator (`from_artifacts` →
+`signature_coupling` / `direction_table`), never the module-level functions (§37.7). The
+one sanctioned module-level exception is inherited unchanged from §37:
+`cascadir.cross_asym.directional_asymmetry_test`, used **to persist** per-cell-type
+`sA_PB_norm` / `sB_PA_norm` values, never to make a call.
+
+### 40.6 DAG
+`slurm/oes90_dc/` + `submit_oes90_dc_dag.sh` (`SUBMIT=echo` dry run): `prepare`(CPU 64G) →
+`encoder`(GPU) → `encode`(GPU) → `train`(GPU array 0-8%3) → `ig`(GPU array 0-8%3) →
+`merge`(CPU) → **two parallel arms** off merge, curated and raw, each
+`coupling`(CPU 110G) → `direction`(CPU array 0-3) → `dirmerge`(CPU). Each stage carries an
+`afternotok` sentinel writing `results/oes90_dc/STATUS.md`, plus the 30-minute
+self-resubmitting watchdog appending to `HEALTH.md`.
+
+Direction is **sharded 4 ways** via the `--pairs_shard`/`--n_shards` mechanism §37 already
+built: the per-pair random-gene-set null scales with gene-set size, so `top_n=200` roughly
+doubles §37's 20 h for 4005 pairs and a single job would risk the `short` partition's
+2-day limit. Memory follows §37 unchanged — one k=4 tube-set copy ≈ 25 GB, coupling holds
+~3, direction ~2; `top_n` does not change tube memory.
+
+**There is deliberately no analysis stage.** Like §37 this run produces artifacts only;
+scoring against any benchmark waits for a committed pre-registration (§25.1).
+`_oes90_dc_config.py` does not import `_full90_config` and `assert_agnostic()` runs at the
+top of every stage.
+
+**Deliverables** (`results/oes90_dc/`, gitignored): `encoder.pt` + `encoder_last.pt` +
+`encoder_history.csv` + `encoder_meta.json`; `models/<cond>_head.pt` × 90 +
+`history/<cond>_train.csv` × 90; `embeddings/`; `signatures_{main,reserve}.parquet`
+(top-200, uncurated) + `signatures_{main,reserve}_curated.parquet`; `curation_report.csv`
++ `curation_meta.json`; `signature_stability{,_curated}.csv`;
+`coupling_donor_degree_{raw,curated}.csv`; `direction_table_{raw,curated}.csv`;
+`engagement_per_celltype_{raw,curated}.parquet`.
+
+**File layout (new).** `scripts/{_oes90_dc_config,_oes90_dc_estimator,
+train_oes90_dc_encoder,encode_oes90_dc_tubes,train_oes90_dc_chunk,ig_oes90_dc,
+merge_oes90_dc_signatures,run_oes90_dc_coupling,run_oes90_dc_direction,
+merge_oes90_dc_direction,run_demo_oes90_dc}.py`;
+`slurm/oes90_dc/{prepare,encoder,encode,train,ig,merge,coupling,direction,dirmerge,
+sentinel,watchdog}.slurm` + `submit_oes90_dc_dag.sh`;
+`cascadir/tests/test_signature_curation.py`.
+**Edited (additive, backward-compatible):** `cascadir/src/cascadir/{models/instance_encoder,
+config,train,signatures,pipeline,__init__}.py`, `cascadir/MANUAL.md`,
+`cascadir/tests/{test_embedding_cache,test_train_history}.py`. Reuses
+`scripts/prepare_oes90_pure.py` verbatim (Stage 0) and `_oes90_pure_estimator`'s
+config-free helpers.

@@ -142,6 +142,8 @@ def train_encoder(
     patience: int | None = None,
     min_delta: float = 0.0,
     extra_epochs_after_stop: int = 0,
+    restore_best: bool = True,
+    dropout: float = 0.0,
     return_history: bool = False,
 ) -> InstanceEncoder | tuple[InstanceEncoder, pd.DataFrame]:
     """Pre-train an :class:`InstanceEncoder` on cell-type labels (Stage 1).
@@ -172,7 +174,18 @@ def train_encoder(
         min_delta: Improvement threshold for the patience counter.
         extra_epochs_after_stop: Keep training this many epochs **past** the plateau
             before returning, so the recorded history shows the overfitting regime. The
-            returned encoder is still the best-validation checkpoint, not the last one.
+            returned encoder is still the best-validation checkpoint, not the last one
+            (unless ``restore_best=False``).
+        restore_best: With ``val_fraction > 0``, load the best-validation weights before
+            returning (``True``, the previous and default behaviour). Set ``False`` to
+            keep the **final-epoch** weights while still recording the validation curve
+            — the only way to run a fixed schedule and observe val without letting the
+            stopping point become a hidden variable. Ignored when ``val_fraction == 0``
+            (there is no validation set to pick a best epoch from).
+        dropout: Dropout probability on the input of the encoder's final
+            (embedding-producing) block. ``0.0`` (default) = no dropout, bit-identical
+            to before. Applies during Stage-1 training only; the encoder is returned in
+            ``eval()`` mode and is kept there by every downstream consumer.
         return_history: Also return the per-epoch history (see below).
 
     Returns:
@@ -185,9 +198,10 @@ def train_encoder(
         ``last_state_dict`` (the final-epoch weights, before best-val restoration).
 
     Note:
-        All new arguments default to a no-op: with ``val_fraction=0.0``, ``patience=None``
-        and ``return_history=False`` this function is behaviourally identical to before,
-        including its RNG stream.
+        All new arguments default to a no-op: with ``val_fraction=0.0``, ``patience=None``,
+        ``restore_best=True``, ``dropout=0.0`` and ``return_history=False`` this function
+        is behaviourally identical to before, including its RNG stream. ``nn.Dropout(0.0)``
+        is an exact identity and consumes no RNG.
     """
     torch.manual_seed(seed)
     dev = resolve_device(device)
@@ -204,6 +218,7 @@ def train_encoder(
         embed_dim=embed_dim,
         n_cell_types=len(classes),
         hidden_dims=hidden_dims,
+        dropout=dropout,
     ).to(dev)
 
     if val_fraction > 0.0:
@@ -299,9 +314,15 @@ def train_encoder(
                 break
 
     last_state = {k: v.detach().cpu().clone() for k, v in encoder.state_dict().items()}
-    if best_state is not None:
+    if best_state is not None and restore_best:
         encoder.load_state_dict(best_state)
         logger.info("[Stage 1] restored best-validation weights from epoch %d.", best_epoch)
+    elif best_state is not None:
+        logger.info(
+            "[Stage 1] restore_best=False — keeping final-epoch weights (epoch %d); "
+            "the best-validation epoch was %d (val_loss=%.4f).",
+            len(rows), best_epoch, best_val,
+        )
     encoder.eval()
 
     if not return_history:
@@ -314,6 +335,8 @@ def train_encoder(
         "n_train_cells": n_train_cells,
         "n_val_cells": n_val_cells,
         "val_fraction": val_fraction,
+        "restore_best": restore_best,
+        "dropout": dropout,
         "last_state_dict": last_state,
     })
     return encoder, history
@@ -444,6 +467,23 @@ def _train_one_megabatch(
 # ---------------------------------------------------------------------------
 
 
+def _assert_frozen_encoder_eval(model) -> None:
+    """Keep a FROZEN encoder in ``eval()`` mode even while the bag head trains.
+
+    ``model.train()`` propagates to every submodule, and :class:`AbMil` holds the encoder
+    as one — so an encoder configured with dropout would become stochastic during Stage-2
+    training. :func:`build_frozen_embedding_cache` builds its cache under ``eval()``, so
+    the cached and un-cached paths would silently disagree and the documented
+    bit-identity of ``cache_frozen_embeddings`` would no longer hold.
+
+    A frozen encoder is a fixed feature extractor; ``eval()`` is its correct mode. With
+    ``dropout=0.0`` (the default) this is a strict no-op — nothing else in
+    :class:`InstanceEncoder` behaves differently between train and eval mode.
+    """
+    if getattr(model, "encoder_frozen", False):
+        model.encoder.eval()
+
+
 def train_binary_mil(
     tube_set: PseudoTubeSet,
     condition: str,
@@ -533,6 +573,7 @@ def train_binary_mil(
     classifier = BagClassifier(embed_dim=encoder.embed_dim, n_classes=2)
     model = AbMil(encoder, attention, classifier, encoder_frozen=encoder_frozen).to(dev)
     model.train()
+    _assert_frozen_encoder_eval(model)
 
     trainable = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(trainable, lr=lr, momentum=momentum)
@@ -564,6 +605,7 @@ def train_binary_mil(
             model.eval()
             on_checkpoint(epoch, model)
             model.train()
+            _assert_frozen_encoder_eval(model)
         if verbose and (epoch % 50 == 0 or epoch == 1):
             logger.info(
                 "[Stage 2 %s] epoch %d/%d loss=%.5f",
@@ -712,6 +754,7 @@ def train_multiclass_mil(
     )
     model = AbMil(encoder, attention, classifier, encoder_frozen=encoder_frozen).to(dev)
     model.train()
+    _assert_frozen_encoder_eval(model)
 
     trainable = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(trainable, lr=lr, momentum=momentum)

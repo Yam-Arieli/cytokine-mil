@@ -194,3 +194,71 @@ def test_train_all_binary_returns_histories(synthetic_adata):
     for c in conds:
         assert len(hists[c]) == 3
         assert hists[c].attrs["condition"] == c
+
+
+# ---------------------------------------------------------------------------
+# restore_best: run a FIXED schedule while still recording the validation curve.
+#
+# Before this flag, val_fraction > 0 always restored the best-validation weights —
+# regardless of `patience`. That made "fixed N epochs, observe val" impossible: the
+# stopping point silently became a hidden variable of the fit.
+# ---------------------------------------------------------------------------
+
+
+def test_restore_best_false_keeps_final_epoch_weights(synthetic_adata):
+    proc = _proc(synthetic_adata)
+    enc_last, hist = train_encoder(
+        proc, celltype_col="cell_type", embed_dim=16, hidden_dims=(16, 16),
+        epochs=8, device="cpu", seed=0,
+        val_fraction=0.3, restore_best=False, return_history=True,
+    )
+    last_state = hist.attrs["last_state_dict"]
+    sd = enc_last.state_dict()
+    assert all(torch.equal(sd[k].cpu(), last_state[k]) for k in sd)
+    assert hist.attrs["restore_best"] is False
+    assert len(hist) == 8  # no early stopping without patience
+
+
+def test_restore_best_true_is_the_default_and_still_restores(synthetic_adata):
+    proc = _proc(synthetic_adata)
+    enc_best, hist = train_encoder(
+        proc, celltype_col="cell_type", embed_dim=16, hidden_dims=(16, 16),
+        epochs=8, device="cpu", seed=0,
+        val_fraction=0.3, return_history=True,
+    )
+    assert hist.attrs["restore_best"] is True
+    best_epoch = hist.attrs["best_epoch"]
+    # If the best epoch was not the last one, the returned weights must differ from
+    # the final-epoch weights — i.e. restoration actually happened.
+    if best_epoch != len(hist):
+        sd = enc_best.state_dict()
+        last_state = hist.attrs["last_state_dict"]
+        assert not all(torch.equal(sd[k].cpu(), last_state[k]) for k in sd)
+
+
+def test_restore_best_is_inert_without_a_validation_split(synthetic_adata):
+    proc = _proc(synthetic_adata)
+    a = _encoder(proc)
+    b = _encoder(proc, restore_best=False)
+    assert _state_equal(a, b)
+
+
+def test_encoder_dropout_defaults_to_a_no_op(synthetic_adata):
+    """The new dropout argument must not perturb weights or the RNG stream at 0.0."""
+    proc = _proc(synthetic_adata)
+    a = _encoder(proc)
+    b = _encoder(proc, dropout=0.0)
+    assert _state_equal(a, b)
+    assert a.dropout == 0.0
+
+
+def test_encoder_dropout_is_recorded_in_history(synthetic_adata):
+    proc = _proc(synthetic_adata)
+    _enc, hist = _encoder(proc, dropout=0.25, return_history=True)
+    assert hist.attrs["dropout"] == 0.25
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.0, 1.5])
+def test_encoder_dropout_out_of_range_raises(synthetic_adata, bad):
+    with pytest.raises(ValueError):
+        _encoder(_proc(synthetic_adata), dropout=bad)
