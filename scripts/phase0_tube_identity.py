@@ -65,7 +65,9 @@ def manifest_side(manifest_path: str, gene_names: list[str], max_per_group: int 
     """Hash every tube as `PseudoTubeDataset` yields it. Streams (preload=False)."""
     with open(manifest_path) as fh:
         entries = json.load(fh)
-    label_enc = CytokineLabel()
+    # PseudoTubeDataset encodes a label on every __getitem__, so the encoder has to be
+    # fitted even though only X is hashed here.
+    label_enc = CytokineLabel().fit(entries)
     ds = PseudoTubeDataset(manifest_path, label_enc, gene_names=gene_names, preload=False)
 
     seen: dict[tuple, int] = defaultdict(int)

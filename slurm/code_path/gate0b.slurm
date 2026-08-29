@@ -4,7 +4,7 @@
 #SBATCH --error=/cs/labs/mornitzan/yam.arieli/cytokine-mil/results/code_path/slurm_gate0b_%j.err
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a5000
 #SBATCH --time=8:00:00
 #SBATCH --partition=short
 
