@@ -1,6 +1,6 @@
 # Spec — the controlled code-path comparison
 
-**Status:** specification only. Nothing has been run.
+**Status:** Phase 0 implemented and submitted; Phases 1-2 specified, not run.
 **Becomes** CLAUDE.md §41 when the run is approved, per the §1 workflow.
 
 ---
@@ -76,11 +76,40 @@ models, same cells, two IG implementations. Then the reverse: §40's 90 heads
 The adapter must **assert key-for-key** that the mapping is total before loading — a
 silently partial `load_state_dict` would fabricate the result.
 
-Readout: per-cytokine top-50 Jaccard between the two IG implementations, and the resulting
-meanJ from each.
+#### A configuration difference found while implementing this
 
-**If the two IG paths disagree on the same weights, the search is over** at zero GPU cost.
-This is the highest value-per-cost step in the whole programme and runs first.
+The two paths do not attribute over the same cells, which no previous section noted.
+Production `run_binary_ig_probe.py` attributes over `by_cyt[cyt][:max_tubes_per_cytokine]`
+— the first **10** tubes in *manifest order*, which is grouped by donor — and builds its
+PBS baseline the same way from the first 10 PBS tubes. `cascadir.derive_signature`
+attributes over **every** tube of the condition in the tube set and averages the baseline
+over **every** control tube in it (§36–§40: 4 tubes × 10 donors, D2/D3 excluded).
+
+So the anchor's baseline is drawn from a narrow donor slice while cascadir's is a pooled
+10-donor average. A pooled baseline puts a donor-offset term into `delta = X − baseline`
+that is common to every cytokine of that donor, which is at least a plausible route to a
+shared attribution axis. **Plausible, not established** — that is what the 2×2 is for.
+
+#### The 2×2
+
+`scripts/phase0_ig_transplant.py` therefore runs five configurations: production
+`cytokine_mil` (invoked verbatim via `runpy`, not re-implemented), and
+`cascadir.derive_signature` over {attributed tubes} × {baseline tubes}, each ∈ {the
+anchor's 10 manifest tubes, the §36 main set}.
+
+* `cm_prod` vs `cd_cond.cm_base.cm` — identical weights, cells and baseline, so any gap
+  **is the attribution algorithm**. This is Gate B.
+* `cm_prod` vs `cd_cond.main_base.main` — the **as-run** comparison.
+* the other two cells say **which knob** moves it, which a straight A/B cannot.
+
+Readout: per-cytokine top-50 Jaccard between configurations, and `diversity()` meanJ for
+each. Per-configuration donor composition is reported rather than assumed.
+
+**If the two IG paths disagree on identical inputs, the search is over** at zero training
+cost. This is the highest value-per-cost step in the whole programme and runs first.
+
+Scope: run B's **16** cytokines — the only single-encoder `cytokine_mil` reference
+(meanJ 0.079). Phase 1's published-24 panel is a separate, later question.
 
 ---
 
