@@ -1,7 +1,7 @@
 # Spec — the controlled code-path comparison
 
-**Status:** specification only. Nothing has been run. Panel choice is open (§7).
-**Becomes** CLAUDE.md §41 once the open decision is locked, per the §1 workflow.
+**Status:** specification only. Nothing has been run.
+**Becomes** CLAUDE.md §41 when the run is approved, per the §1 workflow.
 
 ---
 
@@ -88,7 +88,19 @@ This is the highest value-per-cost step in the whole programme and runs first.
 
 Runs only if Phase 0 is clean (0a matches, 0b agrees).
 
-**Held identical across arms:** condition set; tubes (§36 shards, k=10); Stage-1 cells,
+**Condition set (LOCKED):** the **published-24** panel — `CD30L, Decorin, GM-CSF,
+IFN-beta, IFN-gamma, IFN-lambda1, IFN-omega, IL-1-beta, IL-10, IL-12, IL-13, IL-15,
+IL-16, IL-17A, IL-2, IL-27, IL-35, IL-36-alpha, IL-6, IL-9, TGF-beta1, TL1A, TNF-alpha,
+VEGF` (read off `binary_ig_all24.parquet`, not hand-typed). Chosen so the result drops
+directly into the §38.3/§38.4/§40 ladder, which is quoted on this panel. Two properties
+of it are recorded rather than treated as problems: its 0.065 anchor is a **merge of two
+encoders** (§38.5 measured the merge as worth ~0.01 — small against the ~0.12 gap under
+test), and its composition is **non-neutral** (§36: members were selected by literature-
+benchmark membership). Neither biases the P-vs-C contrast, because both arms are
+generated fresh on the identical panel and composition cancels; they affect only the
+absolute level and must be restated wherever the absolute number is quoted.
+
+**Held identical across arms:** tubes (§36 shards, k=10); Stage-1 cells,
 cell-type labels and val split; gene order; D2/D3 excluded **everywhere** including Stage 1
 (§16); `top_n=50`; and the published "wide" hyperparameters — `embed_dim=512`,
 `hidden_dims=(512,512)`, `attention_hidden_dim=128`, Stage-1 20 epochs @ 0.005 mom 0.9,
@@ -159,18 +171,17 @@ Phase 2: 2 more fits.
 
 ---
 
-## 7. OPEN DECISION — the condition set
+## 7. Panel — decided
 
-This is a scientific choice with real consequences and is **not** made here.
+Locked to **published-24** (§3). The alternatives considered, with what each would have
+bought, kept for the record:
 
-| option | n | comparable to | cost | drawback |
-|---|---:|---|---|---|
-| published run B's cytokines | 16 | the anchor's only **single-encoder** reference (0.079) | lowest | small panel ⇒ 120 pairs; composition chosen by benchmark membership |
-| published-24 | 24 | the whole §38 ladder + §40 (0.065) | low | the anchor for it is a **merge of two encoders** (§38.5) |
-| §38 seeded-random sweep24 | 24 | all eight §38.3/§38.4 arms (0.180–0.257) | low | no `cytokine_mil` fit exists on it, so the anchor is not directly comparable |
-| all 90 | 90 | §36/§37/§40 | ~4× | expensive; no `cytokine_mil` fit at this breadth |
-
----
+| option | n | comparable to | drawback |
+|---|---:|---|---|
+| **published-24 (CHOSEN)** | 24 | the whole §38 ladder + §40 (0.065) | anchor merges two encoders; non-neutral composition |
+| published run B's cytokines | 16 | the anchor's only **single-encoder** reference (0.079) | 120 pairs; not the ladder's panel |
+| §38 seeded-random sweep24 | 24 | all eight §38.3/§38.4 arms (0.180–0.257) | no `cytokine_mil` fit exists on it |
+| all 90 | 90 | §36/§37/§40 | ~4× cost; no `cytokine_mil` fit at this breadth |
 
 ## 8. Guards
 
